@@ -191,7 +191,6 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const { lines, nodes } = animatablesRef.current;
-        const currentAnimBaseColor = animationBaseColor || '#456cff';
 
 
         ctx.font = '11px sans-serif';

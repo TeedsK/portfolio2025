@@ -1,23 +1,32 @@
 // src/App.tsx
-import React, { useState, useEffect, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { Switch, Space, Alert, Spin, Popover, Tag }
-    from 'antd';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Switch, Space, Alert, Spin, Popover, Tag } from 'antd';
 import './App.css';
 import { log, warn, error } from './utils/logger';
-import { findCharacterBoxes } from './ml/processing/segmentation';
-import { preprocessCharacterTensor } from './ml/processing/preprocess';
+import useTfModel from './hooks/useTfModel';
+import useOcrProcessing from './hooks/useOcrProcessing';
 import {
-    ActivationDataValue, ActivationData, ModelWeights, BoundingBoxData,
-    ProcessableLine, TypoCorrectionResponse, TokenTypoDetail, DisplayTextPart
+    ActivationDataValue,
+    ActivationData,
+    ModelWeights,
+    BoundingBoxData,
+    ProcessableLine,
+    DisplayTextPart,
+    OcrDisplayLine,
+    TypoCorrectionResponse,
+    TokenTypoDetail
 } from './types';
 import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
 import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
+import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
 import useStatusText, { STATUS_TEXTS } from "./hooks/useStatusText";
+import { useTypoCorrection } from './hooks/useTypoCorrection';
 
 // --- Constants ---
 const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
@@ -28,62 +37,41 @@ const TYPO_ANIMATION_DELAY_MS = 60;
 const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
 const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
 const FINAL_LAYER_NAME = 'dense_1';
-const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
 const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
 
-interface OcrDisplayLinePart {
-    id: string;
-    text: string;
-    isWhitespace: boolean;
-    isFlagged?: boolean;
-    ref: React.RefObject<HTMLSpanElement>; // Ensure ref is always created and typed
-}
-interface OcrDisplayLine {
-    id: string;
-    textDuringOcr: string;
-    parts: OcrDisplayLinePart[];
-    y: number;
-}
+import {
+    EMNIST_MODEL_URL,
+    EMNIST_CHARS,
+    PROCESSING_DELAY_MS,
+    TYPO_ANIMATION_DELAY_MS,
+    ACTIVATION_LAYER_NAMES,
+    CONV_LAYER_WEIGHT_NAMES,
+    FINAL_LAYER_NAME,
+    TYPO_API_URL,
+    ANIMATION_COLOR_PALETTE,
+    OCR_OVERLAY_FONT_SIZE,
+    OCR_OVERLAY_TEXT_COLOR_NORMAL,
+    OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR,
+    STATUS_TEXTS,
+    getTagColorForProbability,
+} from './constants';
 
-const OCR_OVERLAY_FONT_SIZE = 30;
-const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
-const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)'; // Transparent background
-
-const getTagColorForProbability = (probability: number): string => {
-    const percent = probability * 100;
-    if (percent > 80) return "green";
-    if (percent > 60) return "gold";
-    if (percent > 40) return "orange";
-    if (percent > 20) return "volcano";
-    if (percent > 0) return "red";
-    return "default";
-};
 function App() {
-    const [model, setModel] = useState<tf.LayersModel | null>(null);
-    const [visModel, setVisModel] = useState<tf.LayersModel | null>(null);
-    const [modelWeights, setModelWeights] = useState<ModelWeights | null>(null);
     const [currentActivations, setCurrentActivations] = useState<ActivationData | null>(null);
     const [currentSoftmaxProbs, setCurrentSoftmaxProbs] = useState<number[] | null>(null);
     const [currentCharVisData, setCurrentCharVisData] = useState<ImageData | null>(null);
     const [networkGraphColor, setNetworkGraphColor] = useState<string>(ANIMATION_COLOR_PALETTE[0]);
     const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
-    const [isLoadingModel, setIsLoadingModel] = useState<boolean>(true);
     const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
-    const [tfReady, setTfReady] = useState<boolean>(false);
+
     const [errorState, setErrorState] = useState<string | null>(null);
-    const [activeItemIndex, setActiveItemIndex] = useState<{ line: number, item: number } | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
-    const [processableLines, setProcessableLines] = useState<ProcessableLine[]>([]);
     const [showConvFilters, setShowConvFilters] = useState<boolean>(false);
     const [showWeights, setShowWeights] = useState<boolean>(false);
     const [showActivations, setShowActivations] = useState<boolean>(false);
     const [showSoftmax, setShowSoftmax] = useState<boolean>(false);
     const [showNetworkGraph, setShowNetworkGraph] = useState<boolean>(true);
-    const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
-    const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
-    const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
-    const [ocrDisplayLines, setOcrDisplayLines] = useState<OcrDisplayLine[]>([]);
     const [shouldStartOcr, setShouldStartOcr] = useState<boolean>(false);
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
@@ -91,71 +79,25 @@ function App() {
 
     const imageRef = useRef<HTMLImageElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const ocrCharacterCountRef = useRef<number>(0);
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => { /* ... TFJS and Model Loading ... */
-        log("App component mounted. Initializing TFJS and loading EMNIST Letters model...");
-        setErrorState(null); setIsLoadingModel(true); setModel(null); setVisModel(null); setModelWeights(null);
+    const {
+        model,
+        visModel,
+        weights: modelWeights,
+        isLoading: isLoadingModel,
+        tfReady,
+        error: modelLoadError,
+    } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
-        async function initializeTFAndLoadModel() {
-            try {
-                await tf.ready();
-                const backend = tf.getBackend();
-                log(`TFJS Ready. Using backend: ${backend}`); setTfReady(true);
-
-                log(`Loading EMNIST Letters model from: ${EMNIST_MODEL_URL}`);
-                const loadedModel = await tf.loadLayersModel(EMNIST_MODEL_URL);
-                setModel(loadedModel); log('EMNIST Letters Model loaded successfully.');
-
-                log('Creating visualization model...');
-                const outputLayers = ACTIVATION_LAYER_NAMES.map(name => {
-                    try { return loadedModel.getLayer(name).output; }
-                    catch (e) { error(`Layer not found: ${name}`, e); return null; }
-                }).filter(output => output !== null) as tf.SymbolicTensor[];
-
-                if (outputLayers.length !== ACTIVATION_LAYER_NAMES.length) {
-                    throw new Error("Could not find all specified layers for visualization model.");
-                }
-                const visualizationModel = tf.model({ inputs: loadedModel.input, outputs: outputLayers });
-                setVisModel(visualizationModel); log('Visualization model created.');
-
-                log('Extracting model weights...');
-                const weightsData: ModelWeights = {};
-                for (const name of CONV_LAYER_WEIGHT_NAMES) {
-                    try {
-                        const layer = loadedModel.getLayer(name);
-                        const layerWeights = layer.getWeights();
-                        if (layerWeights.length >= 2) {
-                            const kernelData = layerWeights[0].arraySync() as number[][][][];
-                            const biasData = layerWeights[1].arraySync() as number[];
-                            weightsData[name] = { kernel: kernelData, bias: biasData };
-                        } else if (layerWeights.length === 1) {
-                            const kernelData = layerWeights[0].arraySync() as number[][][][];
-                            weightsData[name] = { kernel: kernelData, bias: [] };
-                        }
-                        log(`Extracted weights for layer: ${name}`);
-                    } catch (e) { error(`Failed to get weights for layer: ${name}`, e); }
-                }
-                setModelWeights(weightsData); log('Model weights extracted.');
-                setIsLoadingModel(false); log('TFJS initialization and model/weights/visModel loading complete.');
-
-            } catch (errRes) {
-                error('Failed during TFJS init, model load, or vis setup', errRes);
-                setErrorState(`Setup failed: ${errRes instanceof Error ? errRes.message : String(errRes)}`);
-                setIsLoadingModel(false); setTfReady(false); setModel(null); setVisModel(null); setModelWeights(null);
-            }
+    useEffect(() => {
+        if (modelLoadError) {
+            setErrorState(modelLoadError);
         }
-        initializeTFAndLoadModel();
-        return () => {
-            log('App component unmounting.');
-            visModel?.dispose(); model?.dispose();
-            setModel(null); setVisModel(null); setModelWeights(null);
-            log('Model states cleared and models disposed.');
-        };
-     }, []);
+    }, [modelLoadError]);
+
     useEffect(() => { /* ... Image Dimension Loading ... */
         const imgElement = imageRef.current;
         if (imgElement && !isVideoPlaying) {
@@ -207,169 +149,51 @@ function App() {
             handleImageClick();
             setShouldStartOcr(false);
         }
-    }, [shouldStartOcr, isVideoPlaying, imageDimensions]);
+    }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
 
     const handleImageClick = async () => {
-        // ... (Guard conditions unchanged) ...
-        if (isVideoPlaying) return;
-        if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !imageDimensions || !visModel || !model) {
-             warn('Not ready for OCR processing.', {isProcessingOCR, tfReady, isLoadingModel, imgComplete: !!imageRef.current?.complete, imageDimensions: !!imageDimensions});
-             return;
+        if (isVideoPlaying || !imageDimensions) return;
+        if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete) {
+            warn('Not ready for OCR processing.', { isProcessingOCR, tfReady, isLoadingModel, imgComplete: !!imageRef.current?.complete });
+            return;
         }
 
         setCurrentAppPhase(1);
         setIsProcessingOCR(true);
-        setShowMediaElement(true); 
-        setOcrPredictedText(''); setInteractiveOcrParts([]);setBackendCorrectedSentence('');
-        setProcessableLines([]); setActiveItemIndex(null); setOcrDisplayLines([]);
+        setShowMediaElement(true);
+        setOcrPredictedText('');
+        resetTypoData();
+        setProcessableLines([]); 
+        setActiveItemIndex(null); 
+        setOcrDisplayLines([]);
+        setShowMediaElement(true);
+        setInteractiveOcrParts([]);
+        setBackendCorrectedSentence('');
         setIsShowingTypoHighlights(false);
-        setCurrentActivations(null); setCurrentSoftmaxProbs(null); setCurrentCharVisData(null);
-        ocrCharacterCountRef.current = 0;
-        setNetworkGraphColor(ANIMATION_COLOR_PALETTE[0]);
         ocrDisplayLinesRefs.current.clear();
 
-        log('Starting OCR processing...');
-        const currentImageRef = imageRef.current;
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) { error('Failed to get canvas context.'); setIsProcessingOCR(false); return; }
 
-        canvas.width = currentImageRef.naturalWidth;
-        canvas.height = currentImageRef.naturalHeight;
-        ctx.drawImage(currentImageRef, 0, 0, currentImageRef.naturalWidth, currentImageRef.naturalHeight);
+        const rawText = await startOcr(imageDimensions);
 
-        let linesToProcess: ProcessableLine[] = [];
-        try {
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            linesToProcess = findCharacterBoxes(imageData);
-            setProcessableLines(linesToProcess);
-            if (linesToProcess.length === 0 || linesToProcess.every(line => line.length === 0)) {
-                setErrorState('No text detected.'); setIsProcessingOCR(false); setCurrentAppPhase(1); return;
-            }
-        } catch (errSeg) { setErrorState(`Segmentation failed: ${errSeg instanceof Error ? errSeg.message : String(errSeg)}`); setIsProcessingOCR(false); setCurrentAppPhase(1); return;}
-        
-        const initialDisplayLinesData: OcrDisplayLine[] = linesToProcess.map((line, idx) => {
-            let lineY = (idx * (OCR_OVERLAY_FONT_SIZE * 1.5)) + OCR_OVERLAY_FONT_SIZE;
-            const firstCharBox = line.find(item => item !== null) as BoundingBoxData | undefined;
-            if (firstCharBox && imageDimensions) { 
-                const scaleY = imageDimensions.height / currentImageRef.naturalHeight;
-                lineY = firstCharBox[1] * scaleY + OCR_OVERLAY_FONT_SIZE * 0.3; 
-                lineY = Math.max(OCR_OVERLAY_FONT_SIZE * 0.8, lineY);
-                lineY = Math.min(imageDimensions.height - OCR_OVERLAY_FONT_SIZE * 0.5, lineY);
-            }
-            return { id: `line-${idx}`, textDuringOcr: '', parts: [], y: lineY };
-        });
-        setOcrDisplayLines(initialDisplayLinesData);
-        initialDisplayLinesData.forEach(line => ocrDisplayLinesRefs.current.set(line.id, null));
-
-        let rawOcrOutputAccumulator: string = '';
-        try {
-            for (let lineIndex = 0; lineIndex < linesToProcess.length; lineIndex++) {
-                // ... (OCR character processing loop - this logic for charToAdd and updating textDuringOcr is fine)
-                 const line = linesToProcess[lineIndex];
-                let currentLineRawText = '';
-                for (let itemIndex = 0; itemIndex < line.length; itemIndex++) {
-                    const item = line[itemIndex];
-                    setActiveItemIndex({ line: lineIndex, item: itemIndex });
-                    let charToAdd = '';
-                    if (item === null) { charToAdd = ' '; await new Promise(resolve => setTimeout(resolve, PROCESSING_DELAY_MS / 4)); }
-                    else { 
-                        const box = item as BoundingBoxData;
-                        const currentCharacterColor = ANIMATION_COLOR_PALETTE[ocrCharacterCountRef.current % ANIMATION_COLOR_PALETTE.length]; 
-                        setNetworkGraphColor(currentCharacterColor); 
-                        const paddedImageData = (() => { 
-                            const [x, y, w, h] = box; 
-                            const PADDING_FACTOR = 1.4; const maxDim = Math.max(w, h); const paddedSize = Math.floor(maxDim * PADDING_FACTOR); 
-                            const padCanvas = document.createElement('canvas'); padCanvas.width = paddedSize; padCanvas.height = paddedSize; 
-                            const padCtx = padCanvas.getContext('2d'); 
-                            if (!padCtx) throw new Error(`Failed context for padding char L${lineIndex + 1}-${itemIndex + 1}`); 
-                            padCtx.fillStyle = 'white'; padCtx.fillRect(0, 0, paddedSize, paddedSize); 
-                            const drawX = Math.floor((paddedSize - w) / 2); const drawY = Math.floor((paddedSize - h) / 2); 
-                            padCtx.drawImage(canvas, x, y, w, h, drawX, drawY, w, h); 
-                            return padCtx.getImageData(0, 0, paddedSize, paddedSize); 
-                        })();
-                        const charTensorUnprocessed = tf.browser.fromPixels(paddedImageData, 4); 
-                        const processedTensor = preprocessCharacterTensor(charTensorUnprocessed); 
-                        charTensorUnprocessed.dispose(); 
-                        let predictedLetter = '?'; 
-                        if (processedTensor) { 
-                            try { 
-                                const tempVisCanvas = document.createElement('canvas'); tempVisCanvas.width = 28; tempVisCanvas.height = 28; 
-                                const tensorToDraw = processedTensor.squeeze([0]); 
-                                await tf.browser.toPixels(tensorToDraw as tf.Tensor2D | tf.Tensor3D, tempVisCanvas); 
-                                const visCtx = tempVisCanvas.getContext('2d'); 
-                                if (visCtx) setCurrentCharVisData(visCtx.getImageData(0, 0, 28, 28)); 
-                                tensorToDraw.dispose(); 
-                            } catch (visErr) { error("Error creating character visualization data", visErr); setCurrentCharVisData(null); } 
-
-                            try { 
-                                const predictions = visModel.predict(processedTensor) as tf.Tensor[]; 
-                                const activationData: ActivationData = {}; 
-                                let softmaxData: number[] | null = null; 
-                                if (predictions.length !== ACTIVATION_LAYER_NAMES.length) { error("Prediction output count mismatch!"); }
-                                else { 
-                                    for (let k = 0; k < ACTIVATION_LAYER_NAMES.length; k++) { 
-                                        const layerName = ACTIVATION_LAYER_NAMES[k]; 
-                                        const tensor = predictions[k]; 
-                                        try {
-                                            const data = tensor.arraySync(); 
-                                            activationData[layerName] = data as ActivationDataValue; 
-                                            if (layerName === FINAL_LAYER_NAME) { softmaxData = (data as number[][])[0]; }
-                                        } catch (dataErr) { error(`Error sync for ${layerName}`, dataErr); } 
-                                        finally { tensor.dispose(); } 
-                                    }
-                                    setCurrentActivations(activationData); 
-                                    setCurrentSoftmaxProbs(softmaxData); 
-                                    if (softmaxData) { 
-                                        const currentPredictedIndex = softmaxData.indexOf(Math.max(...softmaxData)); 
-                                        predictedLetter = EMNIST_CHARS[currentPredictedIndex] || '?'; 
-                                    }
-                                }
-                            } catch (predictErr) { error(`Prediction failed char L${lineIndex + 1}-${itemIndex + 1}`, predictErr); predictedLetter = 'X'; setCurrentActivations(null); setCurrentSoftmaxProbs(null); }
-                            processedTensor.dispose(); 
-                            charToAdd = predictedLetter;
-                        } else { charToAdd = '?'; setCurrentActivations(null); setCurrentSoftmaxProbs(null); setCurrentCharVisData(null); }
-                        ocrCharacterCountRef.current++; 
-                        await new Promise(resolve => setTimeout(resolve, PROCESSING_DELAY_MS));                     
-                    } 
-                    currentLineRawText += charToAdd;
-                    setOcrDisplayLines(prevLines =>
-                        prevLines.map((lineObj, idx) =>
-                            idx === lineIndex ? { ...lineObj, textDuringOcr: lineObj.textDuringOcr + charToAdd } : lineObj
-                        )
-                    );
-                }
-                rawOcrOutputAccumulator += currentLineRawText;
-                if (lineIndex < linesToProcess.length - 1) { rawOcrOutputAccumulator += '\n'; }
-            }
-            setOcrPredictedText(rawOcrOutputAccumulator);
-            log('OCR finished. Raw output for typo API:', rawOcrOutputAccumulator);
-            
-            // Start media fade out, then proceed to typo check
-            if (mediaContainerRef.current) {
-                gsap.to(mediaContainerRef.current, { 
-                    opacity: 0, 
-                    duration: 0.5, 
-                    onComplete: async () => {
-                        setShowMediaElement(false);
-                        setCurrentAppPhase(2);
-                        if (rawOcrOutputAccumulator.trim().length > 0) {
-                            await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
-                        } else { 
-                            setInteractiveOcrParts([]); setBackendCorrectedSentence(''); 
-                            setCurrentAppPhase(2); // Still move to typo phase completion
-                        }
+        if (mediaContainerRef.current) {
+            gsap.to(mediaContainerRef.current, {
+                opacity: 0,
+                duration: 0.5,
+                onComplete: async () => {
+                    setShowMediaElement(false);
+                    setCurrentAppPhase(2);
+                    if (rawText.trim().length > 0) {
+                        await handleTypoCorrectionAPI(rawText);
                     }
-                });
-            } else { // Fallback if ref not immediately available (should be rare)
-                 setShowMediaElement(false);
-                 setCurrentAppPhase(2);
-                 if (rawOcrOutputAccumulator.trim().length > 0) {
-                    await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
-                 }
+                }
+            });
+        } else {
+            setShowMediaElement(false);
+            setCurrentAppPhase(2);
+            if (rawText.trim().length > 0) {
+                await handleTypoCorrectionAPI(rawText);
             }
-        } catch (errLoop) { setErrorState(`OCR Loop Error: ${errLoop instanceof Error ? errLoop.message : String(errLoop)}`);}
-        finally { setIsProcessingOCR(false); setActiveItemIndex(null); }
+        }
     };
     
     const handleTypoCorrectionAPI = async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
@@ -416,7 +240,7 @@ function App() {
 
             const updatedOcrDisplayLines = ocrDisplayLines.map((existingLine, lineIdx) => {
                 const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; // Text for this line from API
-                const newParts: OcrDisplayLinePart[] = [];
+                const newParts: DisplayTextPart[] = [];
                 let partIdCounter = 0;
 
                 // Split the line text by words and spaces to create parts
@@ -495,29 +319,21 @@ function App() {
     }, [isShowingTypoHighlights, ocrDisplayLines]);
 
 
-    const renderPopoverContent = (tokenDetail: DisplayTextPart) => { /* ... unchanged ... */ };
-    const getStepStatus = (stepIndex: number): "finish" | "process" | "wait" | "error" => { /* ... unchanged ... */ 
-        if (errorState && currentAppPhase === stepIndex && (
-            (stepIndex === 0 && !isVideoPlaying) ||
-            (stepIndex === 1 && !isProcessingOCR && !tfReady) || 
-            (stepIndex === 1 && !isProcessingOCR && tfReady && !ocrPredictedText && !errorState) || 
-            (stepIndex === 2 && !isTypoCheckingAPILoading && !backendCorrectedSentence && !errorState && ocrPredictedText.length > 0) 
-        )) return "error";
-
-        if (stepIndex < currentAppPhase) return "finish";
-        if (stepIndex === currentAppPhase) {
-            if (stepIndex === 0 && isVideoPlaying) return "process";
-            if (stepIndex === 0 && !isVideoPlaying && !shouldStartOcr) return "finish"; 
-            if (stepIndex === 1 && isProcessingOCR) return "process";
-            if (stepIndex === 1 && !isProcessingOCR && ocrPredictedText && !showMediaElement) return "finish"; 
-            if (stepIndex === 2 && isTypoCheckingAPILoading) return "process";
-            if (stepIndex === 2 && !isTypoCheckingAPILoading && (backendCorrectedSentence || (ocrPredictedText && interactiveOcrParts.length === 0 && !errorState && isShowingTypoHighlights) )) return "finish"; 
-            return "process";
-        }
-        return "wait";
+    const renderPopoverContent = (tokenDetail: DisplayTextPart) => {
+        if (!tokenDetail.predictions) return null;
+        return (
+            <div>
+                {Object.entries(tokenDetail.predictions)
+                    .sort(([, a], [, b]) => (b as number) - (a as number))
+                    .slice(0, 3)
+                    .map(([tag, prob]) => (
+                        <div key={tag}>{`${tag}: ${(prob * 100).toFixed(0)}%`}</div>
+                    ))}
+            </div>
+        );
     };
     
-    const renderStepExtraInfo = () => { /* ... MODIFIED from previous to use currentAppPhase ... */ 
+    const renderStepExtraInfo = () => {
         switch (currentAppPhase) { 
             case 0: 
                  if(isVideoPlaying) return <p>Hello and welcome! The process will begin shortly as the text is "written".</p>;
@@ -541,13 +357,13 @@ function App() {
                          {!showMediaElement && ocrDisplayLines.length > 0 && <p style={{textAlign:'center', color: '#555'}}>Handwriting analysis complete. Moving to typo check.</p>}
                     </div>
                 );
-            case 2: 
+            case 2: {
                 const typosToShow = interactiveOcrParts.filter(p => p.isFlagged && !p.isWhitespace && p.originalToken);
                 if (isTypoCheckingAPILoading) return <div style={{width:'100%', textAlign:'center'}}><Spin tip="Fetching typo details..." /></div>;
                 if (typosToShow.length === 0 && !isTypoCheckingAPILoading) return <p>No typos found by the checker, or correction process complete!</p>;
-                
+
                 const typoRows: DisplayTextPart[][] = [];
-                for (let i = 0; i < typosToShow.length; i += 8) { 
+                for (let i = 0; i < typosToShow.length; i += 8) {
                     typoRows.push(typosToShow.slice(i, i + 8));
                 }
 
@@ -588,6 +404,7 @@ function App() {
                         ))}
                     </div>
                 );
+            }
             default: return null;
         }
     };
@@ -630,7 +447,7 @@ function App() {
                         {ocrDisplayLines.map((line) => ( 
                             <div
                                 key={line.id}
-                                ref={el => ocrDisplayLinesRefs.current.set(line.id, el)} 
+                                ref={el => { ocrDisplayLinesRefs.current.set(line.id, el); }}
                                 className="ocr-overlay-line" 
                                 style={{ 
                                     top: `${line.y}px`, 

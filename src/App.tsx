@@ -5,6 +5,7 @@ import { Switch, Space, Alert, Spin, Popover, Tag }
     from 'antd';
 import './App.css';
 import { log, warn, error } from './utils/logger';
+import OcrOverlay from "./components/OcrOverlay";
 import { findCharacterBoxes } from './ml/processing/segmentation';
 import { preprocessCharacterTensor } from './ml/processing/preprocess';
 import {
@@ -22,7 +23,6 @@ import gsap from 'gsap';
 const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 const PROCESSING_DELAY_MS = 80;
-const TYPO_ANIMATION_DELAY_MS = 60;
 
 const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
 const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
@@ -45,8 +45,6 @@ interface OcrDisplayLine {
 }
 
 const OCR_OVERLAY_FONT_SIZE = 30;
-const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
-const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)'; // Transparent background
 
 const getTagColorForProbability = (probability: number): string => {
     const percent = probability * 100;
@@ -488,46 +486,13 @@ function App() {
         }
         finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); } 
     };
-
-    useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
-        if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
-            const wordSpansToAnimate: HTMLElement[] = [];
-            ocrDisplayLines.forEach(line => {
-                line.parts.forEach(part => {
-                    if (!part.isWhitespace && part.ref?.current) {
-                        wordSpansToAnimate.push(part.ref.current);
-                    }
-                });
-            });
-
-            if (wordSpansToAnimate.length > 0) {
-                // Ensure spans are visible with their base color before animating color
-                gsap.set(wordSpansToAnimate, { 
-                    opacity: 1, // They should already be visible
-                    color: OCR_OVERLAY_TEXT_COLOR_NORMAL, 
-                });
-
-                const tl = gsap.timeline();
-                wordSpansToAnimate.forEach((span) => {
-                    const isIncorrect = span.classList.contains('typo-incorrect');
-                    tl.to(span, { 
-                        color: isIncorrect ? '#dc3545' : '#28a745', // Red for typo, Green for correct
-                        duration: 0.3,
-                        ease: 'power1.inOut'
-                    }, `-=${0.3 - (TYPO_ANIMATION_DELAY_MS / 1000)}`); // Staggered color change
-                });
-            }
-        }
-    }, [isShowingTypoHighlights, ocrDisplayLines]);
-
-
     const renderPopoverContent = (tokenDetail: DisplayTextPart) => { /* ... unchanged ... */ };
-    const getStepStatus = (stepIndex: number): "finish" | "process" | "wait" | "error" => { /* ... unchanged ... */ 
+    const getStepStatus = (stepIndex: number): "finish" | "process" | "wait" | "error" => {
         if (errorState && currentAppPhase === stepIndex && (
             (stepIndex === 0 && !isVideoPlaying) ||
-            (stepIndex === 1 && !isProcessingOCR && !tfReady) || 
-            (stepIndex === 1 && !isProcessingOCR && tfReady && !ocrPredictedText && !errorState) || 
-            (stepIndex === 2 && !isTypoCheckingAPILoading && !backendCorrectedSentence && !errorState && ocrPredictedText.length > 0) 
+            (stepIndex === 1 && !isProcessingOCR && !tfReady) ||
+            (stepIndex === 1 && !isProcessingOCR && tfReady && !ocrPredictedText && !errorState) ||
+            (stepIndex === 2 && !isTypoCheckingAPILoading && !backendCorrectedSentence && !errorState && ocrPredictedText.length > 0)
         )) return "error";
 
         if (stepIndex < currentAppPhase) return "finish";
@@ -634,58 +599,19 @@ function App() {
                 </div>
                 {/* OCR Overlay Text & Highlights - This is now always "active" after video, its content changes */}
                 {!isVideoPlaying && imageDimensions && (
-                    <div className="overlay-container" style={{ 
-                        position: 'absolute', 
-                        top: mediaContainerRef.current ? `${mediaContainerRef.current.offsetTop + 4}px` : '0px', // +4 for padding
-                        left: mediaContainerRef.current ? `${mediaContainerRef.current.offsetLeft + 4}px` : '0px', // +4 for padding
-                        width: imageDimensions.width - 8 + 'px', // Adjust for padding
-                        height: imageDimensions.height - 8 + 'px', // Adjust for padding
-                        pointerEvents: 'none',
-                        overflow: 'hidden' // Ensure text doesn't overflow original media box
-                    }}>
-                        {activeItemIndex && showMediaElement && processableLines[activeItemIndex.line] && processableLines[activeItemIndex.line][activeItemIndex.item] && (() => { /* ... active box during OCR ... */
-                            const item = processableLines[activeItemIndex.line][activeItemIndex.item];
-                            if (item === null) return null;
-                            const box = item as BoundingBoxData;
-                            const scaleX = imageDimensions.width / (imageRef.current?.naturalWidth ?? 1);
-                            const scaleY = imageDimensions.height / (imageRef.current?.naturalHeight ?? 1);
-                            const [x, y, w, h] = box;
-                            return (<div style={{ position: 'absolute', left: `${x * scaleX}px`, top: `${y * scaleY}px`, width: `${w * scaleX}px`, height: `${h * scaleY}px`, border: '2px solid rgba(255, 0, 0, 0.7)', backgroundColor: 'rgba(255, 0, 0, 0.1)', boxSizing: 'border-box' }} />);
-                            })()}
-                        
-                        {ocrDisplayLines.map((line) => ( 
-                            <div
-                                key={line.id}
-                                ref={el => ocrDisplayLinesRefs.current.set(line.id, el)} 
-                                className="ocr-overlay-line" 
-                                style={{ 
-                                    top: `${line.y}px`, 
-                                    left: '0px', 
-                                    fontSize: `${OCR_OVERLAY_FONT_SIZE}px`,
-                                    // Background is transparent if highlights are showing, or default during OCR
-                                    backgroundColor: isShowingTypoHighlights ? 'transparent' : OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR,
-                                }}
-                            >
-                                {(isShowingTypoHighlights && line.parts.length > 0)
-                                    ? line.parts.map(part => (
-                                        part.isWhitespace ? (
-                                            <span key={part.id} style={{whiteSpace: 'pre'}}>{part.text}</span>
-                                        ) : (
-                                            <span
-                                                key={part.id}
-                                                ref={part.ref} 
-                                                className={`typo-highlight-word ${part.isFlagged ? 'typo-incorrect' : 'typo-correct'}`}
-                                                style={{ color: OCR_OVERLAY_TEXT_COLOR_NORMAL }}
-                                            >
-                                                {part.text}
-                                            </span>
-                                        )
-                                    ))
-                                    : <span style={{color: OCR_OVERLAY_TEXT_COLOR_NORMAL}}>{line.textDuringOcr}</span>
-                                }
-                            </div>
-                        ))}
-                    </div>
+                    <OcrOverlay
+                        lines={ocrDisplayLines}
+                        isShowingHighlights={isShowingTypoHighlights}
+                        lineRefs={ocrDisplayLinesRefs}
+                        activeBoxInfo={{
+                            activeItemIndex,
+                            processableLines,
+                            imageDimensions,
+                            imageRef,
+                            showMediaElement,
+                            mediaOffset: mediaContainerRef.current ? { top: mediaContainerRef.current.offsetTop, left: mediaContainerRef.current.offsetLeft } : null
+                        }}
+                    />
                 )}
                  {/* Animated Status Text */}
                 <div className="status-text-container">

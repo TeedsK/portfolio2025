@@ -1,4 +1,6 @@
 // src/App.tsx
+import * as tf from '@tensorflow/tfjs';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Switch, Space, Alert, Spin, Popover, Tag } from 'antd';
 import './App.css';
@@ -6,8 +8,15 @@ import { log, warn, error } from './utils/logger';
 import useTfModel from './hooks/useTfModel';
 import useOcrProcessing from './hooks/useOcrProcessing';
 import {
-    ActivationDataValue, ActivationData, BoundingBoxData,
-    ProcessableLine, TypoCorrectionResponse, TokenTypoDetail, DisplayTextPart
+    ActivationDataValue,
+    ActivationData,
+    ModelWeights,
+    BoundingBoxData,
+    ProcessableLine,
+    DisplayTextPart,
+    OcrDisplayLine,
+    TypoCorrectionResponse,
+    TokenTypoDetail
 } from './types';
 import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
 import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
@@ -16,7 +25,19 @@ import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFi
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
 import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
+import { useTypoCorrection } from './hooks/useTypoCorrection';
 
+// --- Constants ---
+const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
+const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
+const PROCESSING_DELAY_MS = 80;
+const TYPO_ANIMATION_DELAY_MS = 60;
+
+const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
+const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
+const FINAL_LAYER_NAME = 'dense_1';
+const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
+=======
 import {
     EMNIST_MODEL_URL,
     EMNIST_CHARS,
@@ -34,20 +55,6 @@ import {
     getTagColorForProbability,
 } from './constants';
 
-interface OcrDisplayLinePart {
-    id: string;
-    text: string;
-    isWhitespace: boolean;
-    isFlagged?: boolean;
-    ref: React.RefObject<HTMLSpanElement>; // Ensure ref is always created and typed
-}
-interface OcrDisplayLine {
-    id: string;
-    textDuringOcr: string;
-    parts: OcrDisplayLinePart[];
-    y: number;
-}
-
 function App() {
     const [currentActivations, setCurrentActivations] = useState<ActivationData | null>(null);
     const [currentSoftmaxProbs, setCurrentSoftmaxProbs] = useState<number[] | null>(null);
@@ -63,9 +70,6 @@ function App() {
     const [showActivations, setShowActivations] = useState<boolean>(false);
     const [showSoftmax, setShowSoftmax] = useState<boolean>(false);
     const [showNetworkGraph, setShowNetworkGraph] = useState<boolean>(true);
-    const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
-    const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
-    const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
     const [shouldStartOcr, setShouldStartOcr] = useState<boolean>(false);
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
@@ -174,11 +178,19 @@ function App() {
         }
 
         setCurrentAppPhase(1);
+        setIsProcessingOCR(true);
+        setShowMediaElement(true);
+        setOcrPredictedText('');
+        resetTypoData();
+        setProcessableLines([]); 
+        setActiveItemIndex(null); 
+        setOcrDisplayLines([]);
         setShowMediaElement(true);
         setInteractiveOcrParts([]);
         setBackendCorrectedSentence('');
         setIsShowingTypoHighlights(false);
         ocrDisplayLinesRefs.current.clear();
+
 
         const rawText = await startOcr(imageDimensions);
 
@@ -326,9 +338,21 @@ function App() {
     }, [isShowingTypoHighlights, ocrDisplayLines]);
 
 
-    const renderPopoverContent = () => { /* ... unchanged ... */ };
+    const renderPopoverContent = (tokenDetail: DisplayTextPart) => {
+        if (!tokenDetail.predictions) return null;
+        return (
+            <div>
+                {Object.entries(tokenDetail.predictions)
+                    .sort(([, a], [, b]) => (b as number) - (a as number))
+                    .slice(0, 3)
+                    .map(([tag, prob]) => (
+                        <div key={tag}>{`${tag}: ${(prob * 100).toFixed(0)}%`}</div>
+                    ))}
+            </div>
+        );
+    };
     
-    const renderStepExtraInfo = () => { /* ... MODIFIED from previous to use currentAppPhase ... */ 
+    const renderStepExtraInfo = () => {
         switch (currentAppPhase) { 
             case 0: 
                  if(isVideoPlaying) return <p>Hello and welcome! The process will begin shortly as the text is "written".</p>;
@@ -442,7 +466,7 @@ function App() {
                         {ocrDisplayLines.map((line) => ( 
                             <div
                                 key={line.id}
-                                ref={el => ocrDisplayLinesRefs.current.set(line.id, el)} 
+                                ref={el => { ocrDisplayLinesRefs.current.set(line.id, el); }}
                                 className="ocr-overlay-line" 
                                 style={{ 
                                     top: `${line.y}px`, 

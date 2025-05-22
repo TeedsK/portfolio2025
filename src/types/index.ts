@@ -1,4 +1,5 @@
 // src/types/index.ts
+import React from 'react';
 
 /**
  * Type for activation data extracted from tensors.
@@ -82,4 +83,26 @@ export interface DisplayTextPart {
     originalToken?: string; // The original token if different from displayed text or if flagged
     predictions?: TagProbabilities; // Predictions to show in the popover
     predictedTag?: string; // The primary predicted tag for this token
+}
+
+/**
+ * Represents a segment of OCR text for overlay display.
+ * Includes highlighting information and a span ref for animations.
+ */
+export interface OcrDisplayLinePart {
+    id: string;
+    text: string;
+    isWhitespace: boolean;
+    isFlagged?: boolean;
+    ref: React.RefObject<HTMLSpanElement>;
+}
+
+/**
+ * Represents a single line of OCR text shown on the image overlay.
+ */
+export interface OcrDisplayLine {
+    id: string;
+    textDuringOcr: string;
+    parts: OcrDisplayLinePart[];
+    y: number;
 }

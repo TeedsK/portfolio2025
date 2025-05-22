@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { Switch, Space, Alert, Spin, Popover, Tag }
     from 'antd';
@@ -8,8 +8,13 @@ import { log, warn, error } from './utils/logger';
 import { findCharacterBoxes } from './ml/processing/segmentation';
 import { preprocessCharacterTensor } from './ml/processing/preprocess';
 import {
-    ActivationDataValue, ActivationData, ModelWeights, BoundingBoxData,
-    ProcessableLine, TypoCorrectionResponse, TokenTypoDetail, DisplayTextPart
+    ActivationDataValue,
+    ActivationData,
+    ModelWeights,
+    BoundingBoxData,
+    ProcessableLine,
+    DisplayTextPart,
+    OcrDisplayLine,
 } from './types';
 import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
 import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
@@ -17,6 +22,7 @@ import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
 import gsap from 'gsap';
+import { useTypoCorrection } from './hooks/useTypoCorrection';
 
 // --- Constants ---
 const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
@@ -27,22 +33,8 @@ const TYPO_ANIMATION_DELAY_MS = 60;
 const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
 const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
 const FINAL_LAYER_NAME = 'dense_1';
-const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
 const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
 
-interface OcrDisplayLinePart {
-    id: string;
-    text: string;
-    isWhitespace: boolean;
-    isFlagged?: boolean;
-    ref: React.RefObject<HTMLSpanElement>; // Ensure ref is always created and typed
-}
-interface OcrDisplayLine {
-    id: string;
-    textDuringOcr: string;
-    parts: OcrDisplayLinePart[];
-    y: number;
-}
 
 const OCR_OVERLAY_FONT_SIZE = 30;
 const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
@@ -85,9 +77,6 @@ function App() {
     const [showActivations, setShowActivations] = useState<boolean>(false);
     const [showSoftmax, setShowSoftmax] = useState<boolean>(false);
     const [showNetworkGraph, setShowNetworkGraph] = useState<boolean>(true);
-    const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
-    const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
-    const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
     const [ocrDisplayLines, setOcrDisplayLines] = useState<OcrDisplayLine[]>([]);
     const [shouldStartOcr, setShouldStartOcr] = useState<boolean>(false);
@@ -101,6 +90,19 @@ function App() {
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useRef<HTMLSpanElement>(null);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
+
+    const {
+        interactiveOcrParts,
+        backendCorrectedSentence,
+        isTypoCheckingAPILoading,
+        resetTypoData,
+        triggerTypoCorrection,
+    } = useTypoCorrection({
+        setOcrDisplayLines,
+        setIsShowingTypoHighlights,
+        setCurrentAppPhase,
+        setErrorState,
+    });
 
     useEffect(() => { /* ... TFJS and Model Loading ... */
         log('App component mounted. Initializing TFJS and loading EMNIST Letters model...');
@@ -245,8 +247,9 @@ function App() {
 
         setCurrentAppPhase(1);
         setIsProcessingOCR(true);
-        setShowMediaElement(true); 
-        setOcrPredictedText(''); setInteractiveOcrParts([]);setBackendCorrectedSentence('');
+        setShowMediaElement(true);
+        setOcrPredictedText('');
+        resetTypoData();
         setProcessableLines([]); setActiveItemIndex(null); setOcrDisplayLines([]);
         setIsShowingTypoHighlights(false);
         setCurrentActivations(null); setCurrentSoftmaxProbs(null); setCurrentCharVisData(null);
@@ -373,16 +376,15 @@ function App() {
             
             // Start media fade out, then proceed to typo check
             if (mediaContainerRef.current) {
-                gsap.to(mediaContainerRef.current, { 
-                    opacity: 0, 
-                    duration: 0.5, 
-                    onComplete: async () => {
+                gsap.to(mediaContainerRef.current, {
+                    opacity: 0,
+                    duration: 0.5,
+                    onComplete: () => {
                         setShowMediaElement(false);
                         setCurrentAppPhase(2);
                         if (rawOcrOutputAccumulator.trim().length > 0) {
-                            await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
-                        } else { 
-                            setInteractiveOcrParts([]); setBackendCorrectedSentence(''); 
+                            triggerTypoCorrection(rawOcrOutputAccumulator, ocrDisplayLines);
+                        } else {
                             setCurrentAppPhase(2); // Still move to typo phase completion
                         }
                     }
@@ -391,103 +393,13 @@ function App() {
                  setShowMediaElement(false);
                  setCurrentAppPhase(2);
                  if (rawOcrOutputAccumulator.trim().length > 0) {
-                    await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
+                    await triggerTypoCorrection(rawOcrOutputAccumulator, ocrDisplayLines);
                  }
             }
         } catch (errLoop) { setErrorState(`OCR Loop Error: ${errLoop instanceof Error ? errLoop.message : String(errLoop)}`);}
         finally { setIsProcessingOCR(false); setActiveItemIndex(null); }
     };
     
-    const handleTypoCorrectionAPI = async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
-        if (!textToCorrect.trim()) { return; }
-        log('Sending to typo correction API:', textToCorrect);
-        setIsTypoCheckingAPILoading(true);
-        setErrorState(null); setInteractiveOcrParts([]); setBackendCorrectedSentence('');
-
-        try {
-            const response = await fetch(TYPO_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sentence: textToCorrect, top_k: 3 }), });
-            if (!response.ok) { const errData = await response.json().catch(() => ({ message: "Unknown API error" })); throw new Error(`API Error (${response.status}): ${errData.error || errData.message}`);}
-            const result = await response.json() as TypoCorrectionResponse;
-            log('Typo API response:', result);
-            setBackendCorrectedSentence(result.corrected_sentence);
-
-            // For Popovers (using result.original_sentence for token alignment)
-            const popoverInteractiveParts: DisplayTextPart[] = [];
-            const originalWordsAndSpacesForPopover = result.original_sentence.split(/(\s+)/);
-            let currentTokenDetailSearchIndex = 0; 
-            originalWordsAndSpacesForPopover.forEach(part => {
-                if (part.match(/^\s+$/) || part === '') { popoverInteractiveParts.push({ text: part, isWhitespace: true, isFlagged: false }); }
-                else {
-                    let detail: TokenTypoDetail | undefined;
-                    // Ensure we find the correct token, even if words repeat, by searching from last found index
-                    for(let i = currentTokenDetailSearchIndex; i < result.token_details.length; i++) {
-                        if (result.token_details[i].token === part) { 
-                            detail = result.token_details[i]; 
-                            currentTokenDetailSearchIndex = i + 1; // Next search starts after this one
-                            break; 
-                        }
-                    }
-                    if (detail) { popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: detail.pred_tag !== 'KEEP', originalToken: part, predictions: detail.top_probs, predictedTag: detail.pred_tag, });}
-                    else { warn(`Popover: Word "${part}" not found or already matched in token_details.`); popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: false }); }
-                }
-            });
-            setInteractiveOcrParts(popoverInteractiveParts);
-
-
-            // --- Transform ocrDisplayLines to use parts for highlighting ---
-            // Use the existing ocrDisplayLines (which have correct Y positions and IDs)
-            // and populate their 'parts' array based on the typo API result.
-            const linesFromApiSentence = result.original_sentence.split('\n');
-            let globalTokenIndex = 0; // To iterate through result.token_details sequentially
-
-            const updatedOcrDisplayLines = ocrDisplayLines.map((existingLine, lineIdx) => {
-                const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; // Text for this line from API
-                const newParts: OcrDisplayLinePart[] = [];
-                let partIdCounter = 0;
-
-                // Split the line text by words and spaces to create parts
-                const wordsAndSpacesOnLine = lineTextFromApi.split(/(\s+)/).filter(p => p.length > 0);
-
-                wordsAndSpacesOnLine.forEach(textSegment => {
-                    const partId = `${existingLine.id}-part-${partIdCounter++}`;
-                    if (textSegment.match(/^\s+$/)) { // It's whitespace
-                        newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef() });
-                    } else { // It's a word
-                        let isFlagged = false;
-                        // Match this word with the token_details from the API
-                        // This assumes token_details are in order of appearance in original_sentence
-                        if (globalTokenIndex < result.token_details.length && result.token_details[globalTokenIndex].token === textSegment) {
-                            isFlagged = result.token_details[globalTokenIndex].pred_tag !== 'KEEP';
-                            globalTokenIndex++;
-                        } else {
-                            // Fallback or warning if alignment is off
-                            warn(`Highlighting token mismatch: OCR'd word "${textSegment}" vs API token "${result.token_details[globalTokenIndex]?.token}" on line ${lineIdx}. Defaulting to not flagged.`);
-                            // Try a more resilient find for popover data as a backup for flagging status
-                            const popoverMatch = popoverInteractiveParts.find(pip => pip.text === textSegment && !pip.isWhitespace);
-                            if (popoverMatch) isFlagged = popoverMatch.isFlagged;
-                        }
-                        newParts.push({ id: partId, text: textSegment, isWhitespace: false, isFlagged, ref: React.createRef() });
-                    }
-                });
-                return { ...existingLine, parts: newParts, textDuringOcr: lineTextFromApi /* Update to match API */ };
-            });
-
-            setOcrDisplayLines(updatedOcrDisplayLines);
-            setIsShowingTypoHighlights(true);
-
-        } catch (errApi) { 
-            error('Typo correction API call failed:', errApi); 
-            setErrorState(`Typo API Error: ${errApi instanceof Error ? errApi.message : String(errApi)}`); 
-            // Fallback to simple parts if API fails, no highlighting info
-            setOcrDisplayLines(prevLines => prevLines.map(line => ({
-                ...line,
-                parts: line.textDuringOcr.split(/(\s+)/).filter(p=>p.length>0).map((p,idx) => ({id: `${line.id}-part-${idx}`, text: p, isWhitespace: p.match(/^\s+$/) !== null, isFlagged: false, ref: React.createRef() }))
-            })));
-            setBackendCorrectedSentence(textToCorrect); 
-            setIsShowingTypoHighlights(true); // Still show text, but unhighlighted
-        }
-        finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); } 
-    };
 
     useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
@@ -521,30 +433,21 @@ function App() {
     }, [isShowingTypoHighlights, ocrDisplayLines]);
 
 
-    const renderPopoverContent = (tokenDetail: DisplayTextPart) => { /* ... unchanged ... */ };
-    const getStepStatus = (stepIndex: number): "finish" | "process" | "wait" | "error" => { /* ... unchanged ... */ 
-        if (errorState && currentAppPhase === stepIndex && (
-            (stepIndex === 0 && !isVideoPlaying) ||
-            (stepIndex === 1 && !isProcessingOCR && !tfReady) || 
-            (stepIndex === 1 && !isProcessingOCR && tfReady && !ocrPredictedText && !errorState) || 
-            (stepIndex === 2 && !isTypoCheckingAPILoading && !backendCorrectedSentence && !errorState && ocrPredictedText.length > 0) 
-        )) return "error";
-
-        if (stepIndex < currentAppPhase) return "finish";
-        if (stepIndex === currentAppPhase) {
-            if (stepIndex === 0 && isVideoPlaying) return "process";
-            if (stepIndex === 0 && !isVideoPlaying && !shouldStartOcr) return "finish"; 
-            if (stepIndex === 1 && isProcessingOCR) return "process";
-            if (stepIndex === 1 && !isProcessingOCR && ocrPredictedText && !showMediaElement) return "finish"; 
-            if (stepIndex === 2 && isTypoCheckingAPILoading) return "process";
-            if (stepIndex === 2 && !isTypoCheckingAPILoading && (backendCorrectedSentence || (ocrPredictedText && interactiveOcrParts.length === 0 && !errorState && isShowingTypoHighlights) )) return "finish"; 
-            return "process";
-        }
-        return "wait";
+    const renderPopoverContent = (tokenDetail: DisplayTextPart) => {
+        if (!tokenDetail.predictions) return null;
+        return (
+            <div>
+                {Object.entries(tokenDetail.predictions)
+                    .sort(([, a], [, b]) => (b as number) - (a as number))
+                    .slice(0, 3)
+                    .map(([tag, prob]) => (
+                        <div key={tag}>{`${tag}: ${(prob * 100).toFixed(0)}%`}</div>
+                    ))}
+            </div>
+        );
     };
-    
-    const renderStepExtraInfo = () => { /* ... MODIFIED from previous to use currentAppPhase ... */ 
-        switch (currentAppPhase) { 
+    const renderStepExtraInfo = () => {
+        switch (currentAppPhase) {
             case 0: 
                  if(isVideoPlaying) return <p>Hello and welcome! The process will begin shortly as the text is "written".</p>;
                  return <p>Text writing animation finished. Preparing for OCR...</p>;
@@ -567,13 +470,13 @@ function App() {
                          {!showMediaElement && ocrDisplayLines.length > 0 && <p style={{textAlign:'center', color: '#555'}}>Handwriting analysis complete. Moving to typo check.</p>}
                     </div>
                 );
-            case 2: 
+            case 2: {
                 const typosToShow = interactiveOcrParts.filter(p => p.isFlagged && !p.isWhitespace && p.originalToken);
                 if (isTypoCheckingAPILoading) return <div style={{width:'100%', textAlign:'center'}}><Spin tip="Fetching typo details..." /></div>;
                 if (typosToShow.length === 0 && !isTypoCheckingAPILoading) return <p>No typos found by the checker, or correction process complete!</p>;
-                
+
                 const typoRows: DisplayTextPart[][] = [];
-                for (let i = 0; i < typosToShow.length; i += 8) { 
+                for (let i = 0; i < typosToShow.length; i += 8) {
                     typoRows.push(typosToShow.slice(i, i + 8));
                 }
 
@@ -614,6 +517,7 @@ function App() {
                         ))}
                     </div>
                 );
+            }
             default: return null;
         }
     };
@@ -656,7 +560,7 @@ function App() {
                         {ocrDisplayLines.map((line) => ( 
                             <div
                                 key={line.id}
-                                ref={el => ocrDisplayLinesRefs.current.set(line.id, el)} 
+                                ref={el => { ocrDisplayLinesRefs.current.set(line.id, el); }}
                                 className="ocr-overlay-line" 
                                 style={{ 
                                     top: `${line.y}px`, 

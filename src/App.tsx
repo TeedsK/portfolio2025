@@ -25,6 +25,7 @@ import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFi
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
 import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
+import useStatusText, { STATUS_TEXTS } from "./hooks/useStatusText";
 import { useTypoCorrection } from './hooks/useTypoCorrection';
 
 // --- Constants ---
@@ -37,7 +38,7 @@ const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pool
 const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
 const FINAL_LAYER_NAME = 'dense_1';
 const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
-=======
+
 import {
     EMNIST_MODEL_URL,
     EMNIST_CHARS,
@@ -79,7 +80,7 @@ function App() {
     const imageRef = useRef<HTMLImageElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-    const statusTextRef = useRef<HTMLSpanElement>(null);
+    const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
     const {
@@ -132,29 +133,9 @@ function App() {
                 }
             };
         }
-     }, [isVideoPlaying]);
-
-    useEffect(() => { // Animate status text
-        if (statusTextRef.current) {
-            const newText = STATUS_TEXTS[currentAppPhase] || STATUS_TEXTS[0];
-            const currentText = statusTextRef.current.textContent;
-            const tl = gsap.timeline();
-
-            if (currentText !== "" && currentText !== newText) {
-                tl.to(statusTextRef.current, { y: -20, opacity: 0, duration: 0.3, ease: 'power1.in' });
-            }
-            
-            tl.add(() => { // Use .add for guaranteed execution order after potential fade out
-                if (statusTextRef.current) {
-                    statusTextRef.current.textContent = newText;
-                }
-            })
-            .set(statusTextRef.current, { y: 20, opacity: 0 }) // Set initial state for new text
-            .to(statusTextRef.current, { y: 0, opacity: 1, duration: 0.4, ease: 'power1.out' });
-        }
-    }, [currentAppPhase]);
 
 
+    }, [isVideoPlaying]);
     const handleVideoEnd = () => {
         log('Video ended. Switching to image and queueing OCR.');
         setIsVideoPlaying(false);

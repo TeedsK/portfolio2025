@@ -8,7 +8,7 @@ import { log, warn, error } from './utils/logger';
 import { findCharacterBoxes } from './ml/processing/segmentation';
 import { preprocessCharacterTensor } from './ml/processing/preprocess';
 import {
-    ActivationDataValue, ActivationData, ModelWeights, BoundingBoxData,
+    ActivationDataValue, ActivationData, BoundingBoxData,
     ProcessableLine, TypoCorrectionResponse, TokenTypoDetail, DisplayTextPart
 } from './types';
 import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
@@ -16,6 +16,7 @@ import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
+import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
 
 // --- Constants ---
@@ -65,17 +66,12 @@ const STATUS_TEXTS = [
 ];
 
 function App() {
-    const [model, setModel] = useState<tf.LayersModel | null>(null);
-    const [visModel, setVisModel] = useState<tf.LayersModel | null>(null);
-    const [modelWeights, setModelWeights] = useState<ModelWeights | null>(null);
     const [currentActivations, setCurrentActivations] = useState<ActivationData | null>(null);
     const [currentSoftmaxProbs, setCurrentSoftmaxProbs] = useState<number[] | null>(null);
     const [currentCharVisData, setCurrentCharVisData] = useState<ImageData | null>(null);
     const [networkGraphColor, setNetworkGraphColor] = useState<string>(ANIMATION_COLOR_PALETTE[0]);
     const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
-    const [isLoadingModel, setIsLoadingModel] = useState<boolean>(true);
     const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
-    const [tfReady, setTfReady] = useState<boolean>(false);
     const [errorState, setErrorState] = useState<string | null>(null);
     const [activeItemIndex, setActiveItemIndex] = useState<{ line: number, item: number } | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -102,66 +98,21 @@ function App() {
     const statusTextRef = useRef<HTMLSpanElement>(null);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => { /* ... TFJS and Model Loading ... */
-        log('App component mounted. Initializing TFJS and loading EMNIST Letters model...');
-        setErrorState(null); setIsLoadingModel(true); setModel(null); setVisModel(null); setModelWeights(null);
+    const {
+        model,
+        visModel,
+        weights: modelWeights,
+        isLoading: isLoadingModel,
+        tfReady,
+        error: modelLoadError,
+    } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
-        async function initializeTFAndLoadModel() {
-            try {
-                await tf.ready();
-                const backend = tf.getBackend();
-                log(`TFJS Ready. Using backend: ${backend}`); setTfReady(true);
-
-                log(`Loading EMNIST Letters model from: ${EMNIST_MODEL_URL}`);
-                const loadedModel = await tf.loadLayersModel(EMNIST_MODEL_URL);
-                setModel(loadedModel); log('EMNIST Letters Model loaded successfully.');
-
-                log('Creating visualization model...');
-                const outputLayers = ACTIVATION_LAYER_NAMES.map(name => {
-                    try { return loadedModel.getLayer(name).output; }
-                    catch (e) { error(`Layer not found: ${name}`, e); return null; }
-                }).filter(output => output !== null) as tf.SymbolicTensor[];
-
-                if (outputLayers.length !== ACTIVATION_LAYER_NAMES.length) {
-                    throw new Error("Could not find all specified layers for visualization model.");
-                }
-                const visualizationModel = tf.model({ inputs: loadedModel.input, outputs: outputLayers });
-                setVisModel(visualizationModel); log('Visualization model created.');
-
-                log('Extracting model weights...');
-                const weightsData: ModelWeights = {};
-                for (const name of CONV_LAYER_WEIGHT_NAMES) {
-                    try {
-                        const layer = loadedModel.getLayer(name);
-                        const layerWeights = layer.getWeights();
-                        if (layerWeights.length >= 2) {
-                            const kernelData = layerWeights[0].arraySync() as number[][][][];
-                            const biasData = layerWeights[1].arraySync() as number[];
-                            weightsData[name] = { kernel: kernelData, bias: biasData };
-                        } else if (layerWeights.length === 1) {
-                            const kernelData = layerWeights[0].arraySync() as number[][][][];
-                            weightsData[name] = { kernel: kernelData, bias: [] };
-                        }
-                        log(`Extracted weights for layer: ${name}`);
-                    } catch (e) { error(`Failed to get weights for layer: ${name}`, e); }
-                }
-                setModelWeights(weightsData); log('Model weights extracted.');
-                setIsLoadingModel(false); log('TFJS initialization and model/weights/visModel loading complete.');
-
-            } catch (errRes) {
-                error('Failed during TFJS init, model load, or vis setup', errRes);
-                setErrorState(`Setup failed: ${errRes instanceof Error ? errRes.message : String(errRes)}`);
-                setIsLoadingModel(false); setTfReady(false); setModel(null); setVisModel(null); setModelWeights(null);
-            }
+    useEffect(() => {
+        if (modelLoadError) {
+            setErrorState(modelLoadError);
         }
-        initializeTFAndLoadModel();
-        return () => {
-            log('App component unmounting.');
-            visModel?.dispose(); model?.dispose();
-            setModel(null); setVisModel(null); setModelWeights(null);
-            log('Model states cleared and models disposed.');
-        };
-     }, []);
+    }, [modelLoadError]);
+
     useEffect(() => { /* ... Image Dimension Loading ... */
         const imgElement = imageRef.current;
         if (imgElement && !isVideoPlaying) {

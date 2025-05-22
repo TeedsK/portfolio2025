@@ -17,6 +17,7 @@ import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
 import gsap from 'gsap';
+import useStatusText, { STATUS_TEXTS } from "./hooks/useStatusText";
 
 // --- Constants ---
 const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
@@ -57,13 +58,6 @@ const getTagColorForProbability = (probability: number): string => {
     if (percent > 0) return "red";
     return "default";
 };
-
-const STATUS_TEXTS = [
-    "Writing text...",
-    "Predicting handwriting...",
-    "Checking typos..."
-];
-
 function App() {
     const [model, setModel] = useState<tf.LayersModel | null>(null);
     const [visModel, setVisModel] = useState<tf.LayersModel | null>(null);
@@ -99,11 +93,11 @@ function App() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const ocrCharacterCountRef = useRef<number>(0);
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-    const statusTextRef = useRef<HTMLSpanElement>(null);
+    const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { /* ... TFJS and Model Loading ... */
-        log('App component mounted. Initializing TFJS and loading EMNIST Letters model...');
+        log("App component mounted. Initializing TFJS and loading EMNIST Letters model...");
         setErrorState(null); setIsLoadingModel(true); setModel(null); setVisModel(null); setModelWeights(null);
 
         async function initializeTFAndLoadModel() {
@@ -197,29 +191,9 @@ function App() {
                 }
             };
         }
-     }, [isVideoPlaying]);
-
-    useEffect(() => { // Animate status text
-        if (statusTextRef.current) {
-            const newText = STATUS_TEXTS[currentAppPhase] || STATUS_TEXTS[0];
-            const currentText = statusTextRef.current.textContent;
-            const tl = gsap.timeline();
-
-            if (currentText !== "" && currentText !== newText) {
-                tl.to(statusTextRef.current, { y: -20, opacity: 0, duration: 0.3, ease: 'power1.in' });
-            }
-            
-            tl.add(() => { // Use .add for guaranteed execution order after potential fade out
-                if (statusTextRef.current) {
-                    statusTextRef.current.textContent = newText;
-                }
-            })
-            .set(statusTextRef.current, { y: 20, opacity: 0 }) // Set initial state for new text
-            .to(statusTextRef.current, { y: 0, opacity: 1, duration: 0.4, ease: 'power1.out' });
-        }
-    }, [currentAppPhase]);
 
 
+    }, [isVideoPlaying]);
     const handleVideoEnd = () => {
         log('Video ended. Switching to image and queueing OCR.');
         setIsVideoPlaying(false);

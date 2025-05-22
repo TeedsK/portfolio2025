@@ -6,16 +6,15 @@ import { log, warn, error } from './utils/logger';
 import useTfModel from './hooks/useTfModel';
 import useOcrProcessing from './hooks/useOcrProcessing';
 import {
-    BoundingBoxData,
-    TypoCorrectionResponse,
-    TokenTypoDetail,
-    DisplayTextPart
+    ActivationDataValue, ActivationData, BoundingBoxData,
+    ProcessableLine, TypoCorrectionResponse, TokenTypoDetail, DisplayTextPart
 } from './types';
 import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
 import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
+import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
 
 import {
@@ -50,6 +49,13 @@ interface OcrDisplayLine {
 }
 
 function App() {
+    const [currentActivations, setCurrentActivations] = useState<ActivationData | null>(null);
+    const [currentSoftmaxProbs, setCurrentSoftmaxProbs] = useState<number[] | null>(null);
+    const [currentCharVisData, setCurrentCharVisData] = useState<ImageData | null>(null);
+    const [networkGraphColor, setNetworkGraphColor] = useState<string>(ANIMATION_COLOR_PALETTE[0]);
+    const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
+    const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
+
     const [errorState, setErrorState] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
     const [showConvFilters, setShowConvFilters] = useState<boolean>(false);
@@ -72,24 +78,21 @@ function App() {
     const statusTextRef = useRef<HTMLSpanElement>(null);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
-    const { modelWeights, tfReady, isLoadingModel, errorState: modelError } = useTfModel();
     const {
-        startOcr,
-        isProcessingOCR,
-        processableLines,
-        activeItemIndex,
-        currentActivations,
-        currentSoftmaxProbs,
-        currentCharVisData,
-        ocrDisplayLines,
-        setOcrDisplayLines,
-        ocrPredictedText,
-        networkGraphColor,
-    } = useOcrProcessing({ imageRef });
+        model,
+        visModel,
+        weights: modelWeights,
+        isLoading: isLoadingModel,
+        tfReady,
+        error: modelLoadError,
+    } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
     useEffect(() => {
-        if (modelError) setErrorState(modelError);
-    }, [modelError]);
+        if (modelLoadError) {
+            setErrorState(modelLoadError);
+        }
+    }, [modelLoadError]);
+
     useEffect(() => { /* ... Image Dimension Loading ... */
         const imgElement = imageRef.current;
         if (imgElement && !isVideoPlaying) {

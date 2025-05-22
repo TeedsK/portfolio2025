@@ -17,18 +17,22 @@ import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
 import gsap from 'gsap';
-
-// --- Constants ---
-const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
-const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
-const PROCESSING_DELAY_MS = 80;
-const TYPO_ANIMATION_DELAY_MS = 60;
-
-const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
-const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
-const FINAL_LAYER_NAME = 'dense_1';
-const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
-const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
+import {
+    EMNIST_MODEL_URL,
+    EMNIST_CHARS,
+    PROCESSING_DELAY_MS,
+    TYPO_ANIMATION_DELAY_MS,
+    ACTIVATION_LAYER_NAMES,
+    CONV_LAYER_WEIGHT_NAMES,
+    FINAL_LAYER_NAME,
+    TYPO_API_URL,
+    ANIMATION_COLOR_PALETTE,
+    OCR_OVERLAY_FONT_SIZE,
+    OCR_OVERLAY_TEXT_COLOR_NORMAL,
+    OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR,
+    STATUS_TEXTS,
+    getTagColorForProbability,
+} from './constants';
 
 interface OcrDisplayLinePart {
     id: string;
@@ -43,26 +47,6 @@ interface OcrDisplayLine {
     parts: OcrDisplayLinePart[];
     y: number;
 }
-
-const OCR_OVERLAY_FONT_SIZE = 30;
-const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
-const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)'; // Transparent background
-
-const getTagColorForProbability = (probability: number): string => {
-    const percent = probability * 100;
-    if (percent > 80) return "green";
-    if (percent > 60) return "gold";
-    if (percent > 40) return "orange";
-    if (percent > 20) return "volcano";
-    if (percent > 0) return "red";
-    return "default";
-};
-
-const STATUS_TEXTS = [
-    "Writing text...",
-    "Predicting handwriting...",
-    "Checking typos..."
-];
 
 function App() {
     const [model, setModel] = useState<tf.LayersModel | null>(null);

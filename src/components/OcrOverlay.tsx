@@ -92,7 +92,8 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         width: imageDimensions.width - 8 + 'px',
         height: imageDimensions.height - 8 + 'px',
         pointerEvents: 'none',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        zIndex: 3
     };
 
     const renderActiveBox = () => {

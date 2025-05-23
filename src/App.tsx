@@ -48,16 +48,9 @@ function App() {
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
-    const hasStartedAutoOcr = useRef<boolean>(false);
-
     const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
-
-    const resetTypoData = () => {
-        setInteractiveOcrParts([]);
-        setBackendCorrectedSentence('');
-    };
 
 
     const imageRef = useRef<HTMLImageElement | null>(null);
@@ -229,18 +222,22 @@ function App() {
     useEffect(() => {
         if (shouldStartOcr && imageDimensions && imageRef.current?.complete && !isProcessingOCR) {
             log('Auto-starting OCR process.');
-            resetTypoData();
             setCurrentAppPhase(1);
-            startOcr(imageDimensions).catch(() => {/* swallow */});
-            setShouldStartOcr(false);
+            startOcr(imageDimensions)
+                .then(raw => {
+                    if (raw.trim().length > 0) {
+                        handleTypoCorrectionAPI(raw).catch(() => {});
+                    } else {
+                        setCurrentAppPhase(2);
+                    }
+                })
+                .catch(() => {})
+                .finally(() => {
+                    setShouldStartOcr(false);
+                });
         }
-    }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr]);
+    }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr, handleTypoCorrectionAPI]);
 
-    useEffect(() => {
-        if (!isProcessingOCR && ocrPredictedText && currentAppPhase === 1) {
-            handleTypoCorrectionAPI(ocrPredictedText).catch(() => {});
-        }
-    }, [isProcessingOCR, ocrPredictedText, currentAppPhase, handleTypoCorrectionAPI]);
 
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {

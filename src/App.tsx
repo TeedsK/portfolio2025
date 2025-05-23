@@ -238,6 +238,7 @@ function App() {
         }
     }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr, handleTypoCorrectionAPI]);
 
+
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {
             const timer = setTimeout(() => {

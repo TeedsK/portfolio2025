@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Switch, Space, Alert, Spin, Popover, Tag } from 'antd';
 import './App.css';
 import { log, warn, error } from './utils/logger';

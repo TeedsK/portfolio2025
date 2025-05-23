@@ -7,6 +7,7 @@ import OcrOverlay from "./components/OcrOverlay";
 
 
 import { useTfModel } from './hooks/useTfModel';
+import useOcrProcessing from './hooks/useOcrProcessing';
 
 import {
     DisplayTextPart,
@@ -33,8 +34,6 @@ import {
 } from './constants';
 
 function App() {
-    const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
-    const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
 
     const [errorState, setErrorState] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -47,10 +46,7 @@ function App() {
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement, setShowMediaElement] = useState<boolean>(true);
 
-    const [processableLines, setProcessableLines] = useState<any[]>([]);
-    const [activeItemIndex, setActiveItemIndex] = useState<any>(null);
-    const [ocrDisplayLines, setOcrDisplayLines] = useState<any[]>([]);
-    const [interactiveOcrParts, setInteractiveOcrParts] = useState<any[]>([]);
+    const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
 
@@ -59,14 +55,18 @@ function App() {
         setBackendCorrectedSentence('');
     };
 
-    const startOcr = async (): Promise<string> => {
-        // Placeholder for OCR processing logic
-        setIsProcessingOCR(false);
-        return '';
-    };
 
     const imageRef = useRef<HTMLImageElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const {
+        startOcr,
+        isProcessingOCR,
+        processableLines,
+        activeItemIndex,
+        ocrDisplayLines,
+        setOcrDisplayLines,
+        ocrPredictedText,
+    } = useOcrProcessing({ imageRef });
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
@@ -137,13 +137,8 @@ function App() {
         }
 
         setCurrentAppPhase(1);
-        setIsProcessingOCR(true);
         setShowMediaElement(true);
-        setOcrPredictedText('');
         resetTypoData();
-        setProcessableLines([]); 
-        setActiveItemIndex(null); 
-        setOcrDisplayLines([]);
         setShowMediaElement(true);
         setInteractiveOcrParts([]);
         setBackendCorrectedSentence('');
@@ -151,7 +146,7 @@ function App() {
         ocrDisplayLinesRefs.current.clear();
 
 
-        const rawText = await startOcr();
+        const rawText = await startOcr(imageDimensions!);
 
         if (mediaContainerRef.current) {
             gsap.to(mediaContainerRef.current, {
@@ -172,7 +167,7 @@ function App() {
                 await handleTypoCorrectionAPI(rawText);
             }
         }
-    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel]);
+    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel, startOcr, handleTypoCorrectionAPI]);
 
     useEffect(() => { // Auto-trigger OCR
         if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
@@ -182,7 +177,7 @@ function App() {
         }
     }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
     
-    const handleTypoCorrectionAPI = async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
+    const handleTypoCorrectionAPI = useCallback(async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
         if (!textToCorrect.trim()) { return; }
         log('Sending to typo correction API:', textToCorrect);
         setIsTypoCheckingAPILoading(true);
@@ -271,7 +266,7 @@ function App() {
             setIsShowingTypoHighlights(true); // Still show text, but unhighlighted
         }
         finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); } 
-    };
+    }, [ocrDisplayLines, setOcrDisplayLines]);
 
     useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {

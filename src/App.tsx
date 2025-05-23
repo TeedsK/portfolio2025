@@ -44,7 +44,9 @@ function App() {
     const [shouldStartOcr, setShouldStartOcr] = useState<boolean>(false);
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
-    const [showMediaElement, setShowMediaElement] = useState<boolean>(true);
+    const [showMediaElement] = useState<boolean>(true);
+
+    const hasStartedAutoOcr = useRef<boolean>(false);
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
@@ -223,54 +225,22 @@ function App() {
         finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); }
     }, [ocrDisplayLines, setOcrDisplayLines]);
 
-    const handleImageClick = useCallback(async () => {
-        if (isVideoPlaying || !imageDimensions) return;
-        if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete) {
-            warn('Not ready for OCR processing.', { isProcessingOCR, tfReady, isLoadingModel, imgComplete: !!imageRef.current?.complete });
-            return;
-        }
-
-        setCurrentAppPhase(1);
-        setShowMediaElement(true);
-        resetTypoData();
-        setShowMediaElement(true);
-        setInteractiveOcrParts([]);
-        setBackendCorrectedSentence('');
-        setIsShowingTypoHighlights(false);
-        ocrDisplayLinesRefs.current.clear();
-
-
-        const rawText = await startOcr(imageDimensions!);
-
-        if (mediaContainerRef.current) {
-            gsap.to(mediaContainerRef.current, {
-                opacity: 0,
-                duration: 0.5,
-                onComplete: () => {
-                    setShowMediaElement(false);
-                    setCurrentAppPhase(2);
-                    if (rawText.trim().length > 0) {
-                        handleTypoCorrectionAPI(rawText).catch(() => {});
-                    }
-                }
-            });
-        } else {
-            setShowMediaElement(false);
-            setCurrentAppPhase(2);
-            if (rawText.trim().length > 0) {
-                await handleTypoCorrectionAPI(rawText);
-            }
-        }
-    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel, startOcr, handleTypoCorrectionAPI]);
 
     useEffect(() => {
         if (shouldStartOcr && imageDimensions && imageRef.current?.complete && !isProcessingOCR) {
             log('Auto-starting OCR process.');
+            resetTypoData();
             setCurrentAppPhase(1);
             startOcr(imageDimensions).catch(() => {/* swallow */});
             setShouldStartOcr(false);
         }
     }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr]);
+
+    useEffect(() => {
+        if (!isProcessingOCR && ocrPredictedText && currentAppPhase === 1) {
+            handleTypoCorrectionAPI(ocrPredictedText).catch(() => {});
+        }
+    }, [isProcessingOCR, ocrPredictedText, currentAppPhase, handleTypoCorrectionAPI]);
 
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {

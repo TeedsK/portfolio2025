@@ -62,8 +62,8 @@
   /* Reserve space */
 }
 
-.overlay-container{
-  background-color: orange;
+.overlay-container {
+  background-color: transparent;
   color: black;
 }
 

@@ -289,6 +289,21 @@
   box-sizing: border-box;
 }
 
+.screenshot-underlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.media-container video {
+  position: relative;
+  z-index: 2;
+}
+
 .status-text-container {
   position: absolute;
   bottom: -35px;

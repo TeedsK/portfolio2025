@@ -71,6 +71,7 @@ function App() {
         currentCharVisData,
         networkGraphColor,
     } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
+
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);

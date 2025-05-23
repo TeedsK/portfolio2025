@@ -289,6 +289,23 @@
   box-sizing: border-box;
 }
 
+.base-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+}
+
+.writing-video {
+  position: relative;
+  z-index: 2;
+}
+
+.hidden-during-video {
+  opacity: 0;
+}
+
 .status-text-container {
   position: absolute;
   bottom: -35px;

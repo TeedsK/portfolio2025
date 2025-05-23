@@ -101,6 +101,7 @@ function App() {
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useRef<HTMLSpanElement>(null);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
+    const ocrFinishedRef = useRef<boolean>(false);
 
     useEffect(() => { /* ... TFJS and Model Loading ... */
         log('App component mounted. Initializing TFJS and loading EMNIST Letters model...');
@@ -164,7 +165,7 @@ function App() {
      }, []);
     useEffect(() => { /* ... Image Dimension Loading ... */
         const imgElement = imageRef.current;
-        if (imgElement && !isVideoPlaying) {
+        if (imgElement) {
             const handleLoad = () => {
                 if (imgElement.offsetWidth > 0 && imgElement.offsetHeight > 0) {
                     setImageDimensions({ width: imgElement.offsetWidth, height: imgElement.offsetHeight });
@@ -197,7 +198,7 @@ function App() {
                 }
             };
         }
-     }, [isVideoPlaying]);
+    }, []);
 
     useEffect(() => { // Animate status text
         if (statusTextRef.current) {
@@ -220,24 +221,52 @@ function App() {
     }, [currentAppPhase]);
 
 
+    const fadeOutAndProceed = async () => {
+        if (mediaContainerRef.current) {
+            gsap.to(mediaContainerRef.current, {
+                opacity: 0,
+                duration: 0.5,
+                onComplete: async () => {
+                    setShowMediaElement(false);
+                    if (ocrPredictedText.trim().length > 0) {
+                        await handleTypoCorrectionAPI(ocrPredictedText);
+                    } else {
+                        setInteractiveOcrParts([]); setBackendCorrectedSentence('');
+                    }
+                }
+            });
+        } else {
+            setShowMediaElement(false);
+            if (ocrPredictedText.trim().length > 0) {
+                await handleTypoCorrectionAPI(ocrPredictedText);
+            }
+        }
+        setCurrentAppPhase(2);
+    };
+
+    const handleVideoPlay = () => {
+        setTimeout(() => setShouldStartOcr(true), 400);
+    };
+
     const handleVideoEnd = () => {
-        log('Video ended. Switching to image and queueing OCR.');
+        log('Video ended.');
         setIsVideoPlaying(false);
         setCurrentAppPhase(1);
-        setShouldStartOcr(true);
+        if (ocrFinishedRef.current && showMediaElement) {
+            fadeOutAndProceed();
+        }
     };
 
     useEffect(() => { // Auto-trigger OCR
-        if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
+        if (shouldStartOcr && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
             log('Auto-starting OCR process.');
             handleImageClick();
             setShouldStartOcr(false);
         }
-    }, [shouldStartOcr, isVideoPlaying, imageDimensions]);
+    }, [shouldStartOcr, imageDimensions]);
 
     const handleImageClick = async () => {
         // ... (Guard conditions unchanged) ...
-        if (isVideoPlaying) return;
         if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !imageDimensions || !visModel || !model) {
              warn('Not ready for OCR processing.', {isProcessingOCR, tfReady, isLoadingModel, imgComplete: !!imageRef.current?.complete, imageDimensions: !!imageDimensions});
              return;
@@ -371,28 +400,9 @@ function App() {
             setOcrPredictedText(rawOcrOutputAccumulator);
             log('OCR finished. Raw output for typo API:', rawOcrOutputAccumulator);
             
-            // Start media fade out, then proceed to typo check
-            if (mediaContainerRef.current) {
-                gsap.to(mediaContainerRef.current, { 
-                    opacity: 0, 
-                    duration: 0.5, 
-                    onComplete: async () => {
-                        setShowMediaElement(false);
-                        setCurrentAppPhase(2);
-                        if (rawOcrOutputAccumulator.trim().length > 0) {
-                            await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
-                        } else { 
-                            setInteractiveOcrParts([]); setBackendCorrectedSentence(''); 
-                            setCurrentAppPhase(2); // Still move to typo phase completion
-                        }
-                    }
-                });
-            } else { // Fallback if ref not immediately available (should be rare)
-                 setShowMediaElement(false);
-                 setCurrentAppPhase(2);
-                 if (rawOcrOutputAccumulator.trim().length > 0) {
-                    await handleTypoCorrectionAPI(rawOcrOutputAccumulator);
-                 }
+            ocrFinishedRef.current = true;
+            if (!isVideoPlaying && showMediaElement) {
+                await fadeOutAndProceed();
             }
         } catch (errLoop) { setErrorState(`OCR Loop Error: ${errLoop instanceof Error ? errLoop.message : String(errLoop)}`);}
         finally { setIsProcessingOCR(false); setActiveItemIndex(null); }
@@ -625,15 +635,11 @@ function App() {
 
             <div className="media-wrapper"> {/* New wrapper for media and status text */}
                 <div ref={mediaContainerRef} className={`media-container ${!showMediaElement ? 'hidden-media' : ''}`}>
-                    {isVideoPlaying ? (
-                        <video ref={videoRef} src="/text_writing.mp4" autoPlay muted onEnded={handleVideoEnd} playsInline > Your browser does not support the video tag. </video>
-                    ) : (
-                        // Image is primarily for structure; opacity is controlled by showMediaElement via CSS
-                        <img ref={imageRef} src="/text_screenshot.png" alt="Text input for OCR" style={{cursor: 'default' }} crossOrigin="anonymous" />
-                    )}
+                    <img ref={imageRef} src="/text_screenshot.png" alt="Text input for OCR" className={`base-image ${isVideoPlaying ? 'hidden-during-video' : ''}`} crossOrigin="anonymous" />
+                    <video ref={videoRef} src="/text_writing.mp4" autoPlay muted onPlay={handleVideoPlay} onEnded={handleVideoEnd} playsInline className="writing-video"> Your browser does not support the video tag. </video>
                 </div>
-                {/* OCR Overlay Text & Highlights - This is now always "active" after video, its content changes */}
-                {!isVideoPlaying && imageDimensions && (
+                {/* OCR Overlay Text & Highlights */}
+                {imageDimensions && (
                     <div className="overlay-container" style={{ 
                         position: 'absolute', 
                         top: mediaContainerRef.current ? `${mediaContainerRef.current.offsetTop + 4}px` : '0px', // +4 for padding

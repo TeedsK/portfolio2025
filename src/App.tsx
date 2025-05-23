@@ -46,6 +46,8 @@ function App() {
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement, setShowMediaElement] = useState<boolean>(true);
 
+    const hasStartedAutoOcr = useRef<boolean>(false);
+
     const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
@@ -89,9 +91,9 @@ function App() {
         }
     }, [modelLoadError]);
 
-    useEffect(() => { /* ... Image Dimension Loading ... */
+    useEffect(() => {
         const imgElement = imageRef.current;
-        if (imgElement && !isVideoPlaying) {
+        if (imgElement) {
             const handleLoad = () => {
                 if (imgElement.offsetWidth > 0 && imgElement.offsetHeight > 0) {
                     setImageDimensions({ width: imgElement.offsetWidth, height: imgElement.offsetHeight });
@@ -118,20 +120,16 @@ function App() {
                 imgElement.addEventListener('error', handleErrorLoad);
             }
             return () => {
-                if(imgElement){ 
+                if(imgElement){
                     imgElement.removeEventListener('load', handleLoad);
                     imgElement.removeEventListener('error', handleErrorLoad);
                 }
             };
         }
-
-
-    }, [isVideoPlaying]);
+    }, []);
     const handleVideoEnd = () => {
-        log('Video ended. Switching to image and queueing OCR.');
+        log('Video ended.');
         setIsVideoPlaying(false);
-        setCurrentAppPhase(1);
-        setShouldStartOcr(true);
     };
 
     const handleTypoCorrectionAPI = useCallback(async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
@@ -265,13 +263,24 @@ function App() {
         }
     }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel, startOcr, handleTypoCorrectionAPI]);
 
-    useEffect(() => { // Auto-trigger OCR
-        if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
+    useEffect(() => {
+        if (shouldStartOcr && imageDimensions && imageRef.current?.complete && !isProcessingOCR) {
             log('Auto-starting OCR process.');
-            handleImageClick();
+            setCurrentAppPhase(1);
+            startOcr(imageDimensions).catch(() => {/* swallow */});
             setShouldStartOcr(false);
         }
-    }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
+    }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr]);
+
+    useEffect(() => {
+        if (isVideoPlaying && !hasStartedAutoOcr.current) {
+            const timer = setTimeout(() => {
+                hasStartedAutoOcr.current = true;
+                setShouldStartOcr(true);
+            }, 400);
+            return () => clearTimeout(timer);
+        }
+    }, [isVideoPlaying]);
     
 
     useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
@@ -401,17 +410,31 @@ function App() {
         <div className="app-container">
             <h1>Theo Kremer</h1> {/* MODIFIED Header */}
 
-            <div className="media-wrapper"> {/* New wrapper for media and status text */}
+            <div className="media-wrapper">
                 <div ref={mediaContainerRef} className={`media-container ${!showMediaElement ? 'hidden-media' : ''}`}>
-                    {isVideoPlaying ? (
-                        <video ref={videoRef} src="/text_writing.mp4" autoPlay muted onEnded={handleVideoEnd} playsInline > Your browser does not support the video tag. </video>
-                    ) : (
-                        // Image is primarily for structure; opacity is controlled by showMediaElement via CSS
-                        <img ref={imageRef} src="/text_screenshot.png" alt="Text input for OCR" style={{cursor: 'default' }} crossOrigin="anonymous" />
+                    <img
+                        ref={imageRef}
+                        src="/text_screenshot.png"
+                        alt="Text input for OCR"
+                        className="screenshot-underlay"
+                        style={{ cursor: 'default', opacity: isVideoPlaying ? 0 : 1 }}
+                        crossOrigin="anonymous"
+                    />
+                    {isVideoPlaying && (
+                        <video
+                            ref={videoRef}
+                            src="/text_writing.mp4"
+                            autoPlay
+                            muted
+                            onEnded={handleVideoEnd}
+                            playsInline
+                        >
+                            Your browser does not support the video tag.
+                        </video>
                     )}
                 </div>
                 {/* OCR Overlay Text & Highlights - This is now always "active" after video, its content changes */}
-                {!isVideoPlaying && imageDimensions && (
+                {imageDimensions && (
                     <OcrOverlay
                         lines={ocrDisplayLines}
                         isShowingHighlights={isShowingTypoHighlights}

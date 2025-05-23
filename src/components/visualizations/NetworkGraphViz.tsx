@@ -1,5 +1,5 @@
 // src/components/visualizations/NetworkGraphViz.tsx
-import React, { useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { ActivationData, ActivationDataValue } from '../../types';
 import gsap from 'gsap';
 
@@ -183,7 +183,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     }, [flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, inputVisX]);
 
 
-    const drawNetwork = () => {
+    const drawNetwork = useCallback(() => {
         const canvas = networkCanvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -253,7 +253,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             ctx.restore();
         });
         ctx.globalAlpha = 1;
-    };
+    }, [flattenNodePositions, hiddenDenseNodePositions, outputNodePositions]);
 
     useEffect(() => {
         if (inputCanvasRef.current && currentCharImageData) {
@@ -467,7 +467,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
 
     }, [activations, softmaxProbabilities, animationBaseColor, flattenLayerName, hiddenDenseLayerName,
         animatablesRef, // dep on ref itself
-        flattenNodePositions, hiddenDenseNodePositions, outputNodePositions ]); // Geometric dependencies
+        flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, drawNetwork ]); // Geometric dependencies
 
     return (
         <div>

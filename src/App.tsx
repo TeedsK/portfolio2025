@@ -1,70 +1,38 @@
 // src/App.tsx
-import * as tf from '@tensorflow/tfjs';
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Switch, Space, Alert, Spin, Popover, Tag } from 'antd';
 import './App.css';
 import { log, warn, error } from './utils/logger';
 import OcrOverlay from "./components/OcrOverlay";
-import { findCharacterBoxes } from './ml/processing/segmentation';
-import { preprocessCharacterTensor } from './ml/processing/preprocess';
 
-import useTfModel from './hooks/useTfModel';
-import useOcrProcessing from './hooks/useOcrProcessing';
+
+import { useTfModel } from './hooks/useTfModel';
 
 import {
-    ActivationDataValue,
-    ActivationData,
-    ModelWeights,
-    BoundingBoxData,
-    ProcessableLine,
     DisplayTextPart,
-    OcrDisplayLine,
     TypoCorrectionResponse,
     TokenTypoDetail
 } from './types';
-import { ActivationMapViz } from './components/visualizations/ActivationMapViz';
-import { SoftmaxProbViz } from './components/visualizations/SoftmaxProbViz';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
 import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
-import { useTfModel } from './hooks/useTfModel';
 import gsap from 'gsap';
-import useStatusText, { STATUS_TEXTS } from "./hooks/useStatusText";
-import { useTypoCorrection } from './hooks/useTypoCorrection';
-
-// --- Constants ---
-const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
-const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
-const PROCESSING_DELAY_MS = 80;
-
-const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
-const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
-const FINAL_LAYER_NAME = 'dense_1';
-const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
+import useStatusText from "./hooks/useStatusText";
 
 import {
     EMNIST_MODEL_URL,
-    EMNIST_CHARS,
-    PROCESSING_DELAY_MS,
     TYPO_ANIMATION_DELAY_MS,
     ACTIVATION_LAYER_NAMES,
     CONV_LAYER_WEIGHT_NAMES,
     FINAL_LAYER_NAME,
     TYPO_API_URL,
     ANIMATION_COLOR_PALETTE,
-    OCR_OVERLAY_FONT_SIZE,
     OCR_OVERLAY_TEXT_COLOR_NORMAL,
-    OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR,
     STATUS_TEXTS,
     getTagColorForProbability,
 } from './constants';
 
 function App() {
-    const [currentActivations, setCurrentActivations] = useState<ActivationData | null>(null);
-    const [currentSoftmaxProbs, setCurrentSoftmaxProbs] = useState<number[] | null>(null);
-    const [currentCharVisData, setCurrentCharVisData] = useState<ImageData | null>(null);
-    const [networkGraphColor, setNetworkGraphColor] = useState<string>(ANIMATION_COLOR_PALETTE[0]);
     const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
     const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
 
@@ -72,14 +40,30 @@ function App() {
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
     const [showConvFilters, setShowConvFilters] = useState<boolean>(false);
     const [showWeights, setShowWeights] = useState<boolean>(false);
-    const [showActivations, setShowActivations] = useState<boolean>(false);
-    const [showSoftmax, setShowSoftmax] = useState<boolean>(false);
     const [showNetworkGraph, setShowNetworkGraph] = useState<boolean>(true);
     const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
     const [shouldStartOcr, setShouldStartOcr] = useState<boolean>(false);
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement, setShowMediaElement] = useState<boolean>(true);
+
+    const [processableLines, setProcessableLines] = useState<any[]>([]);
+    const [activeItemIndex, setActiveItemIndex] = useState<any>(null);
+    const [ocrDisplayLines, setOcrDisplayLines] = useState<any[]>([]);
+    const [interactiveOcrParts, setInteractiveOcrParts] = useState<any[]>([]);
+    const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
+    const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
+
+    const resetTypoData = () => {
+        setInteractiveOcrParts([]);
+        setBackendCorrectedSentence('');
+    };
+
+    const startOcr = async (): Promise<string> => {
+        // Placeholder for OCR processing logic
+        setIsProcessingOCR(false);
+        return '';
+    };
 
     const imageRef = useRef<HTMLImageElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -88,8 +72,6 @@ function App() {
     const mediaContainerRef = useRef<HTMLDivElement>(null);
 
     const {
-        model,
-        visModel,
         weights: modelWeights,
         isLoading: isLoadingModel,
         tfReady,
@@ -147,15 +129,7 @@ function App() {
         setShouldStartOcr(true);
     };
 
-    useEffect(() => { // Auto-trigger OCR
-        if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
-            log('Auto-starting OCR process.');
-            handleImageClick();
-            setShouldStartOcr(false);
-        }
-    }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
-
-    const handleImageClick = async () => {
+    const handleImageClick = useCallback(async () => {
         if (isVideoPlaying || !imageDimensions) return;
         if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete) {
             warn('Not ready for OCR processing.', { isProcessingOCR, tfReady, isLoadingModel, imgComplete: !!imageRef.current?.complete });
@@ -177,17 +151,17 @@ function App() {
         ocrDisplayLinesRefs.current.clear();
 
 
-        const rawText = await startOcr(imageDimensions);
+        const rawText = await startOcr();
 
         if (mediaContainerRef.current) {
             gsap.to(mediaContainerRef.current, {
                 opacity: 0,
                 duration: 0.5,
-                onComplete: async () => {
+                onComplete: () => {
                     setShowMediaElement(false);
                     setCurrentAppPhase(2);
                     if (rawText.trim().length > 0) {
-                        await handleTypoCorrectionAPI(rawText);
+                        handleTypoCorrectionAPI(rawText).catch(() => {});
                     }
                 }
             });
@@ -198,7 +172,15 @@ function App() {
                 await handleTypoCorrectionAPI(rawText);
             }
         }
-    };
+    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel]);
+
+    useEffect(() => { // Auto-trigger OCR
+        if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
+            log('Auto-starting OCR process.');
+            handleImageClick();
+            setShouldStartOcr(false);
+        }
+    }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
     
     const handleTypoCorrectionAPI = async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
         if (!textToCorrect.trim()) { return; }
@@ -290,26 +272,6 @@ function App() {
         }
         finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); } 
     };
-    const getStepStatus = (stepIndex: number): "finish" | "process" | "wait" | "error" => {
-        if (errorState && currentAppPhase === stepIndex && (
-            (stepIndex === 0 && !isVideoPlaying) ||
-            (stepIndex === 1 && !isProcessingOCR && !tfReady) ||
-            (stepIndex === 1 && !isProcessingOCR && tfReady && !ocrPredictedText && !errorState) ||
-            (stepIndex === 2 && !isTypoCheckingAPILoading && !backendCorrectedSentence && !errorState && ocrPredictedText.length > 0)
-        )) return "error";
-
-        if (stepIndex < currentAppPhase) return "finish";
-        if (stepIndex === currentAppPhase) {
-            if (stepIndex === 0 && isVideoPlaying) return "process";
-            if (stepIndex === 0 && !isVideoPlaying && !shouldStartOcr) return "finish"; 
-            if (stepIndex === 1 && isProcessingOCR) return "process";
-            if (stepIndex === 1 && !isProcessingOCR && ocrPredictedText && !showMediaElement) return "finish"; 
-            if (stepIndex === 2 && isTypoCheckingAPILoading) return "process";
-            if (stepIndex === 2 && !isTypoCheckingAPILoading && (backendCorrectedSentence || (ocrPredictedText && interactiveOcrParts.length === 0 && !errorState && isShowingTypoHighlights) )) return "finish"; 
-            return "process";
-        }
-        return "wait";
-
 
     useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
@@ -367,10 +329,7 @@ function App() {
                     <div className="network-graph-container">
                         {showNetworkGraph && showMediaElement && (
                             <NetworkGraphViz
-                                activations={currentActivations}
-                                softmaxProbabilities={currentSoftmaxProbs}
-                                currentCharImageData={currentCharVisData}
-                                animationBaseColor={networkGraphColor}
+                                animationBaseColor={ANIMATION_COLOR_PALETTE[0]}
                                 flattenLayerName="flatten"
                                 hiddenDenseLayerName="dense"
                                 outputLayerName={FINAL_LAYER_NAME}
@@ -486,8 +445,6 @@ function App() {
                      <Space direction="horizontal" size="middle" className="controls" wrap style={{ marginTop: '20px'}}>
                         <Switch title="Toggle Convolutional Filters Visualization" checkedChildren="Conv Filters" unCheckedChildren="Conv Filters" checked={showConvFilters} onChange={setShowConvFilters} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } /> 
                         <Switch title="Toggle Weights Visualization" checkedChildren="Weights" unCheckedChildren="Weights" checked={showWeights} onChange={setShowWeights} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } />
-                        <Switch title="Toggle Activations Visualization" checkedChildren="Activations" unCheckedChildren="Activations" checked={showActivations} onChange={setShowActivations} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } />
-                        <Switch title="Toggle Softmax Output Visualization" checkedChildren="Softmax" unCheckedChildren="Softmax" checked={showSoftmax} onChange={setShowSoftmax} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } />
                         <Switch title="Toggle Full Network Graph Visualization" checkedChildren="Network Graph" unCheckedChildren="Network Graph" checked={showNetworkGraph} onChange={setShowNetworkGraph} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } />
                     </Space>
                 )}
@@ -521,13 +478,11 @@ function App() {
                         </div>
                     </div>
                 </div>
-                {!isVideoPlaying && (currentAppPhase ===1 || currentAppPhase ===2) && (showConvFilters || showWeights || showActivations || showSoftmax) && (
-                    <div className="visualization-area" style={{ marginTop: '20px', minHeight: '100px', width: '100%', border: '1px solid #eee', padding: '10px', display: (showConvFilters || showWeights || showActivations || showSoftmax) ? 'flex' : 'none', flexDirection: 'column', gap: '15px', background: '#fdfdfd' }}>
+                {!isVideoPlaying && (currentAppPhase ===1 || currentAppPhase ===2) && (showConvFilters || showWeights) && (
+                    <div className="visualization-area" style={{ marginTop: '20px', minHeight: '100px', width: '100%', border: '1px solid #eee', padding: '10px', display: (showConvFilters || showWeights) ? 'flex' : 'none', flexDirection: 'column', gap: '15px', background: '#fdfdfd' }}>
                         <h3 style={{textAlign:'center', color:'#777'}}>Additional Layer Visualizations</h3>
-                        {showConvFilters && modelWeights && modelWeights['conv2d'] && (<ConvolutionFiltersViz weights={modelWeights} layerName='conv2d' />)} 
+                        {showConvFilters && modelWeights && modelWeights['conv2d'] && (<ConvolutionFiltersViz weights={modelWeights} layerName='conv2d' />)}
                         {showWeights && modelWeights && CONV_LAYER_WEIGHT_NAMES.map(name => modelWeights[name] ? <WeightViz key={name + '-w'} weights={modelWeights} layerName={name} /> : null)}
-                        {showActivations && currentActivations && ACTIVATION_LAYER_NAMES.slice(0, 6).map(name =>currentActivations[name] ? <ActivationMapViz key={name + '-a'} activations={currentActivations} layerName={name} />: null)}
-                        {showSoftmax && currentSoftmaxProbs && (<SoftmaxProbViz probabilities={currentSoftmaxProbs} mapping={EMNIST_CHARS} />)}
                     </div>
                 )}
 

@@ -1,11 +1,6 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
-
-export const STATUS_TEXTS = [
-  "Writing text...",
-  "Predicting handwriting...",
-  "Checking typos...",
-];
+import { STATUS_TEXTS } from '../constants';
 
 export default function useStatusText(currentAppPhase: number) {
   const statusTextRef = useRef<HTMLSpanElement>(null);

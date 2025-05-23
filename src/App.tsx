@@ -48,6 +48,8 @@ function App() {
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
+    const hasStartedAutoOcr = useRef<boolean>(false);
+
     const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import useTfModel from './useTfModel';
+import { useTfModel } from './useTfModel';
+import { EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES } from '../constants';
 import { findCharacterBoxes } from '../ml/processing/segmentation';
 import { preprocessCharacterTensor } from '../ml/processing/preprocess';
 import {
@@ -13,7 +14,6 @@ import { warn, error } from '../utils/logger';
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 const PROCESSING_DELAY_MS = 80;
-const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'max_pooling2d_1', 'conv2d_2', 'max_pooling2d_2', 'flatten', 'dense', 'dense_1'];
 const FINAL_LAYER_NAME = 'dense_1';
 const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
 const OCR_OVERLAY_FONT_SIZE = 30;
@@ -52,7 +52,8 @@ interface UseOcrProcessingResult {
 }
 
 export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions): UseOcrProcessingResult {
-  const { model, visModel, tfReady, isLoadingModel } = useTfModel();
+  const { model, visModel, tfReady, isLoading: isLoadingModel } =
+    useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [processableLines, setProcessableLines] = useState<ProcessableLine[]>([]);

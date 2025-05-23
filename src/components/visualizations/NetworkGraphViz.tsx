@@ -123,8 +123,9 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     const outputNodePositions = useMemo(() => calculateNodePositions(EMNIST_CHARS.length, firstLayerX + LAYER_GAP * 2, CANVAS_HEIGHT, NODE_RADIUS), [firstLayerX]);
     const canvasWidth = useMemo(() => outputNodePositions.length > 0 ? outputNodePositions[0].x + NODE_RADIUS * 2 + 30 : 700, [outputNodePositions]);
 
-    // Initialize animatable objects once
-    useEffect(() => {
+    // Initialize animatable objects once. Use layout effect so the
+    // geometry is ready before any animation effect runs.
+    useLayoutEffect(() => {
         const lines: AnimatableLine[] = [];
         const nodes: AnimatableNode[] = [];
         let lineIdCounter = 0;
@@ -277,6 +278,10 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
 
     useLayoutEffect(() => {
         const animatables = animatablesRef.current;
+        if (animatables.nodes.length === 0 || animatables.lines.length === 0) {
+            // Geometry not ready yet
+            return;
+        }
         if (!activations) { // Initial state or no data, draw static default
             animatables.lines.forEach(l => {
                 l.activationProgress = 0; l.deactivationProgress = 0; l.color = COLOR_DEFAULT_LINE; l.alpha = LINE_INACTIVE_ALPHA; l.strokeWidth = LINE_INACTIVE_STROKE_WIDTH; l.isActivating = false;

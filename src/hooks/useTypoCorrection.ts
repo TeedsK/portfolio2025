@@ -108,7 +108,7 @@ export const useTypoCorrection = ({
                 wordsAndSpacesOnLine.forEach((textSegment) => {
                     const partId = `${existingLine.id}-part-${partIdCounter++}`;
                     if (textSegment.match(/^\s+$/)) {
-                        newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef<HTMLSpanElement>() });
+                        newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> });
                     } else {
                         let isFlagged = false;
                         if (
@@ -131,7 +131,7 @@ export const useTypoCorrection = ({
                             text: textSegment,
                             isWhitespace: false,
                             isFlagged,
-                            ref: React.createRef<HTMLSpanElement>(),
+                            ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement>,
                         });
                     }
                 });
@@ -155,7 +155,7 @@ export const useTypoCorrection = ({
                             text: p,
                             isWhitespace: p.match(/^\s+$/) !== null,
                             isFlagged: false,
-                            ref: React.createRef<HTMLSpanElement>(),
+                            ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement>,
                         })),
                 }))
             );

@@ -126,7 +126,7 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
             {lines.map(line => (
                 <div
                     key={line.id}
-                    ref={el => lineRefs.current.set(line.id, el)}
+                    ref={el => { lineRefs.current.set(line.id, el); }}
                     className="ocr-overlay-line"
                     style={{
                         top: `${line.y}px`,

@@ -7,11 +7,13 @@ import OcrOverlay from "./components/OcrOverlay";
 
 
 import { useTfModel } from './hooks/useTfModel';
+import useOcrProcessing from './hooks/useOcrProcessing';
 
 import {
     DisplayTextPart,
     TypoCorrectionResponse,
-    TokenTypoDetail
+    TokenTypoDetail,
+    OcrDisplayLinePart
 } from './types';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
@@ -26,15 +28,12 @@ import {
     CONV_LAYER_WEIGHT_NAMES,
     FINAL_LAYER_NAME,
     TYPO_API_URL,
-    ANIMATION_COLOR_PALETTE,
     OCR_OVERLAY_TEXT_COLOR_NORMAL,
     STATUS_TEXTS,
     getTagColorForProbability,
 } from './constants';
 
 function App() {
-    const [ocrPredictedText, setOcrPredictedText] = useState<string>('');
-    const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
 
     const [errorState, setErrorState] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -47,10 +46,7 @@ function App() {
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement, setShowMediaElement] = useState<boolean>(true);
 
-    const [processableLines, setProcessableLines] = useState<any[]>([]);
-    const [activeItemIndex, setActiveItemIndex] = useState<any>(null);
-    const [ocrDisplayLines, setOcrDisplayLines] = useState<any[]>([]);
-    const [interactiveOcrParts, setInteractiveOcrParts] = useState<any[]>([]);
+    const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
 
@@ -59,14 +55,22 @@ function App() {
         setBackendCorrectedSentence('');
     };
 
-    const startOcr = async (): Promise<string> => {
-        // Placeholder for OCR processing logic
-        setIsProcessingOCR(false);
-        return '';
-    };
 
-    const imageRef = useRef<HTMLImageElement>(null);
+    const imageRef = useRef<HTMLImageElement | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const {
+        startOcr,
+        isProcessingOCR,
+        processableLines,
+        activeItemIndex,
+        ocrDisplayLines,
+        setOcrDisplayLines,
+        ocrPredictedText,
+        currentActivations,
+        currentSoftmaxProbs,
+        currentCharVisData,
+        networkGraphColor,
+    } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
@@ -129,6 +133,97 @@ function App() {
         setShouldStartOcr(true);
     };
 
+    const handleTypoCorrectionAPI = useCallback(async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
+        if (!textToCorrect.trim()) { return; }
+        log('Sending to typo correction API:', textToCorrect);
+        setIsTypoCheckingAPILoading(true);
+        setErrorState(null); setInteractiveOcrParts([]); setBackendCorrectedSentence('');
+
+        try {
+            const response = await fetch(TYPO_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sentence: textToCorrect, top_k: 3 }), });
+            if (!response.ok) { const errData = await response.json().catch(() => ({ message: "Unknown API error" })); throw new Error(`API Error (${response.status}): ${errData.error || errData.message}`);}
+            const result = await response.json() as TypoCorrectionResponse;
+            log('Typo API response:', result);
+            setBackendCorrectedSentence(result.corrected_sentence);
+
+            // For Popovers (using result.original_sentence for token alignment)
+            const popoverInteractiveParts: DisplayTextPart[] = [];
+            const originalWordsAndSpacesForPopover = result.original_sentence.split(/(\s+)/);
+            let currentTokenDetailSearchIndex = 0;
+            originalWordsAndSpacesForPopover.forEach(part => {
+                if (part.match(/^\s+$/) || part === '') { popoverInteractiveParts.push({ text: part, isWhitespace: true, isFlagged: false }); }
+                else {
+                    let detail: TokenTypoDetail | undefined;
+                    // Ensure we find the correct token, even if words repeat, by searching from last found index
+                    for(let i = currentTokenDetailSearchIndex; i < result.token_details.length; i++) {
+                        if (result.token_details[i].token === part) {
+                            detail = result.token_details[i];
+                            currentTokenDetailSearchIndex = i + 1; // Next search starts after this one
+                            break;
+                        }
+                    }
+                    if (detail) { popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: detail.pred_tag !== 'KEEP', originalToken: part, predictions: detail.top_probs, predictedTag: detail.pred_tag, });}
+                    else { warn(`Popover: Word "${part}" not found or already matched in token_details.`); popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: false }); }
+                }
+            });
+            setInteractiveOcrParts(popoverInteractiveParts);
+
+
+            // --- Transform ocrDisplayLines to use parts for highlighting ---
+            // Use the existing ocrDisplayLines (which have correct Y positions and IDs)
+            // and populate their 'parts' array based on the typo API result.
+            const linesFromApiSentence = result.original_sentence.split('\n');
+            let globalTokenIndex = 0; // To iterate through result.token_details sequentially
+
+            const updatedOcrDisplayLines = ocrDisplayLines.map((existingLine, lineIdx) => {
+                const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; // Text for this line from API
+                const newParts: OcrDisplayLinePart[] = [];
+                let partIdCounter = 0;
+
+                // Split the line text by words and spaces to create parts
+                const wordsAndSpacesOnLine = lineTextFromApi.split(/(\s+)/).filter(p => p.length > 0);
+
+                wordsAndSpacesOnLine.forEach(textSegment => {
+                    const partId = `${existingLine.id}-part-${partIdCounter++}`;
+                    if (textSegment.match(/^\s+$/)) { // It's whitespace
+                        newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> });
+                    } else { // It's a word
+                        let isFlagged = false;
+                        // Match this word with the token_details from the API
+                        // This assumes token_details are in order of appearance in original_sentence
+                        if (globalTokenIndex < result.token_details.length && result.token_details[globalTokenIndex].token === textSegment) {
+                            isFlagged = result.token_details[globalTokenIndex].pred_tag !== 'KEEP';
+                            globalTokenIndex++;
+                        } else {
+                            // Fallback or warning if alignment is off
+                            warn(`Highlighting token mismatch: OCR'd word "${textSegment}" vs API token "${result.token_details[globalTokenIndex]?.token}" on line ${lineIdx}. Defaulting to not flagged.`);
+                            // Try a more resilient find for popover data as a backup for flagging status
+                            const popoverMatch = popoverInteractiveParts.find(pip => pip.text === textSegment && !pip.isWhitespace);
+                            if (popoverMatch) isFlagged = popoverMatch.isFlagged;
+                        }
+                        newParts.push({ id: partId, text: textSegment, isWhitespace: false, isFlagged, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> });
+                    }
+                });
+                return { ...existingLine, parts: newParts, textDuringOcr: lineTextFromApi /* Update to match API */ };
+            });
+
+            setOcrDisplayLines(updatedOcrDisplayLines);
+            setIsShowingTypoHighlights(true);
+
+        } catch (errApi) {
+            error('Typo correction API call failed:', errApi);
+            setErrorState(`Typo API Error: ${errApi instanceof Error ? errApi.message : String(errApi)}`);
+            // Fallback to simple parts if API fails, no highlighting info
+            setOcrDisplayLines(prevLines => prevLines.map(line => ({
+                ...line,
+                parts: line.textDuringOcr.split(/(\s+)/).filter(p=>p.length>0).map((p,idx) => ({id: `${line.id}-part-${idx}`, text: p, isWhitespace: p.match(/^\s+$/) !== null, isFlagged: false, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> }))
+            })));
+            setBackendCorrectedSentence(textToCorrect);
+            setIsShowingTypoHighlights(true); // Still show text, but unhighlighted
+        }
+        finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); }
+    }, [ocrDisplayLines, setOcrDisplayLines]);
+
     const handleImageClick = useCallback(async () => {
         if (isVideoPlaying || !imageDimensions) return;
         if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete) {
@@ -137,13 +232,8 @@ function App() {
         }
 
         setCurrentAppPhase(1);
-        setIsProcessingOCR(true);
         setShowMediaElement(true);
-        setOcrPredictedText('');
         resetTypoData();
-        setProcessableLines([]); 
-        setActiveItemIndex(null); 
-        setOcrDisplayLines([]);
         setShowMediaElement(true);
         setInteractiveOcrParts([]);
         setBackendCorrectedSentence('');
@@ -151,7 +241,7 @@ function App() {
         ocrDisplayLinesRefs.current.clear();
 
 
-        const rawText = await startOcr();
+        const rawText = await startOcr(imageDimensions!);
 
         if (mediaContainerRef.current) {
             gsap.to(mediaContainerRef.current, {
@@ -172,7 +262,7 @@ function App() {
                 await handleTypoCorrectionAPI(rawText);
             }
         }
-    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel]);
+    }, [imageDimensions, isVideoPlaying, isProcessingOCR, tfReady, isLoadingModel, startOcr, handleTypoCorrectionAPI]);
 
     useEffect(() => { // Auto-trigger OCR
         if (shouldStartOcr && !isVideoPlaying && imageDimensions && imageRef.current?.complete && imageRef.current.naturalWidth > 0) {
@@ -182,96 +272,6 @@ function App() {
         }
     }, [shouldStartOcr, isVideoPlaying, imageDimensions, handleImageClick]);
     
-    const handleTypoCorrectionAPI = async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
-        if (!textToCorrect.trim()) { return; }
-        log('Sending to typo correction API:', textToCorrect);
-        setIsTypoCheckingAPILoading(true);
-        setErrorState(null); setInteractiveOcrParts([]); setBackendCorrectedSentence('');
-
-        try {
-            const response = await fetch(TYPO_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sentence: textToCorrect, top_k: 3 }), });
-            if (!response.ok) { const errData = await response.json().catch(() => ({ message: "Unknown API error" })); throw new Error(`API Error (${response.status}): ${errData.error || errData.message}`);}
-            const result = await response.json() as TypoCorrectionResponse;
-            log('Typo API response:', result);
-            setBackendCorrectedSentence(result.corrected_sentence);
-
-            // For Popovers (using result.original_sentence for token alignment)
-            const popoverInteractiveParts: DisplayTextPart[] = [];
-            const originalWordsAndSpacesForPopover = result.original_sentence.split(/(\s+)/);
-            let currentTokenDetailSearchIndex = 0; 
-            originalWordsAndSpacesForPopover.forEach(part => {
-                if (part.match(/^\s+$/) || part === '') { popoverInteractiveParts.push({ text: part, isWhitespace: true, isFlagged: false }); }
-                else {
-                    let detail: TokenTypoDetail | undefined;
-                    // Ensure we find the correct token, even if words repeat, by searching from last found index
-                    for(let i = currentTokenDetailSearchIndex; i < result.token_details.length; i++) {
-                        if (result.token_details[i].token === part) { 
-                            detail = result.token_details[i]; 
-                            currentTokenDetailSearchIndex = i + 1; // Next search starts after this one
-                            break; 
-                        }
-                    }
-                    if (detail) { popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: detail.pred_tag !== 'KEEP', originalToken: part, predictions: detail.top_probs, predictedTag: detail.pred_tag, });}
-                    else { warn(`Popover: Word "${part}" not found or already matched in token_details.`); popoverInteractiveParts.push({ text: part, isWhitespace: false, isFlagged: false }); }
-                }
-            });
-            setInteractiveOcrParts(popoverInteractiveParts);
-
-
-            // --- Transform ocrDisplayLines to use parts for highlighting ---
-            // Use the existing ocrDisplayLines (which have correct Y positions and IDs)
-            // and populate their 'parts' array based on the typo API result.
-            const linesFromApiSentence = result.original_sentence.split('\n');
-            let globalTokenIndex = 0; // To iterate through result.token_details sequentially
-
-            const updatedOcrDisplayLines = ocrDisplayLines.map((existingLine, lineIdx) => {
-                const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; // Text for this line from API
-                const newParts: DisplayTextPart[] = [];
-                let partIdCounter = 0;
-
-                // Split the line text by words and spaces to create parts
-                const wordsAndSpacesOnLine = lineTextFromApi.split(/(\s+)/).filter(p => p.length > 0);
-
-                wordsAndSpacesOnLine.forEach(textSegment => {
-                    const partId = `${existingLine.id}-part-${partIdCounter++}`;
-                    if (textSegment.match(/^\s+$/)) { // It's whitespace
-                        newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef() });
-                    } else { // It's a word
-                        let isFlagged = false;
-                        // Match this word with the token_details from the API
-                        // This assumes token_details are in order of appearance in original_sentence
-                        if (globalTokenIndex < result.token_details.length && result.token_details[globalTokenIndex].token === textSegment) {
-                            isFlagged = result.token_details[globalTokenIndex].pred_tag !== 'KEEP';
-                            globalTokenIndex++;
-                        } else {
-                            // Fallback or warning if alignment is off
-                            warn(`Highlighting token mismatch: OCR'd word "${textSegment}" vs API token "${result.token_details[globalTokenIndex]?.token}" on line ${lineIdx}. Defaulting to not flagged.`);
-                            // Try a more resilient find for popover data as a backup for flagging status
-                            const popoverMatch = popoverInteractiveParts.find(pip => pip.text === textSegment && !pip.isWhitespace);
-                            if (popoverMatch) isFlagged = popoverMatch.isFlagged;
-                        }
-                        newParts.push({ id: partId, text: textSegment, isWhitespace: false, isFlagged, ref: React.createRef() });
-                    }
-                });
-                return { ...existingLine, parts: newParts, textDuringOcr: lineTextFromApi /* Update to match API */ };
-            });
-
-            setOcrDisplayLines(updatedOcrDisplayLines);
-            setIsShowingTypoHighlights(true);
-
-        } catch (errApi) { 
-            error('Typo correction API call failed:', errApi); 
-            setErrorState(`Typo API Error: ${errApi instanceof Error ? errApi.message : String(errApi)}`); 
-            // Fallback to simple parts if API fails, no highlighting info
-            setOcrDisplayLines(prevLines => prevLines.map(line => ({
-                ...line,
-                parts: line.textDuringOcr.split(/(\s+)/).filter(p=>p.length>0).map((p,idx) => ({id: `${line.id}-part-${idx}`, text: p, isWhitespace: p.match(/^\s+$/) !== null, isFlagged: false, ref: React.createRef() }))
-            })));
-            setBackendCorrectedSentence(textToCorrect); 
-            setIsShowingTypoHighlights(true); // Still show text, but unhighlighted
-        }
-        finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); } 
-    };
 
     useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
@@ -329,7 +329,10 @@ function App() {
                     <div className="network-graph-container">
                         {showNetworkGraph && showMediaElement && (
                             <NetworkGraphViz
-                                animationBaseColor={ANIMATION_COLOR_PALETTE[0]}
+                                activations={currentActivations}
+                                softmaxProbabilities={currentSoftmaxProbs}
+                                currentCharImageData={currentCharVisData}
+                                animationBaseColor={networkGraphColor}
                                 flattenLayerName="flatten"
                                 hiddenDenseLayerName="dense"
                                 outputLayerName={FINAL_LAYER_NAME}
@@ -416,7 +419,7 @@ function App() {
                             activeItemIndex,
                             processableLines,
                             imageDimensions,
-                            imageRef,
+                            imageRef: imageRef as unknown as React.RefObject<HTMLImageElement>,
                             showMediaElement,
                             mediaOffset: mediaContainerRef.current ? { top: mediaContainerRef.current.offsetTop, left: mediaContainerRef.current.offsetLeft } : null
                         }}

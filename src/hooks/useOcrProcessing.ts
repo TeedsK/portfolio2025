@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+// src/hooks/useOcrProcessing.ts
+import { useState, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { useTfModel } from './useTfModel';
-import { EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES } from '../constants';
+import { EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES, FINAL_LAYER_NAME, ANIMATION_COLOR_PALETTE, OCR_OVERLAY_FONT_SIZE, PROCESSING_DELAY_MS, EMNIST_CHARS } from '../constants';
 import { findCharacterBoxes } from '../ml/processing/segmentation';
 import { preprocessCharacterTensor } from '../ml/processing/preprocess';
 import {
@@ -9,29 +10,9 @@ import {
   ActivationDataValue,
   BoundingBoxData,
   ProcessableLine,
+  OcrDisplayLine,
 } from '../types';
 import { warn, error } from '../utils/logger';
-
-const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
-const PROCESSING_DELAY_MS = 80;
-const FINAL_LAYER_NAME = 'dense_1';
-const ANIMATION_COLOR_PALETTE = ['#456cff', '#34D399', '#F59E0B', '#EC4899', '#8B5CF6'];
-const OCR_OVERLAY_FONT_SIZE = 30;
-
-export interface OcrDisplayLinePart {
-  id: string;
-  text: string;
-  isWhitespace: boolean;
-  isFlagged?: boolean;
-  ref: React.RefObject<HTMLSpanElement>;
-}
-
-export interface OcrDisplayLine {
-  id: string;
-  textDuringOcr: string;
-  parts: OcrDisplayLinePart[];
-  y: number;
-}
 
 interface UseOcrProcessingOptions {
   imageRef: React.RefObject<HTMLImageElement>;
@@ -49,6 +30,9 @@ interface UseOcrProcessingResult {
   setOcrDisplayLines: React.Dispatch<React.SetStateAction<OcrDisplayLine[]>>;
   ocrPredictedText: string;
   networkGraphColor: string;
+  currentChar: string | null;
+  currentCharImageData: ImageData | null;
+  onCharAnimationFinished: () => void;
 }
 
 export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions): UseOcrProcessingResult {
@@ -64,8 +48,18 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
   const [ocrDisplayLines, setOcrDisplayLines] = useState<OcrDisplayLine[]>([]);
   const [ocrPredictedText, setOcrPredictedText] = useState('');
   const [networkGraphColor, setNetworkGraphColor] = useState(ANIMATION_COLOR_PALETTE[0]);
+  const [currentChar, setCurrentChar] = useState<string | null>(null);
+  const [currentCharImageData, setCurrentCharImageData] = useState<ImageData | null>(null);
+  const animationFinishedCallback = useRef<(() => void) | null>(null);
 
   const ocrCharacterCountRef = useRef(0);
+
+  const onCharAnimationFinished = useCallback(() => {
+    if (animationFinishedCallback.current) {
+        animationFinishedCallback.current();
+        animationFinishedCallback.current = null;
+    }
+  }, []);
 
   const startOcr = async (imageDimensions: { width: number; height: number }): Promise<string> => {
     if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !imageDimensions || !visModel || !model) {
@@ -74,6 +68,7 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
     }
 
     setIsProcessingOCR(true);
+    // ... (rest of state resets)
     setOcrPredictedText('');
     setProcessableLines([]);
     setActiveItemIndex(null);
@@ -130,13 +125,18 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
           const item = line[itemIndex];
           setActiveItemIndex({ line: lineIndex, item: itemIndex });
           let charToAdd = '';
+
           if (item === null) {
             charToAdd = ' ';
             await new Promise(r => setTimeout(r, PROCESSING_DELAY_MS / 4));
+            setCurrentActivations(null);
+            setCurrentSoftmaxProbs(null);
+            setCurrentCharVisData(null);
           } else {
             const box = item as BoundingBoxData;
             const currentCharacterColor = ANIMATION_COLOR_PALETTE[ocrCharacterCountRef.current % ANIMATION_COLOR_PALETTE.length];
             setNetworkGraphColor(currentCharacterColor);
+            
             const paddedImageData = (() => {
               const [x, y, w, h] = box;
               const PADDING_FACTOR = 1.4;
@@ -154,67 +154,73 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
               padCtx.drawImage(canvas, x, y, w, h, drawX, drawY, w, h);
               return padCtx.getImageData(0, 0, paddedSize, paddedSize);
             })();
+
+            setCurrentCharImageData(paddedImageData);
+
             const charTensorUnprocessed = tf.browser.fromPixels(paddedImageData, 4);
             const processedTensor = preprocessCharacterTensor(charTensorUnprocessed);
             charTensorUnprocessed.dispose();
+            
             let predictedLetter = '?';
-            if (processedTensor) {
-              try {
-                const tempVisCanvas = document.createElement('canvas');
-                tempVisCanvas.width = 28;
-                tempVisCanvas.height = 28;
-                const tensorToDraw = processedTensor.squeeze([0]);
-                await tf.browser.toPixels(tensorToDraw as tf.Tensor2D | tf.Tensor3D, tempVisCanvas);
-                const visCtx = tempVisCanvas.getContext('2d');
-                if (visCtx) setCurrentCharVisData(visCtx.getImageData(0, 0, 28, 28));
-                tensorToDraw.dispose();
-              } catch (visErr) {
-                error('Error creating character visualization data', visErr);
-                setCurrentCharVisData(null);
-              }
+            let processedActivations: ActivationData | null = null;
+            let processedSoftmax: number[] | null = null;
+            let processedVisData: ImageData | null = null;
 
-              try {
-                const predictions = visModel.predict(processedTensor) as tf.Tensor[];
-                const activationData: ActivationData = {};
-                let softmaxData: number[] | null = null;
-                if (predictions.length === ACTIVATION_LAYER_NAMES.length) {
-                  for (let k = 0; k < ACTIVATION_LAYER_NAMES.length; k++) {
-                    const layerName = ACTIVATION_LAYER_NAMES[k];
-                    const tensor = predictions[k];
-                    try {
-                      const data = tensor.arraySync();
-                      activationData[layerName] = data as ActivationDataValue;
-                      if (layerName === FINAL_LAYER_NAME) {
-                        softmaxData = (data as number[][])[0];
-                      }
-                    } finally {
-                      tensor.dispose();
-                    }
-                  }
-                  setCurrentActivations(activationData);
-                  setCurrentSoftmaxProbs(softmaxData);
-                  if (softmaxData) {
-                    const idx = softmaxData.indexOf(Math.max(...softmaxData));
-                    predictedLetter = EMNIST_CHARS[idx] || '?';
-                  }
+            if (processedTensor) {
+                try {
+                    const tempVisCanvas = document.createElement('canvas');
+                    tempVisCanvas.width = 28; tempVisCanvas.height = 28;
+                    const tensorToDraw = processedTensor.squeeze([0]);
+                    await tf.browser.draw(tensorToDraw as tf.Tensor2D, tempVisCanvas);
+                    const visCtx = tempVisCanvas.getContext('2d');
+                    if (visCtx) processedVisData = visCtx.getImageData(0, 0, 28, 28);
+                    tensorToDraw.dispose();
+                } catch (visErr) {
+                    error('Error creating character visualization data', visErr);
                 }
-              } catch (predictErr) {
-                error(`Prediction failed char L${lineIndex + 1}-${itemIndex + 1}`, predictErr);
-                predictedLetter = 'X';
-                setCurrentActivations(null);
-                setCurrentSoftmaxProbs(null);
-              }
-              processedTensor.dispose();
-              charToAdd = predictedLetter;
-            } else {
-              charToAdd = '?';
-              setCurrentActivations(null);
-              setCurrentSoftmaxProbs(null);
-              setCurrentCharVisData(null);
+
+                try {
+                    const predictions = visModel.predict(processedTensor) as tf.Tensor[];
+                    const activationData: ActivationData = {};
+                    if (predictions.length === ACTIVATION_LAYER_NAMES.length) {
+                        for (let k = 0; k < ACTIVATION_LAYER_NAMES.length; k++) {
+                            const layerName = ACTIVATION_LAYER_NAMES[k];
+                            const tensor = predictions[k];
+                            const data = await tensor.array();
+                            activationData[layerName] = data as ActivationDataValue;
+                            if (layerName === FINAL_LAYER_NAME) {
+                                processedSoftmax = (data as number[][])[0];
+                            }
+                            tensor.dispose();
+                        }
+                        processedActivations = activationData;
+                        if (processedSoftmax) {
+                            const idx = processedSoftmax.indexOf(Math.max(...processedSoftmax));
+                            predictedLetter = EMNIST_CHARS[idx] || '?';
+                        }
+                    }
+                } catch (predictErr) {
+                    error(`Prediction failed char L${lineIndex + 1}-${itemIndex + 1}`, predictErr);
+                    predictedLetter = 'X';
+                }
+                processedTensor.dispose();
             }
+            
+            charToAdd = predictedLetter;
+            setCurrentChar(charToAdd);
+
+            await new Promise<void>(resolve => {
+                animationFinishedCallback.current = resolve;
+            });
+            
+            setCurrentActivations(processedActivations);
+            setCurrentSoftmaxProbs(processedSoftmax);
+            setCurrentCharVisData(processedVisData);
+
             ocrCharacterCountRef.current++;
             await new Promise(r => setTimeout(r, PROCESSING_DELAY_MS));
           }
+
           currentLineRawText += charToAdd;
           setOcrDisplayLines(prev => prev.map((l, idx) => idx === lineIndex ? { ...l, textDuringOcr: l.textDuringOcr + charToAdd } : l));
         }
@@ -227,6 +233,8 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
     } finally {
       setIsProcessingOCR(false);
       setActiveItemIndex(null);
+      setCurrentChar(null);
+      setCurrentCharImageData(null);
     }
 
     return rawOutput;
@@ -244,5 +252,8 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
     setOcrDisplayLines,
     ocrPredictedText,
     networkGraphColor,
+    currentChar,
+    currentCharImageData,
+    onCharAnimationFinished,
   };
 }

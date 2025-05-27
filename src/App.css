@@ -62,7 +62,7 @@
   /* Reserve space */
 }
 
-.overlay-container{
+.overlay-container {
   position: absolute;
   top: 0;
   left: 0;
@@ -87,8 +87,8 @@
 }
 
 .typo-highlight-word {
-    padding: 0 1px; 
-    border-radius: 3px;
+  padding: 0 1px;
+  border-radius: 3px;
 }
 
 .typo-details-list {
@@ -130,6 +130,7 @@
   /* Center the graph if it's narrower than container */
   overflow-x: auto;
   /* Allow scrolling if graph is wide */
+  position: relative;
 }
 
 .typo-correct {
@@ -279,7 +280,7 @@
   /* Padding to hide black lines */
   box-sizing: border-box;
   overflow: hidden;
-  transition: opacity 0.5s ease-in-out;
+  /* transition: opacity 0.5s ease-in-out; */
   /* For fading out */
 }
 
@@ -304,6 +305,7 @@
   height: auto;
   z-index: 1;
   pointer-events: none;
+  /* transition: opacity 0.4s ease-in-out; */
 }
 
 .media-container video {

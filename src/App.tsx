@@ -4,7 +4,7 @@ import { Switch, Space, Alert, Spin, Popover, Tag } from 'antd';
 import './App.css';
 import { log, warn, error } from './utils/logger';
 import OcrOverlay from "./components/OcrOverlay";
-
+import CharacterStreamViz from './components/visualizations/CharacterStreamViz';
 
 import { useTfModel } from './hooks/useTfModel';
 import useOcrProcessing from './hooks/useOcrProcessing';
@@ -13,11 +13,12 @@ import {
     DisplayTextPart,
     TypoCorrectionResponse,
     TokenTypoDetail,
-    OcrDisplayLinePart
+    OcrDisplayLinePart,
+    StreamCharacter
 } from './types';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
-import { NetworkGraphViz } from './components/visualizations/NetworkGraphViz';
+import { NetworkGraphViz, FATTEN_LAYER_X } from './components/visualizations/NetworkGraphViz'; // Import FATTEN_LAYER_X
 import gsap from 'gsap';
 import useStatusText from "./hooks/useStatusText";
 
@@ -31,10 +32,17 @@ import {
     OCR_OVERLAY_TEXT_COLOR_NORMAL,
     STATUS_TEXTS,
     getTagColorForProbability,
+    // Add CANVAS_HEIGHT if it's a shared constant, otherwise define it here or pass from NetworkGraphViz
 } from './constants';
 
-function App() {
+const GRAPH_CANVAS_HEIGHT = 500; // Matching NetworkGraphViz CANVAS_HEIGHT
 
+// Define the central congregation point coordinates (relative to network-graph-container)
+const CENTRAL_CONNECTION_X = FATTEN_LAYER_X - 50; // Position it to the left of the first layer
+const CENTRAL_CONNECTION_Y = GRAPH_CANVAS_HEIGHT / 2;
+
+function App() {
+    // ... (state variables unchanged)
     const [errorState, setErrorState] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
     const [showConvFilters, setShowConvFilters] = useState<boolean>(false);
@@ -45,13 +53,13 @@ function App() {
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement] = useState<boolean>(true);
+    const [streamCharacter, setStreamCharacter] = useState<StreamCharacter | null>(null);
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
     const [interactiveOcrParts, setInteractiveOcrParts] = useState<DisplayTextPart[]>([]);
     const [backendCorrectedSentence, setBackendCorrectedSentence] = useState<string>('');
     const [isTypoCheckingAPILoading, setIsTypoCheckingAPILoading] = useState<boolean>(false);
-
 
     const imageRef = useRef<HTMLImageElement | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -67,11 +75,15 @@ function App() {
         currentSoftmaxProbs,
         currentCharVisData,
         networkGraphColor,
+        currentChar,
+        currentCharImageData,
+        onCharAnimationFinished
     } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
 
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
     const statusTextRef = useStatusText(currentAppPhase);
     const mediaContainerRef = useRef<HTMLDivElement>(null);
+    const networkContainerRef = useRef<HTMLDivElement>(null);
 
     const {
         weights: modelWeights,
@@ -79,7 +91,8 @@ function App() {
         tfReady,
         error: modelLoadError,
     } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
-
+    
+    // ... (other useEffects and handlers unchanged)
     useEffect(() => {
         if (modelLoadError) {
             setErrorState(modelLoadError);
@@ -87,47 +100,29 @@ function App() {
     }, [modelLoadError]);
 
     useEffect(() => {
-        const imgElement = imageRef.current;
-        if (imgElement) {
-            const handleLoad = () => {
-                if (imgElement.offsetWidth > 0 && imgElement.offsetHeight > 0) {
-                    setImageDimensions({ width: imgElement.offsetWidth, height: imgElement.offsetHeight });
-                    log(`Image dimensions set: ${imgElement.offsetWidth}x${imgElement.offsetHeight}`);
-                } else {
-                    log('Image loaded but rendered dimensions are 0.');
+        const mediaContainer = mediaContainerRef.current;
+        if (mediaContainer) {
+            const observer = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    if (width > 0 && height > 0) {
+                        setImageDimensions({ width, height });
+                    }
                 }
-            };
-            const handleErrorLoad = () => {
-                error('Failed to load image source:', imgElement.src);
-                setErrorState(`Failed to load image: ${imgElement.src}`);
-            };
-
-            if (imgElement.complete && imgElement.naturalWidth > 0) {
-                if (imgElement.offsetWidth > 0 && imgElement.offsetHeight > 0) {
-                     setImageDimensions({ width: imgElement.offsetWidth, height: imgElement.offsetHeight });
-                     log(`Image dimensions set (pre-loaded): ${imgElement.offsetWidth}x${imgElement.offsetHeight}`);
-                } else {
-                    log('Image pre-loaded but offset dimensions are 0. Attaching load listener.');
-                    imgElement.addEventListener('load', handleLoad);
-                }
-            } else {
-                imgElement.addEventListener('load', handleLoad);
-                imgElement.addEventListener('error', handleErrorLoad);
-            }
+            });
+            observer.observe(mediaContainer);
             return () => {
-                if(imgElement){
-                    imgElement.removeEventListener('load', handleLoad);
-                    imgElement.removeEventListener('error', handleErrorLoad);
-                }
+                observer.disconnect();
             };
         }
     }, []);
+
     const handleVideoEnd = () => {
         log('Video ended.');
         setIsVideoPlaying(false);
     };
 
-    const handleTypoCorrectionAPI = useCallback(async (textToCorrect: string) => { /* MODIFIED to build parts correctly */
+    const handleTypoCorrectionAPI = useCallback(async (textToCorrect: string) => { 
         if (!textToCorrect.trim()) { return; }
         log('Sending to typo correction API:', textToCorrect);
         setIsTypoCheckingAPILoading(true);
@@ -139,8 +134,6 @@ function App() {
             const result = await response.json() as TypoCorrectionResponse;
             log('Typo API response:', result);
             setBackendCorrectedSentence(result.corrected_sentence);
-
-            // For Popovers (using result.original_sentence for token alignment)
             const popoverInteractiveParts: DisplayTextPart[] = [];
             const originalWordsAndSpacesForPopover = result.original_sentence.split(/(\s+)/);
             let currentTokenDetailSearchIndex = 0;
@@ -148,11 +141,10 @@ function App() {
                 if (part.match(/^\s+$/) || part === '') { popoverInteractiveParts.push({ text: part, isWhitespace: true, isFlagged: false }); }
                 else {
                     let detail: TokenTypoDetail | undefined;
-                    // Ensure we find the correct token, even if words repeat, by searching from last found index
                     for(let i = currentTokenDetailSearchIndex; i < result.token_details.length; i++) {
                         if (result.token_details[i].token === part) {
                             detail = result.token_details[i];
-                            currentTokenDetailSearchIndex = i + 1; // Next search starts after this one
+                            currentTokenDetailSearchIndex = i + 1; 
                             break;
                         }
                     }
@@ -161,63 +153,46 @@ function App() {
                 }
             });
             setInteractiveOcrParts(popoverInteractiveParts);
-
-
-            // --- Transform ocrDisplayLines to use parts for highlighting ---
-            // Use the existing ocrDisplayLines (which have correct Y positions and IDs)
-            // and populate their 'parts' array based on the typo API result.
             const linesFromApiSentence = result.original_sentence.split('\n');
-            let globalTokenIndex = 0; // To iterate through result.token_details sequentially
-
+            let globalTokenIndex = 0; 
             const updatedOcrDisplayLines = ocrDisplayLines.map((existingLine, lineIdx) => {
-                const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; // Text for this line from API
+                const lineTextFromApi = linesFromApiSentence[lineIdx] || ""; 
                 const newParts: OcrDisplayLinePart[] = [];
                 let partIdCounter = 0;
-
-                // Split the line text by words and spaces to create parts
                 const wordsAndSpacesOnLine = lineTextFromApi.split(/(\s+)/).filter(p => p.length > 0);
-
                 wordsAndSpacesOnLine.forEach(textSegment => {
                     const partId = `${existingLine.id}-part-${partIdCounter++}`;
-                    if (textSegment.match(/^\s+$/)) { // It's whitespace
+                    if (textSegment.match(/^\s+$/)) { 
                         newParts.push({ id: partId, text: textSegment, isWhitespace: true, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> });
-                    } else { // It's a word
+                    } else { 
                         let isFlagged = false;
-                        // Match this word with the token_details from the API
-                        // This assumes token_details are in order of appearance in original_sentence
                         if (globalTokenIndex < result.token_details.length && result.token_details[globalTokenIndex].token === textSegment) {
                             isFlagged = result.token_details[globalTokenIndex].pred_tag !== 'KEEP';
                             globalTokenIndex++;
                         } else {
-                            // Fallback or warning if alignment is off
                             warn(`Highlighting token mismatch: OCR'd word "${textSegment}" vs API token "${result.token_details[globalTokenIndex]?.token}" on line ${lineIdx}. Defaulting to not flagged.`);
-                            // Try a more resilient find for popover data as a backup for flagging status
                             const popoverMatch = popoverInteractiveParts.find(pip => pip.text === textSegment && !pip.isWhitespace);
                             if (popoverMatch) isFlagged = popoverMatch.isFlagged;
                         }
                         newParts.push({ id: partId, text: textSegment, isWhitespace: false, isFlagged, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> });
                     }
                 });
-                return { ...existingLine, parts: newParts, textDuringOcr: lineTextFromApi /* Update to match API */ };
+                return { ...existingLine, parts: newParts, textDuringOcr: lineTextFromApi };
             });
-
             setOcrDisplayLines(updatedOcrDisplayLines);
             setIsShowingTypoHighlights(true);
-
         } catch (errApi) {
             error('Typo correction API call failed:', errApi);
             setErrorState(`Typo API Error: ${errApi instanceof Error ? errApi.message : String(errApi)}`);
-            // Fallback to simple parts if API fails, no highlighting info
             setOcrDisplayLines(prevLines => prevLines.map(line => ({
                 ...line,
                 parts: line.textDuringOcr.split(/(\s+)/).filter(p=>p.length>0).map((p,idx) => ({id: `${line.id}-part-${idx}`, text: p, isWhitespace: p.match(/^\s+$/) !== null, isFlagged: false, ref: React.createRef<HTMLSpanElement>() as React.RefObject<HTMLSpanElement> }))
             })));
             setBackendCorrectedSentence(textToCorrect);
-            setIsShowingTypoHighlights(true); // Still show text, but unhighlighted
+            setIsShowingTypoHighlights(true); 
         }
         finally { setIsTypoCheckingAPILoading(false); setCurrentAppPhase(2); }
     }, [ocrDisplayLines, setOcrDisplayLines]);
-
 
     useEffect(() => {
         if (shouldStartOcr && imageDimensions && imageRef.current?.complete && !isProcessingOCR) {
@@ -240,6 +215,46 @@ function App() {
 
 
     useEffect(() => {
+        if (currentChar && currentCharImageData && networkContainerRef.current) {
+            const containerRect = networkContainerRef.current.getBoundingClientRect();
+            const spawnAreaWidth = CENTRAL_CONNECTION_X - 50; // Ensure characters spawn to the left of the central point
+            
+            const charImageWidth = currentCharImageData.width;
+            const charImageHeight = currentCharImageData.height;
+
+            const initialStartX = Math.random() * (spawnAreaWidth - charImageWidth);
+            const initialStartY = Math.random() * (containerRect.height - charImageHeight);
+            
+            const pathStartX = initialStartX + charImageWidth / 2;
+            const pathStartY = initialStartY + charImageHeight / 2;
+
+            const newChar: StreamCharacter = {
+                id: `char-${Date.now()}`,
+                charImage: currentCharImageData,
+                startX: initialStartX, // Top-left for drawing image at spawn
+                startY: initialStartY, // Top-left for drawing image at spawn
+                currentX: initialStartX, // Will be animated
+                currentY: initialStartY, // Will be animated
+                path: [ // Path from initial char center to central connection point
+                    { x: pathStartX, y: pathStartY },
+                    // Orthogonal path to central point
+                    Math.random() > 0.5
+                        ? { x: pathStartX, y: CENTRAL_CONNECTION_Y }
+                        : { x: CENTRAL_CONNECTION_X, y: pathStartY },
+                    { x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y }
+                ],
+                lineEnd: { x: pathStartX, y: pathStartY },
+                completedSegments: 0,
+                animationState: 'appearing',
+                alpha: 1,
+                onFinished: onCharAnimationFinished,
+            };
+            setStreamCharacter(newChar);
+        }
+    }, [currentChar, currentCharImageData, onCharAnimationFinished]);
+
+    // ... (rest of useEffect hooks and render logic are largely unchanged)
+    useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {
             const timer = setTimeout(() => {
                 hasStartedAutoOcr.current = true;
@@ -248,9 +263,7 @@ function App() {
             return () => clearTimeout(timer);
         }
     }, [isVideoPlaying]);
-    
-
-    useEffect(() => { // GSAP Animation for Typo Highlighting (on existing text parts)
+    useEffect(() => { 
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
             const wordSpansToAnimate: HTMLElement[] = [];
             ocrDisplayLines.forEach(line => {
@@ -260,28 +273,23 @@ function App() {
                     }
                 });
             });
-
             if (wordSpansToAnimate.length > 0) {
-                // Ensure spans are visible with their base color before animating color
                 gsap.set(wordSpansToAnimate, { 
-                    opacity: 1, // They should already be visible
+                    opacity: 1, 
                     color: OCR_OVERLAY_TEXT_COLOR_NORMAL, 
                 });
-
                 const tl = gsap.timeline();
                 wordSpansToAnimate.forEach((span) => {
                     const isIncorrect = span.classList.contains('typo-incorrect');
                     tl.to(span, { 
-                        color: isIncorrect ? '#dc3545' : '#28a745', // Red for typo, Green for correct
+                        color: isIncorrect ? '#dc3545' : '#28a745', 
                         duration: 0.3,
                         ease: 'power1.inOut'
-                    }, `-=${0.3 - (TYPO_ANIMATION_DELAY_MS / 1000)}`); // Staggered color change
+                    }, `-=${0.3 - (TYPO_ANIMATION_DELAY_MS / 1000)}`); 
                 });
             }
         }
     }, [isShowingTypoHighlights, ocrDisplayLines]);
-
-
     const renderPopoverContent = (tokenDetail: DisplayTextPart) => {
         if (!tokenDetail.predictions) return null;
         return (
@@ -295,7 +303,7 @@ function App() {
             </div>
         );
     };
-    
+
     const renderStepExtraInfo = () => {
         switch (currentAppPhase) { 
             case 0: 
@@ -303,20 +311,34 @@ function App() {
                  return <p>Text writing animation finished. Preparing for OCR...</p>;
             case 1:
                 return (
-                    <div className="network-graph-container">
+                    <div className="network-graph-container" ref={networkContainerRef}>
+                        {networkContainerRef.current && (
+                            <CharacterStreamViz
+                                character={streamCharacter}
+                                containerSize={{
+                                    width: networkContainerRef.current.clientWidth,
+                                    height: networkContainerRef.current.clientHeight
+                                }}
+                            />
+                        )}
                         {showNetworkGraph && showMediaElement && (
                             <NetworkGraphViz
                                 activations={currentActivations}
                                 softmaxProbabilities={currentSoftmaxProbs}
-                                currentCharImageData={currentCharVisData}
+                                // currentCharImageData is no longer directly used by NetworkGraphViz for its own preview
+                                currentCharImageData={null} 
                                 animationBaseColor={networkGraphColor}
                                 flattenLayerName="flatten"
                                 hiddenDenseLayerName="dense"
                                 outputLayerName={FINAL_LAYER_NAME}
+                                // Pass the central point for the new lines
+                                centralConnectionPoint={{ x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y }}
                             />
                         )}
                         {(!showNetworkGraph || !showMediaElement) && <p>Neural network visualization appears here during OCR if enabled.</p>} 
-                        {(isProcessingOCR) && <div style={{width:'100%', textAlign:'center', marginTop:'10px'}}><Spin tip="Analyzing characters..."/></div>}
+                        <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)'}}>
+                            {isProcessingOCR && <Spin tip="Analyzing characters..." />}
+                        </div>
                          {!showMediaElement && ocrDisplayLines.length > 0 && <p style={{textAlign:'center', color: '#555'}}>Handwriting analysis complete. Moving to typo check.</p>}
                     </div>
                 );
@@ -324,12 +346,10 @@ function App() {
                 const typosToShow = interactiveOcrParts.filter(p => p.isFlagged && !p.isWhitespace && p.originalToken);
                 if (isTypoCheckingAPILoading) return <div style={{width:'100%', textAlign:'center'}}><Spin tip="Fetching typo details..." /></div>;
                 if (typosToShow.length === 0 && !isTypoCheckingAPILoading) return <p>No typos found by the checker, or correction process complete!</p>;
-
                 const typoRows: DisplayTextPart[][] = [];
                 for (let i = 0; i < typosToShow.length; i += 8) {
                     typoRows.push(typosToShow.slice(i, i + 8));
                 }
-
                 return (
                     <div className="typo-analysis-container">
                         <h4>Typo Analysis Results:</h4>
@@ -371,12 +391,9 @@ function App() {
             default: return null;
         }
     };
-
-
     return (
         <div className="app-container">
-            <h1>Theo Kremer</h1> {/* MODIFIED Header */}
-
+            <h1>Theo Kremer</h1>
             <div className="media-wrapper">
                 <div ref={mediaContainerRef} className={`media-container ${!showMediaElement ? 'hidden-media' : ''}`}>
                     <img
@@ -384,7 +401,11 @@ function App() {
                         src="/text_screenshot.png"
                         alt="Text input for OCR"
                         className="screenshot-underlay"
-                        style={{ cursor: 'default', opacity: isVideoPlaying ? 0 : 1 }}
+                        style={{
+                            cursor: 'default',
+                            opacity: isVideoPlaying ? 0 : 1,
+                            position: isVideoPlaying ? 'absolute' : 'relative',
+                        }}
                         crossOrigin="anonymous"
                     />
                     {isVideoPlaying && (
@@ -400,7 +421,6 @@ function App() {
                         </video>
                     )}
                 </div>
-                {/* OCR Overlay Text & Highlights - This is now always "active" after video, its content changes */}
                 {imageDimensions && (
                     <OcrOverlay
                         lines={ocrDisplayLines}
@@ -415,26 +435,18 @@ function App() {
                             mediaOffset: mediaContainerRef.current ? { top: mediaContainerRef.current.offsetTop, left: mediaContainerRef.current.offsetLeft } : null
                         }}
                     />
-
                 )}
-                 {/* Animated Status Text */}
                 <div className="status-text-container">
                     <span ref={statusTextRef} className="status-text-animator">{STATUS_TEXTS[currentAppPhase]}</span>
                 </div>
             </div>
-
-
-            <div className="steps-extra-info-container"> {/* MOVED below media-wrapper */}
+            <div className="steps-extra-info-container">
                 {renderStepExtraInfo()}
             </div>
-
             <Alert.ErrorBoundary>
-                {/* ... Alerts ... */}
                 {!tfReady && !errorState && !isLoadingModel && <Alert message="Initializing TensorFlow.js..." type="info" showIcon />}
                 {isLoadingModel && tfReady && (<Alert message={<span>Loading EMNIST Model... <Spin size="small" /></span>} type="info" showIcon />)}
                 {errorState && (<Alert message={errorState} type="error" showIcon closable onClose={() => setErrorState(null)} />)}
-                
-                {/* ... Controls, Output Boxes, Other Visualizations ... */}
                  {!isVideoPlaying && (currentAppPhase < 2 || (currentAppPhase ===2 && !isTypoCheckingAPILoading && !isShowingTypoHighlights)) && (
                      <Space direction="horizontal" size="middle" className="controls" wrap style={{ marginTop: '20px'}}>
                         <Switch title="Toggle Convolutional Filters Visualization" checkedChildren="Conv Filters" unCheckedChildren="Conv Filters" checked={showConvFilters} onChange={setShowConvFilters} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } /> 
@@ -442,12 +454,11 @@ function App() {
                         <Switch title="Toggle Full Network Graph Visualization" checkedChildren="Network Graph" unCheckedChildren="Network Graph" checked={showNetworkGraph} onChange={setShowNetworkGraph} disabled={isLoadingModel || isProcessingOCR || isTypoCheckingAPILoading } />
                     </Space>
                 )}
-
                  <div className="output-container" style={{ marginTop: '20px', width: '100%', display: 'flex', flexDirection: 'column', gap: '15px', opacity: isVideoPlaying ? 0.3 : 1 }}>
                     <div>
                         <h3>Detailed OCR Output (with Popovers for suggestions):</h3>
                         <div className="output-text-box" style={{ whiteSpace: 'pre-wrap', border: '1px solid #ddd', padding: '10px', minHeight: '50px', background: '#f9f9f9', lineHeight: '1.8' }}>
-                            {(currentAppPhase === 1 && isProcessingOCR && !ocrPredictedText) ? <Spin tip="OCR in progress..." /> : null}
+                            {currentAppPhase === 1 && isProcessingOCR && !ocrPredictedText && <div><Spin tip="OCR in progress..." /></div>}
                             {(currentAppPhase >= 1 && !isProcessingOCR && interactiveOcrParts.length === 0 && ocrPredictedText ) ? ocrPredictedText : null}
                             {interactiveOcrParts.map((part, index) => 
                                 part.isFlagged && !part.isWhitespace && part.originalToken ? ( 
@@ -462,24 +473,22 @@ function App() {
                              {currentAppPhase === 1 && !isProcessingOCR && !ocrPredictedText && !isProcessingOCR && "OCR starting soon..."}
                         </div>
                     </div>
-
                     <div>
                         <h3>Final Corrected Text (from Backend):</h3>
                         <div className="output-text-box" style={{ whiteSpace: 'pre-wrap', border: '1px solid #ddd', padding: '10px', minHeight: '50px', background: '#e6ffed' }}>
-                            {(currentAppPhase ===2 && isTypoCheckingAPILoading && !backendCorrectedSentence) ? <Spin tip="Correcting..." /> : null}
+                            {currentAppPhase === 2 && isTypoCheckingAPILoading && <div><Spin tip="Correcting..." /></div>}
                             {backendCorrectedSentence || ((currentAppPhase >=2 && !isTypoCheckingAPILoading && interactiveOcrParts.length === 0 && ocrPredictedText ) ? "Awaiting correction or no corrections needed." : "")}
                              {currentAppPhase < 2 && !backendCorrectedSentence && "Pending typo check..."}
                         </div>
                     </div>
                 </div>
                 {!isVideoPlaying && (currentAppPhase ===1 || currentAppPhase ===2) && (showConvFilters || showWeights) && (
-                    <div className="visualization-area" style={{ marginTop: '20px', minHeight: '100px', width: '100%', border: '1px solid #eee', padding: '10px', display: (showConvFilters || showWeights) ? 'flex' : 'none', flexDirection: 'column', gap: '15px', background: '#fdfdfd' }}>
+                    <div className="visualization-area" style={{ marginTop: '20px', minHeight: '100px', width: '100%', border: '1px solid #eee', padding: '10px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#fdfdfd' }}>
                         <h3 style={{textAlign:'center', color:'#777'}}>Additional Layer Visualizations</h3>
                         {showConvFilters && modelWeights && modelWeights['conv2d'] && (<ConvolutionFiltersViz weights={modelWeights} layerName='conv2d' />)}
                         {showWeights && modelWeights && CONV_LAYER_WEIGHT_NAMES.map(name => modelWeights[name] ? <WeightViz key={name + '-w'} weights={modelWeights} layerName={name} /> : null)}
                     </div>
                 )}
-
             </Alert.ErrorBoundary>
         </div>
     );

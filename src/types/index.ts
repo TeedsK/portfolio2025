@@ -106,3 +106,19 @@ export interface OcrDisplayLine {
     parts: OcrDisplayLinePart[];
     y: number;
 }
+
+/**
+ * Represents a character being animated in the stream visualization.
+ */
+export interface StreamCharacter {
+    id: string;
+    charImage: ImageData;
+    startX: number; // Top-left for drawing static image
+    startY: number; // Top-left for drawing static image
+    path: { x: number, y: number }[]; // Path for the line (from image center to central point)
+    lineEnd: { x: number, y: number }; // Current end of the line segment being drawn
+    completedSegments: number;
+    animationState: 'appearing' | 'drawingLine' | 'atCentralPoint' | 'fading' | 'finished';
+    alpha: number;
+    onFinished: () => void; // Callback when character reaches central point
+}

@@ -98,16 +98,34 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 ctx.save();
                 ctx.globalAlpha = char.alpha;
                 ctx.beginPath();
-                for (let i = 0; i < char.completedSegments; i++) {
-                    ctx.moveTo(char.path[i].x, char.path[i].y);
-                    ctx.lineTo(char.path[i + 1].x, char.path[i + 1].y);
+                
+                const P0 = char.path[0]; // Start point
+                const P1 = char.path[1]; // Corner point
+                const P2 = char.path[2]; // End point
+                const cornerRadius = 15; // The radius of the rounded corner
+
+                // If we are animating the first segment (from P0 to P1)
+                if (char.completedSegments === 0) {
+                    ctx.moveTo(P0.x, P0.y);
+                    ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
+                } else { // If we are past the first segment
+                    // Draw the complete first segment and the rounded corner
+                    ctx.moveTo(P0.x, P0.y);
+                    ctx.arcTo(P1.x, P1.y, P2.x, P2.y, cornerRadius);
+
+                    // Now continue the line to the current animated endpoint or the final point
+                    if (char.animationState === 'drawingLine') {
+                        // The "pen" is now at the end of the arc, so we just draw to the animated end point
+                        ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
+                    } else {
+                        // The animation is done, draw the full final segment
+                        ctx.lineTo(P2.x, P2.y);
+                    }
                 }
-                if (char.animationState === 'drawingLine' && char.path[char.completedSegments]) {
-                     ctx.moveTo(char.path[char.completedSegments].x, char.path[char.completedSegments].y);
-                     ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
-                }
-                ctx.strokeStyle = char.color; // Use the character's specific color
-                ctx.lineWidth = 2;
+                
+                ctx.strokeStyle = char.color;
+                ctx.lineWidth = 3; // A thicker line to make the curve more apparent
+                ctx.lineCap = 'round'; // Still useful for the start of the line
                 ctx.stroke();
                 ctx.restore();
 
@@ -128,20 +146,17 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 const rectWidth = char.charImage.width + padding * 2;
                 const rectHeight = char.charImage.height + padding * 2;
                 
-                // White background
                 ctx.fillStyle = '#FFFFFF';
                 ctx.beginPath();
                 ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
                 ctx.fill();
                 
-                // Colored outline
-                ctx.strokeStyle = char.color; // Use the character's specific color
+                ctx.strokeStyle = char.color;
                 ctx.lineWidth = 2.5;
                 ctx.beginPath();
                 ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
                 ctx.stroke();
                 
-                // Character image
                 ctx.putImageData(char.charImage, char.startX, char.startY);
                 
                 ctx.restore();

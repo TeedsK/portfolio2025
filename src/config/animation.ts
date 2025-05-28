@@ -6,9 +6,9 @@
  */
 
 // --- CharacterStreamViz Timings (in seconds) ---
-export const CHAR_FADE_IN_DURATION = 0.2;
-export const CHAR_SCALE_IN_DURATION = 0.2;
-export const CHAR_LINE_DRAW_DURATION = 0.2; // Duration per line segment
+export const CHAR_FADE_IN_DURATION = 0.1;
+export const CHAR_SCALE_IN_DURATION = 0.1;
+export const CHAR_LINE_DRAW_DURATION = 0.1; // Duration per line segment
 export const CHAR_FADE_OUT_DELAY = 0.5;     // Wait time after line is drawn before fading
 export const CHAR_FADE_OUT_DURATION = 0.3;
 export const CHAR_SCALE_OUT_DURATION = 0.3;

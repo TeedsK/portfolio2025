@@ -2,15 +2,7 @@
 import { useState, useRef, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { useTfModel } from './useTfModel';
-import { 
-  EMNIST_MODEL_URL, 
-  ACTIVATION_LAYER_NAMES, 
-  CONV_LAYER_WEIGHT_NAMES, 
-  FINAL_LAYER_NAME, 
-  ANIMATION_COLOR_PALETTE, 
-  OCR_OVERLAY_FONT_SIZE, 
-  EMNIST_CHARS 
-} from '../constants';
+import { EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES, FINAL_LAYER_NAME, ANIMATION_COLOR_PALETTE, OCR_OVERLAY_FONT_SIZE, EMNIST_CHARS } from '../constants';
 import { findCharacterBoxes } from '../ml/processing/segmentation';
 import { preprocessCharacterTensor } from '../ml/processing/preprocess';
 import {
@@ -45,6 +37,7 @@ interface UseOcrProcessingResult {
   onWaveFinished: (waveId: string) => void;
   currentChar: string | null;
   currentCharImageData: ImageData | null;
+  networkGraphColor: string; // Expose the color for the current character
   onCharAnimationFinished: (char: string) => void;
 }
 
@@ -60,6 +53,7 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
   const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
   const [currentChar, setCurrentChar] = useState<string | null>(null);
   const [currentCharImageData, setCurrentCharImageData] = useState<ImageData | null>(null);
+  const [networkGraphColor, setNetworkGraphColor] = useState(ANIMATION_COLOR_PALETTE[0]);
   
   const characterQueue = useRef<CharacterToProcess[]>([]).current;
   const ocrCharacterCountRef = useRef(0);
@@ -109,7 +103,7 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
       try {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         linesToProcess = findCharacterBoxes(imageData);
-        setProcessableLines(linesToProcess); // Set processableLines here
+        setProcessableLines(linesToProcess);
         if (linesToProcess.length === 0 || linesToProcess.every(line => line.length === 0)) {
           setIsProcessingOCR(false);
           resolve('');
@@ -173,7 +167,10 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
     }
 
     const { box, lineIndex, itemIndex } = charToProcess;
-    setActiveItemIndex({ line: lineIndex, item: itemIndex }); // Set activeItemIndex here
+    setActiveItemIndex({ line: lineIndex, item: itemIndex });
+
+    const currentCharacterColor = ANIMATION_COLOR_PALETTE[ocrCharacterCountRef.current % ANIMATION_COLOR_PALETTE.length];
+    setNetworkGraphColor(currentCharacterColor);
 
     const paddedImageData = (() => {
         const [x, y, w, h] = box;
@@ -236,7 +233,7 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
             id: `wave-${Date.now()}-${Math.random()}`,
             activations: processedActivations,
             softmaxProbabilities: processedSoftmax,
-            color: ANIMATION_COLOR_PALETTE[ocrCharacterCountRef.current % ANIMATION_COLOR_PALETTE.length]
+            color: currentCharacterColor
         };
         setNetworkWaves(prev => [...prev, newWave]);
     }
@@ -260,6 +257,7 @@ export default function useOcrProcessing({ imageRef }: UseOcrProcessingOptions):
     onWaveFinished,
     currentChar,
     currentCharImageData,
+    networkGraphColor,
     onCharAnimationFinished,
   };
 }

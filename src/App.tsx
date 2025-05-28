@@ -31,8 +31,6 @@ import {
     STATUS_TEXTS,
     getTagColorForProbability,
 } from './constants';
-//TYPO_ANIMATION_DELAY_MS
-// import TYPO_ANI
 import { useTfModel } from './hooks/useTfModel';
 import { TYPO_HIGHLIGHT_DELAY_MS } from './config/animation';
 
@@ -73,6 +71,7 @@ function App() {
         onWaveFinished,
         currentChar,
         currentCharImageData,
+        networkGraphColor,
         onCharAnimationFinished,
     } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
 
@@ -237,13 +236,14 @@ function App() {
                 lineEnd: { x: pathStartX, y: pathStartY },
                 completedSegments: 0,
                 animationState: 'appearing',
-                alpha: 0, // Start transparent
-                scale: 0.5, // Start small
+                alpha: 0,
+                scale: 0.5,
+                color: networkGraphColor, // Assign the synchronized color
                 onFinished: () => onCharAnimationFinished(currentChar),
             };
             setStreamCharacters(prev => [...prev, newChar]);
         }
-    }, [currentChar, currentCharImageData, onCharAnimationFinished]);
+    }, [currentChar, currentCharImageData, onCharAnimationFinished, networkGraphColor]);
 
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {

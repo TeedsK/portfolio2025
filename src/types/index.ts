@@ -121,6 +121,7 @@ export interface StreamCharacter {
     animationState: 'appearing' | 'drawingLine' | 'atCentralPoint' | 'fading' | 'finished';
     alpha: number;
     scale: number; // For scaling animation
+    color: string; // The color for the outline and line
     onFinished: () => void; // Callback when character reaches central point
 }
 

@@ -5,11 +5,9 @@ import gsap from 'gsap';
 import { log } from '../../utils/logger';
 import {
     CHAR_FADE_IN_DURATION,
-    CHAR_SCALE_IN_DURATION,
     CHAR_LINE_DRAW_DURATION,
     CHAR_FADE_OUT_DELAY,
     CHAR_FADE_OUT_DURATION,
-    CHAR_SCALE_OUT_DURATION,
 } from '../../config/animation';
 
 interface CharacterStreamVizProps {
@@ -96,6 +94,24 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             characters.forEach((char) => {
                 if (char.alpha < 0.01) return;
                 
+                // --- 1. Draw the connecting line (UNDERNEATH) ---
+                ctx.save();
+                ctx.globalAlpha = char.alpha;
+                ctx.beginPath();
+                for (let i = 0; i < char.completedSegments; i++) {
+                    ctx.moveTo(char.path[i].x, char.path[i].y);
+                    ctx.lineTo(char.path[i + 1].x, char.path[i + 1].y);
+                }
+                if (char.animationState === 'drawingLine' && char.path[char.completedSegments]) {
+                     ctx.moveTo(char.path[char.completedSegments].x, char.path[char.completedSegments].y);
+                     ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
+                }
+                ctx.strokeStyle = char.color; // Use the character's specific color
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+
+                // --- 2. Draw the character box and image (ON TOP) ---
                 ctx.save();
                 ctx.globalAlpha = char.alpha;
 
@@ -112,31 +128,22 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 const rectWidth = char.charImage.width + padding * 2;
                 const rectHeight = char.charImage.height + padding * 2;
                 
-                ctx.fillStyle = 'rgba(255, 192, 203, 0.9)';
+                // White background
+                ctx.fillStyle = '#FFFFFF';
                 ctx.beginPath();
                 ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
                 ctx.fill();
                 
+                // Colored outline
+                ctx.strokeStyle = char.color; // Use the character's specific color
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
+                ctx.stroke();
+                
+                // Character image
                 ctx.putImageData(char.charImage, char.startX, char.startY);
                 
-                ctx.restore(); 
-
-                ctx.save();
-                ctx.globalAlpha = char.alpha;
-                ctx.beginPath();
-                for (let i = 0; i < char.completedSegments; i++) {
-                    ctx.moveTo(char.path[i].x, char.path[i].y);
-                    ctx.lineTo(char.path[i + 1].x, char.path[i + 1].y);
-                }
-                
-                if (char.animationState === 'drawingLine' && char.path[char.completedSegments]) {
-                     ctx.moveTo(char.path[char.completedSegments].x, char.path[char.completedSegments].y);
-                     ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
-                }
-                
-                ctx.strokeStyle = 'black';
-                ctx.lineWidth = 2;
-                ctx.stroke();
                 ctx.restore();
             });
             

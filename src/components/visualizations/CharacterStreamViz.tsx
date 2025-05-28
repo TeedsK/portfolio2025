@@ -2,67 +2,86 @@
 import React, { useEffect, useRef } from 'react';
 import { StreamCharacter } from '../../types';
 import gsap from 'gsap';
-import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
-
-gsap.registerPlugin(MotionPathPlugin);
+import { log } from '../../utils/logger';
+import {
+    CHAR_FADE_IN_DURATION,
+    CHAR_SCALE_IN_DURATION,
+    CHAR_LINE_DRAW_DURATION,
+    CHAR_FADE_OUT_DELAY,
+    CHAR_FADE_OUT_DURATION,
+    CHAR_SCALE_OUT_DURATION,
+} from '../../config/animation';
 
 interface CharacterStreamVizProps {
-    character: StreamCharacter | null;
+    characters: StreamCharacter[];
     containerSize: { width: number; height: number };
+    onCharacterFinished: (id: string) => void;
 }
 
-const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ character, containerSize }) => {
+const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, containerSize, onCharacterFinished }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const charactersRef = useRef<StreamCharacter[]>([]);
     const animationFrameId = useRef<number>();
+    const initiatedAnimations = useRef(new Set<string>());
 
     useEffect(() => {
-        if (character && !charactersRef.current.find(c => c.id === character.id)) {
-            const newCharRef = {...character, alpha: 1}; // Ensure alpha is 1 for new char
-            charactersRef.current.push(newCharRef); 
+        characters.forEach((character) => {
+            if (initiatedAnimations.current.has(character.id)) {
+                return;
+            }
+
+            initiatedAnimations.current.add(character.id);
+            log(`[CharacterStreamViz] Initiating animation for character ID: ${character.id}`);
 
             const tl = gsap.timeline({
                 onComplete: () => {
-                    newCharRef.onFinished(); 
-                    newCharRef.animationState = 'fading'; 
-                    
-                    gsap.to(newCharRef, { 
-                        alpha: 0,
-                        duration: 0.5, 
-                        delay: 0.8, // Reduced delay slightly for responsiveness
-                        ease: 'power1.out',
-                        onComplete: () => {
-                            charactersRef.current = charactersRef.current.filter(c => c.id !== newCharRef.id);
-                        }
-                    });
+                    log(`[CharacterStreamViz] Animation complete for character ID: ${character.id}`);
+                    initiatedAnimations.current.delete(character.id);
+                    onCharacterFinished(character.id);
                 }
             });
 
-            tl.call(() => {
-                newCharRef.animationState = 'drawingLine';
-                newCharRef.completedSegments = 0;
+            tl.to(character, {
+                alpha: 1,
+                scale: 1,
+                duration: CHAR_FADE_IN_DURATION,
+                ease: 'power1.out',
+                onStart: () => log(`[CharacterStreamViz] Fade-in started for ${character.id}`),
             });
 
-            // Animate line segments
-            // The character image (newCharRef.startX, newCharRef.startY) remains static
-            for (let i = 0; i < newCharRef.path.length - 1; i++) {
-                const segmentEndPoint = newCharRef.path[i + 1];
-                tl.to(newCharRef.lineEnd, {
+            character.animationState = 'drawingLine';
+            for (let i = 0; i < character.path.length - 1; i++) {
+                const segmentEndPoint = character.path[i + 1];
+                tl.to(character.lineEnd, {
                     x: segmentEndPoint.x,
                     y: segmentEndPoint.y,
-                    duration: 0.4, 
+                    duration: CHAR_LINE_DRAW_DURATION,
                     ease: 'linear',
                     onComplete: () => {
-                        newCharRef.completedSegments = i + 1;
+                        character.completedSegments = i + 1;
                     }
                 });
             }
 
             tl.call(() => {
-                newCharRef.animationState = 'atCentralPoint';
+                log(`[CharacterStreamViz] Line drawn for ${character.id}, firing onFinished callback.`);
+                character.onFinished();
+                character.animationState = 'atCentralPoint';
             });
-        }
-    }, [character]);
+            
+            tl.to(character, {
+                alpha: 0,
+                scale: 0,
+                duration: CHAR_FADE_OUT_DURATION,
+                ease: 'power1.in',
+                delay: CHAR_FADE_OUT_DELAY,
+                onStart: () => {
+                    log(`[CharacterStreamViz] Fade-out started for ${character.id}`);
+                    character.animationState = 'fading';
+                },
+            });
+
+        });
+    }, [characters, onCharacterFinished]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -74,14 +93,20 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ character, cont
             if (!ctx) return;
             ctx.clearRect(0, 0, containerSize.width, containerSize.height);
 
-            charactersRef.current.forEach((char) => {
-                if (char.alpha < 0.01 && char.animationState === 'fading') return;
+            characters.forEach((char) => {
+                if (char.alpha < 0.01) return;
                 
+                ctx.save();
                 ctx.globalAlpha = char.alpha;
+
+                const centerX = char.startX + char.charImage.width / 2;
+                const centerY = char.startY + char.charImage.height / 2;
+                ctx.translate(centerX, centerY);
+                ctx.scale(char.scale, char.scale);
+                ctx.translate(-centerX, -centerY);
 
                 const padding = 8;
                 const borderRadius = 10;
-                // Image is drawn at its static startX, startY
                 const rectX = char.startX - padding;
                 const rectY = char.startY - padding;
                 const rectWidth = char.charImage.width + padding * 2;
@@ -93,7 +118,11 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ character, cont
                 ctx.fill();
                 
                 ctx.putImageData(char.charImage, char.startX, char.startY);
+                
+                ctx.restore(); 
 
+                ctx.save();
+                ctx.globalAlpha = char.alpha;
                 ctx.beginPath();
                 for (let i = 0; i < char.completedSegments; i++) {
                     ctx.moveTo(char.path[i].x, char.path[i].y);
@@ -103,17 +132,12 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ character, cont
                 if (char.animationState === 'drawingLine' && char.path[char.completedSegments]) {
                      ctx.moveTo(char.path[char.completedSegments].x, char.path[char.completedSegments].y);
                      ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
-                } else if (char.animationState === 'atCentralPoint' || char.animationState === 'fading') {
-                     for (let i = 0; i < char.path.length - 1; i++) {
-                        ctx.moveTo(char.path[i].x, char.path[i].y);
-                        ctx.lineTo(char.path[i + 1].x, char.path[i + 1].y);
-                    }
                 }
+                
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 ctx.stroke();
-
-                ctx.globalAlpha = 1; 
+                ctx.restore();
             });
             
             animationFrameId.current = requestAnimationFrame(render);
@@ -125,9 +149,8 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ character, cont
             if (animationFrameId.current) {
                 cancelAnimationFrame(animationFrameId.current);
             }
-            gsap.killTweensOf(charactersRef.current.map(c => [c, c.lineEnd]));
         };
-    }, [containerSize]);
+    }, [containerSize, characters]);
 
     return (
         <canvas

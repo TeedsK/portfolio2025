@@ -120,5 +120,13 @@ export interface StreamCharacter {
     completedSegments: number;
     animationState: 'appearing' | 'drawingLine' | 'atCentralPoint' | 'fading' | 'finished';
     alpha: number;
+    scale: number; // For scaling animation
     onFinished: () => void; // Callback when character reaches central point
+}
+
+export interface AnimationWave {
+    id: string;
+    activations: ActivationData;
+    softmaxProbabilities: number[];
+    color: string;
 }

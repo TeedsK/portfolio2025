@@ -6,7 +6,6 @@ import { log, warn, error } from './utils/logger';
 import OcrOverlay from "./components/OcrOverlay";
 import CharacterStreamViz from './components/visualizations/CharacterStreamViz';
 
-import { useTfModel } from './hooks/useTfModel';
 import useOcrProcessing from './hooks/useOcrProcessing';
 
 import {
@@ -14,17 +13,16 @@ import {
     TypoCorrectionResponse,
     TokenTypoDetail,
     OcrDisplayLinePart,
-    StreamCharacter
+    StreamCharacter,
 } from './types';
 import { WeightViz } from './components/visualizations/WeightViz';
 import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFiltersViz';
-import { NetworkGraphViz, FATTEN_LAYER_X } from './components/visualizations/NetworkGraphViz'; // Import FATTEN_LAYER_X
+import { NetworkGraphViz, FATTEN_LAYER_X } from './components/visualizations/NetworkGraphViz';
 import gsap from 'gsap';
 import useStatusText from "./hooks/useStatusText";
 
 import {
     EMNIST_MODEL_URL,
-    TYPO_ANIMATION_DELAY_MS,
     ACTIVATION_LAYER_NAMES,
     CONV_LAYER_WEIGHT_NAMES,
     FINAL_LAYER_NAME,
@@ -32,17 +30,17 @@ import {
     OCR_OVERLAY_TEXT_COLOR_NORMAL,
     STATUS_TEXTS,
     getTagColorForProbability,
-    // Add CANVAS_HEIGHT if it's a shared constant, otherwise define it here or pass from NetworkGraphViz
 } from './constants';
+//TYPO_ANIMATION_DELAY_MS
+// import TYPO_ANI
+import { useTfModel } from './hooks/useTfModel';
+import { TYPO_HIGHLIGHT_DELAY_MS } from './config/animation';
 
-const GRAPH_CANVAS_HEIGHT = 500; // Matching NetworkGraphViz CANVAS_HEIGHT
-
-// Define the central congregation point coordinates (relative to network-graph-container)
-const CENTRAL_CONNECTION_X = FATTEN_LAYER_X - 50; // Position it to the left of the first layer
+const GRAPH_CANVAS_HEIGHT = 500;
+const CENTRAL_CONNECTION_X = FATTEN_LAYER_X - 50;
 const CENTRAL_CONNECTION_Y = GRAPH_CANVAS_HEIGHT / 2;
 
 function App() {
-    // ... (state variables unchanged)
     const [errorState, setErrorState] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
     const [showConvFilters, setShowConvFilters] = useState<boolean>(false);
@@ -53,7 +51,7 @@ function App() {
     const [isShowingTypoHighlights, setIsShowingTypoHighlights] = useState<boolean>(false);
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement] = useState<boolean>(true);
-    const [streamCharacter, setStreamCharacter] = useState<StreamCharacter | null>(null);
+    const [streamCharacters, setStreamCharacters] = useState<StreamCharacter[]>([]);
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
@@ -71,13 +69,11 @@ function App() {
         ocrDisplayLines,
         setOcrDisplayLines,
         ocrPredictedText,
-        currentActivations,
-        currentSoftmaxProbs,
-        currentCharVisData,
-        networkGraphColor,
+        networkWaves,
+        onWaveFinished,
         currentChar,
         currentCharImageData,
-        onCharAnimationFinished
+        onCharAnimationFinished,
     } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
 
     const ocrDisplayLinesRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -91,8 +87,7 @@ function App() {
         tfReady,
         error: modelLoadError,
     } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
-    
-    // ... (other useEffects and handlers unchanged)
+
     useEffect(() => {
         if (modelLoadError) {
             setErrorState(modelLoadError);
@@ -213,11 +208,10 @@ function App() {
         }
     }, [shouldStartOcr, imageDimensions, isProcessingOCR, startOcr, handleTypoCorrectionAPI]);
 
-
     useEffect(() => {
         if (currentChar && currentCharImageData && networkContainerRef.current) {
             const containerRect = networkContainerRef.current.getBoundingClientRect();
-            const spawnAreaWidth = CENTRAL_CONNECTION_X - 50; // Ensure characters spawn to the left of the central point
+            const spawnAreaWidth = CENTRAL_CONNECTION_X - 50;
             
             const charImageWidth = currentCharImageData.width;
             const charImageHeight = currentCharImageData.height;
@@ -231,13 +225,10 @@ function App() {
             const newChar: StreamCharacter = {
                 id: `char-${Date.now()}`,
                 charImage: currentCharImageData,
-                startX: initialStartX, // Top-left for drawing image at spawn
-                startY: initialStartY, // Top-left for drawing image at spawn
-                currentX: initialStartX, // Will be animated
-                currentY: initialStartY, // Will be animated
-                path: [ // Path from initial char center to central connection point
+                startX: initialStartX,
+                startY: initialStartY,
+                path: [
                     { x: pathStartX, y: pathStartY },
-                    // Orthogonal path to central point
                     Math.random() > 0.5
                         ? { x: pathStartX, y: CENTRAL_CONNECTION_Y }
                         : { x: CENTRAL_CONNECTION_X, y: pathStartY },
@@ -246,14 +237,14 @@ function App() {
                 lineEnd: { x: pathStartX, y: pathStartY },
                 completedSegments: 0,
                 animationState: 'appearing',
-                alpha: 1,
-                onFinished: onCharAnimationFinished,
+                alpha: 0, // Start transparent
+                scale: 0.5, // Start small
+                onFinished: () => onCharAnimationFinished(currentChar),
             };
-            setStreamCharacter(newChar);
+            setStreamCharacters(prev => [...prev, newChar]);
         }
     }, [currentChar, currentCharImageData, onCharAnimationFinished]);
 
-    // ... (rest of useEffect hooks and render logic are largely unchanged)
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {
             const timer = setTimeout(() => {
@@ -263,6 +254,7 @@ function App() {
             return () => clearTimeout(timer);
         }
     }, [isVideoPlaying]);
+
     useEffect(() => { 
         if (isShowingTypoHighlights && ocrDisplayLines.some(line => line.parts.length > 0)) {
             const wordSpansToAnimate: HTMLElement[] = [];
@@ -285,11 +277,16 @@ function App() {
                         color: isIncorrect ? '#dc3545' : '#28a745', 
                         duration: 0.3,
                         ease: 'power1.inOut'
-                    }, `-=${0.3 - (TYPO_ANIMATION_DELAY_MS / 1000)}`); 
+                    }, `-=${0.3 - (TYPO_HIGHLIGHT_DELAY_MS / 1000)}`); 
                 });
             }
         }
     }, [isShowingTypoHighlights, ocrDisplayLines]);
+
+    const onCharacterFinished = useCallback((id: string) => {
+        setStreamCharacters(prev => prev.filter(c => c.id !== id));
+    }, []);
+
     const renderPopoverContent = (tokenDetail: DisplayTextPart) => {
         if (!tokenDetail.predictions) return null;
         return (
@@ -314,24 +311,21 @@ function App() {
                     <div className="network-graph-container" ref={networkContainerRef}>
                         {networkContainerRef.current && (
                             <CharacterStreamViz
-                                character={streamCharacter}
+                                characters={streamCharacters}
                                 containerSize={{
                                     width: networkContainerRef.current.clientWidth,
                                     height: networkContainerRef.current.clientHeight
                                 }}
+                                onCharacterFinished={onCharacterFinished}
                             />
                         )}
                         {showNetworkGraph && showMediaElement && (
                             <NetworkGraphViz
-                                activations={currentActivations}
-                                softmaxProbabilities={currentSoftmaxProbs}
-                                // currentCharImageData is no longer directly used by NetworkGraphViz for its own preview
-                                currentCharImageData={null} 
-                                animationBaseColor={networkGraphColor}
+                                waves={networkWaves}
+                                onWaveFinished={onWaveFinished}
                                 flattenLayerName="flatten"
                                 hiddenDenseLayerName="dense"
                                 outputLayerName={FINAL_LAYER_NAME}
-                                // Pass the central point for the new lines
                                 centralConnectionPoint={{ x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y }}
                             />
                         )}

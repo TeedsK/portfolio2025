@@ -7,6 +7,9 @@ import {
     CHAR_FADE_IN_DURATION,
     CHAR_FADE_OUT_DELAY,
     CHAR_FADE_OUT_DURATION,
+    CHAR_BOX_CONTENT_WIDTH,
+    CHAR_BOX_CONTENT_HEIGHT,
+    CHAR_BOX_PADDING,
 } from '../../config/animation';
 
 interface CharacterStreamVizProps {
@@ -15,12 +18,15 @@ interface CharacterStreamVizProps {
     onCharacterFinished: (id: string) => void;
 }
 
+const offscreenCanvas = document.createElement('canvas');
+const offscreenCtx = offscreenCanvas.getContext('2d');
+
 const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, containerSize, onCharacterFinished }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationFrameId = useRef<number>();
     const initiatedAnimations = useRef(new Set<string>());
 
-    const GRAY_COLOR = '#AAAAAA'; // Define gray color for retraction phase
+    const GRAY_COLOR = '#AAAAAA'; 
 
     useEffect(() => {
         characters.forEach((character) => {
@@ -35,7 +41,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             
             const lineGrowDuration = 0.4; 
             const lineShrinkDuration = 0.4;
-            const characterShrinkScale = 0.3; // Scale to shrink to during retraction
+            const characterShrinkScale = 0.3; 
 
             const tl = gsap.timeline({
                 onComplete: () => {
@@ -45,7 +51,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 }
             });
 
-            // 1. Fade in character box and scale it up
             tl.to(character, {
                 alpha: 1,
                 scale: 1,
@@ -54,7 +59,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 onStart: () => log(`[CharacterStreamViz] Fade-in started for ${character.id}`),
             });
             
-            // 2. Line Growth Phase: Animate headProgress from 0 to 1.
             tl.to(character, {
                 headProgress: 1,
                 duration: lineGrowDuration,
@@ -66,8 +70,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 }
             }, ">"); 
 
-            // 3. Line Shrink Phase & Character Graying/Shrinking: Animate tailProgress.
-            // This starts immediately after the head has finished growing.
             const lineShrinkTl = gsap.timeline();
             lineShrinkTl.to(character, {
                 tailProgress: 1,
@@ -76,27 +78,25 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 onStart: () => log(`[CharacterStreamViz] Line shrink (tail moving) started for ${character.id}`),
                 onComplete: () => log(`[CharacterStreamViz] Line shrink complete for ${character.id}`),
             });
-            // Parallel animation for graying and shrinking the character box
             lineShrinkTl.to(character, {
                 color: GRAY_COLOR,
                 scale: characterShrinkScale,
-                duration: lineShrinkDuration, // Match line shrink duration
+                duration: lineShrinkDuration, 
                 ease: 'power1.inOut'
-            }, 0); // Start at the same time as tailProgress animation
+            }, 0); 
 
-            tl.add(lineShrinkTl, ">"); // Add this sub-timeline after headProgress finishes
+            tl.add(lineShrinkTl, ">"); 
 
-            // 4. Final Fade out character box and scale it down (if not already at 0 scale)
             tl.to(character, {
                 alpha: 0,
-                scale: 0, // Ensure it scales completely out
+                scale: 0, 
                 duration: CHAR_FADE_OUT_DURATION,
                 ease: 'power1.in',
                 delay: CHAR_FADE_OUT_DELAY, 
                 onStart: () => {
                     log(`[CharacterStreamViz] Character box final fade-out started for ${character.id}`);
                     character.animationState = 'fading';
-                    if(character.color !== GRAY_COLOR) character.color = GRAY_COLOR; // Ensure gray on fade if somehow missed
+                    if(character.color !== GRAY_COLOR) character.color = GRAY_COLOR; 
                 },
             });
 
@@ -107,10 +107,10 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx || !offscreenCtx) return;
 
         const render = () => {
-            if (!ctx) return;
+            if (!ctx || !offscreenCtx) return;
             ctx.clearRect(0, 0, containerSize.width, containerSize.height);
 
             characters.forEach((char) => {
@@ -154,31 +154,52 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     ctx.save();
                     ctx.globalAlpha = char.alpha;
 
-                    const centerX = char.startX + char.charImage.width / 2;
-                    const centerY = char.startY + char.charImage.height / 2;
-                    ctx.translate(centerX, centerY);
-                    ctx.scale(char.scale, char.scale); 
-                    ctx.translate(-centerX, -centerY);
+                    const totalBoxVisualWidth = CHAR_BOX_CONTENT_WIDTH + CHAR_BOX_PADDING * 2;
+                    const totalBoxVisualHeight = CHAR_BOX_CONTENT_HEIGHT + CHAR_BOX_PADDING * 2;
 
-                    const padding = 8;
+                    const boxCenterX = char.startX + totalBoxVisualWidth / 2;
+                    const boxCenterY = char.startY + totalBoxVisualHeight / 2;
+                    
+                    ctx.translate(boxCenterX, boxCenterY);
+                    ctx.scale(char.scale, char.scale); 
+                    ctx.translate(-boxCenterX, -boxCenterY);
+
                     const borderRadius = 10;
-                    const rectX = char.startX - padding;
-                    const rectY = char.startY - padding;
-                    const rectWidth = char.charImage.width + padding * 2;
-                    const rectHeight = char.charImage.height + padding * 2;
                     
                     ctx.fillStyle = '#FFFFFF';
                     ctx.beginPath();
-                    ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
+                    ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.fill();
                     
                     ctx.strokeStyle = char.color; 
                     ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
+                    ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.stroke();
                     
-                    ctx.putImageData(char.charImage, char.startX, char.startY);
+                    const charImg = char.charImage;
+                    if (charImg.width > 0 && charImg.height > 0 && offscreenCtx) {
+                        offscreenCanvas.width = charImg.width;
+                        offscreenCanvas.height = charImg.height;
+                        offscreenCtx.putImageData(charImg, 0, 0);
+                        
+                        let drawnImgWidth = charImg.width;
+                        let drawnImgHeight = charImg.height;
+                        let fitScale = 1;
+
+                        if (charImg.width > CHAR_BOX_CONTENT_WIDTH || charImg.height > CHAR_BOX_CONTENT_HEIGHT) {
+                            const widthScaleRatio = CHAR_BOX_CONTENT_WIDTH / charImg.width;
+                            const heightScaleRatio = CHAR_BOX_CONTENT_HEIGHT / charImg.height;
+                            fitScale = Math.min(widthScaleRatio, heightScaleRatio);
+                            drawnImgWidth = charImg.width * fitScale;
+                            drawnImgHeight = charImg.height * fitScale;
+                        }
+                        
+                        const imgDrawX = char.startX + CHAR_BOX_PADDING + (CHAR_BOX_CONTENT_WIDTH - drawnImgWidth) / 2;
+                        const imgDrawY = char.startY + CHAR_BOX_PADDING + (CHAR_BOX_CONTENT_HEIGHT - drawnImgHeight) / 2;
+                        
+                        ctx.drawImage(offscreenCanvas, 0, 0, charImg.width, charImg.height, imgDrawX, imgDrawY, drawnImgWidth, drawnImgHeight);
+                    }
                     
                     ctx.restore();
                 }

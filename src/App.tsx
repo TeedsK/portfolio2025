@@ -29,7 +29,12 @@ import {
     getTagColorForProbability,
 } from './constants';
 import { useTfModel } from './hooks/useTfModel';
-import { TYPO_HIGHLIGHT_DELAY_MS } from './config/animation';
+import { 
+    TYPO_HIGHLIGHT_DELAY_MS,
+    CHAR_BOX_CONTENT_WIDTH, 
+    CHAR_BOX_CONTENT_HEIGHT,
+    CHAR_BOX_PADDING
+} from './config/animation';
 import { PathManager } from './utils/path';
 
 const GRAPH_CANVAS_HEIGHT = 500;
@@ -210,22 +215,25 @@ function App() {
             const containerRect = networkContainerRef.current.getBoundingClientRect();
             const spawnAreaWidth = CENTRAL_CONNECTION_X - 50;
             
-            const charImageWidth = currentCharImageData.width;
-            const charImageHeight = currentCharImageData.height;
+            const standardBoxTotalWidth = CHAR_BOX_CONTENT_WIDTH + CHAR_BOX_PADDING * 2;
+            const standardBoxTotalHeight = CHAR_BOX_CONTENT_HEIGHT + CHAR_BOX_PADDING * 2;
 
-            const initialStartX = Math.random() * (spawnAreaWidth - charImageWidth);
-            const initialStartY = Math.random() * (containerRect.height - charImageHeight);
+            const initialStartX = Math.random() * (spawnAreaWidth - standardBoxTotalWidth);
+            const initialStartY = Math.random() * (containerRect.height - standardBoxTotalHeight);
             
-            const p0 = { x: initialStartX + charImageWidth / 2, y: initialStartY + charImageHeight / 2 };
+            const p0 = { 
+                x: initialStartX + standardBoxTotalWidth / 2, 
+                y: initialStartY + standardBoxTotalHeight / 2 
+            };
             const p2 = { x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y };
             const p1 = Math.random() > 0.5 ? { x: p0.x, y: p2.y } : { x: p2.x, y: p0.y };
 
             const newChar: StreamCharacter = {
                 id: `char-${Date.now()}`,
                 charImage: currentCharImageData,
-                startX: initialStartX,
-                startY: initialStartY,
-                path: new PathManager(p0, p1, p2, 15),
+                startX: initialStartX, // This is now the top-left of the standard box
+                startY: initialStartY, // This is now the top-left of the standard box
+                path: new PathManager(p0, p1, p2, 15), // Radius for the arc
                 animationState: 'appearing',
                 alpha: 0,
                 scale: 0.5,

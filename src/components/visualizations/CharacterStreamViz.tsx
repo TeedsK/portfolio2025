@@ -5,7 +5,6 @@ import gsap from 'gsap';
 import { log } from '../../utils/logger';
 import {
     CHAR_FADE_IN_DURATION,
-    CHAR_LINE_DRAW_DURATION,
     CHAR_FADE_OUT_DELAY,
     CHAR_FADE_OUT_DURATION,
 } from '../../config/animation';
@@ -21,6 +20,8 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
     const animationFrameId = useRef<number>();
     const initiatedAnimations = useRef(new Set<string>());
 
+    const GRAY_COLOR = '#AAAAAA'; // Define gray color for retraction phase
+
     useEffect(() => {
         characters.forEach((character) => {
             if (initiatedAnimations.current.has(character.id)) {
@@ -29,15 +30,22 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
             initiatedAnimations.current.add(character.id);
             log(`[CharacterStreamViz] Initiating animation for character ID: ${character.id}`);
+            
+            character.animationState = 'traveling';
+            
+            const lineGrowDuration = 0.4; 
+            const lineShrinkDuration = 0.4;
+            const characterShrinkScale = 0.3; // Scale to shrink to during retraction
 
             const tl = gsap.timeline({
                 onComplete: () => {
-                    log(`[CharacterStreamViz] Animation complete for character ID: ${character.id}`);
+                    log(`[CharacterStreamViz] GSAP Timeline complete for character ID: ${character.id}`);
                     initiatedAnimations.current.delete(character.id);
                     onCharacterFinished(character.id);
                 }
             });
 
+            // 1. Fade in character box and scale it up
             tl.to(character, {
                 alpha: 1,
                 scale: 1,
@@ -45,36 +53,50 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 ease: 'power1.out',
                 onStart: () => log(`[CharacterStreamViz] Fade-in started for ${character.id}`),
             });
-
-            character.animationState = 'drawingLine';
-            for (let i = 0; i < character.path.length - 1; i++) {
-                const segmentEndPoint = character.path[i + 1];
-                tl.to(character.lineEnd, {
-                    x: segmentEndPoint.x,
-                    y: segmentEndPoint.y,
-                    duration: CHAR_LINE_DRAW_DURATION,
-                    ease: 'linear',
-                    onComplete: () => {
-                        character.completedSegments = i + 1;
-                    }
-                });
-            }
-
-            tl.call(() => {
-                log(`[CharacterStreamViz] Line drawn for ${character.id}, firing onFinished callback.`);
-                character.onFinished();
-                character.animationState = 'atCentralPoint';
-            });
             
+            // 2. Line Growth Phase: Animate headProgress from 0 to 1.
+            tl.to(character, {
+                headProgress: 1,
+                duration: lineGrowDuration,
+                ease: 'linear',
+                onStart: () => log(`[CharacterStreamViz] Line growth (head moving) started for ${character.id}`),
+                onComplete: () => {
+                     log(`[CharacterStreamViz] Line growth complete (head reached end) for ${character.id}. Firing onFinished for network graph.`);
+                     character.onFinished(); 
+                }
+            }, ">"); 
+
+            // 3. Line Shrink Phase & Character Graying/Shrinking: Animate tailProgress.
+            // This starts immediately after the head has finished growing.
+            const lineShrinkTl = gsap.timeline();
+            lineShrinkTl.to(character, {
+                tailProgress: 1,
+                duration: lineShrinkDuration,
+                ease: 'linear',
+                onStart: () => log(`[CharacterStreamViz] Line shrink (tail moving) started for ${character.id}`),
+                onComplete: () => log(`[CharacterStreamViz] Line shrink complete for ${character.id}`),
+            });
+            // Parallel animation for graying and shrinking the character box
+            lineShrinkTl.to(character, {
+                color: GRAY_COLOR,
+                scale: characterShrinkScale,
+                duration: lineShrinkDuration, // Match line shrink duration
+                ease: 'power1.inOut'
+            }, 0); // Start at the same time as tailProgress animation
+
+            tl.add(lineShrinkTl, ">"); // Add this sub-timeline after headProgress finishes
+
+            // 4. Final Fade out character box and scale it down (if not already at 0 scale)
             tl.to(character, {
                 alpha: 0,
-                scale: 0,
+                scale: 0, // Ensure it scales completely out
                 duration: CHAR_FADE_OUT_DURATION,
                 ease: 'power1.in',
-                delay: CHAR_FADE_OUT_DELAY,
+                delay: CHAR_FADE_OUT_DELAY, 
                 onStart: () => {
-                    log(`[CharacterStreamViz] Fade-out started for ${character.id}`);
+                    log(`[CharacterStreamViz] Character box final fade-out started for ${character.id}`);
                     character.animationState = 'fading';
+                    if(character.color !== GRAY_COLOR) character.color = GRAY_COLOR; // Ensure gray on fade if somehow missed
                 },
             });
 
@@ -92,74 +114,74 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             ctx.clearRect(0, 0, containerSize.width, containerSize.height);
 
             characters.forEach((char) => {
-                if (char.alpha < 0.01) return;
-                
-                // --- 1. Draw the connecting line (UNDERNEATH) ---
-                ctx.save();
-                ctx.globalAlpha = char.alpha;
-                ctx.beginPath();
-                
-                const P0 = char.path[0]; // Start point
-                const P1 = char.path[1]; // Corner point
-                const P2 = char.path[2]; // End point
-                const cornerRadius = 15; // The radius of the rounded corner
+                const shouldDrawLine = char.headProgress > char.tailProgress || (char.headProgress === 1 && char.tailProgress < 1);
 
-                // If we are animating the first segment (from P0 to P1)
-                if (char.completedSegments === 0) {
-                    ctx.moveTo(P0.x, P0.y);
-                    ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
-                } else { // If we are past the first segment
-                    // Draw the complete first segment and the rounded corner
-                    ctx.moveTo(P0.x, P0.y);
-                    ctx.arcTo(P1.x, P1.y, P2.x, P2.y, cornerRadius);
+                if (char.alpha < 0.01 && char.animationState === 'fading') return;
 
-                    // Now continue the line to the current animated endpoint or the final point
-                    if (char.animationState === 'drawingLine') {
-                        // The "pen" is now at the end of the arc, so we just draw to the animated end point
-                        ctx.lineTo(char.lineEnd.x, char.lineEnd.y);
-                    } else {
-                        // The animation is done, draw the full final segment
-                        ctx.lineTo(P2.x, P2.y);
+                if (shouldDrawLine && char.alpha > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = char.alpha; 
+                    ctx.beginPath();
+                    
+                    const path = char.path;
+                    const segments = 30; 
+                    const startDistance = char.tailProgress * path.totalLength;
+                    const endDistance = char.headProgress * path.totalLength;
+                    
+                    if (endDistance > startDistance && path.totalLength > 0) {
+                        const step = (endDistance - startDistance) / segments;
+                        let firstPoint = true;
+                        for (let i = 0; i <= segments; i++) {
+                            const dist = startDistance + i * step;
+                            const point = path.getPointAt(dist);
+                            if (firstPoint) {
+                                ctx.moveTo(point.x, point.y);
+                                firstPoint = false;
+                            } else {
+                                ctx.lineTo(point.x, point.y);
+                            }
+                        }
+                        ctx.strokeStyle = char.color; 
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round'; 
+                        ctx.stroke();
                     }
+                    ctx.restore();
                 }
-                
-                ctx.strokeStyle = char.color;
-                ctx.lineWidth = 3; // A thicker line to make the curve more apparent
-                ctx.lineCap = 'round'; // Still useful for the start of the line
-                ctx.stroke();
-                ctx.restore();
 
-                // --- 2. Draw the character box and image (ON TOP) ---
-                ctx.save();
-                ctx.globalAlpha = char.alpha;
+                if (char.alpha > 0) { 
+                    ctx.save();
+                    ctx.globalAlpha = char.alpha;
 
-                const centerX = char.startX + char.charImage.width / 2;
-                const centerY = char.startY + char.charImage.height / 2;
-                ctx.translate(centerX, centerY);
-                ctx.scale(char.scale, char.scale);
-                ctx.translate(-centerX, -centerY);
+                    const centerX = char.startX + char.charImage.width / 2;
+                    const centerY = char.startY + char.charImage.height / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.scale(char.scale, char.scale); 
+                    ctx.translate(-centerX, -centerY);
 
-                const padding = 8;
-                const borderRadius = 10;
-                const rectX = char.startX - padding;
-                const rectY = char.startY - padding;
-                const rectWidth = char.charImage.width + padding * 2;
-                const rectHeight = char.charImage.height + padding * 2;
-                
-                ctx.fillStyle = '#FFFFFF';
-                ctx.beginPath();
-                ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
-                ctx.fill();
-                
-                ctx.strokeStyle = char.color;
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
-                ctx.stroke();
-                
-                ctx.putImageData(char.charImage, char.startX, char.startY);
-                
-                ctx.restore();
+                    const padding = 8;
+                    const borderRadius = 10;
+                    const rectX = char.startX - padding;
+                    const rectY = char.startY - padding;
+                    const rectWidth = char.charImage.width + padding * 2;
+                    const rectHeight = char.charImage.height + padding * 2;
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.beginPath();
+                    ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = char.color; 
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.roundRect(rectX, rectY, rectWidth, rectHeight, borderRadius);
+                    ctx.stroke();
+                    
+                    ctx.putImageData(char.charImage, char.startX, char.startY);
+                    
+                    ctx.restore();
+                }
             });
             
             animationFrameId.current = requestAnimationFrame(render);

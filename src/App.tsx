@@ -5,9 +5,7 @@ import './App.css';
 import { log, warn, error } from './utils/logger';
 import OcrOverlay from "./components/OcrOverlay";
 import CharacterStreamViz from './components/visualizations/CharacterStreamViz';
-
 import useOcrProcessing from './hooks/useOcrProcessing';
-
 import {
     DisplayTextPart,
     TypoCorrectionResponse,
@@ -20,7 +18,6 @@ import { ConvolutionFiltersViz } from './components/visualizations/ConvolutionFi
 import { NetworkGraphViz, FATTEN_LAYER_X } from './components/visualizations/NetworkGraphViz';
 import gsap from 'gsap';
 import useStatusText from "./hooks/useStatusText";
-
 import {
     EMNIST_MODEL_URL,
     ACTIVATION_LAYER_NAMES,
@@ -33,6 +30,7 @@ import {
 } from './constants';
 import { useTfModel } from './hooks/useTfModel';
 import { TYPO_HIGHLIGHT_DELAY_MS } from './config/animation';
+import { PathManager } from './utils/path';
 
 const GRAPH_CANVAS_HEIGHT = 500;
 const CENTRAL_CONNECTION_X = FATTEN_LAYER_X - 50;
@@ -218,27 +216,22 @@ function App() {
             const initialStartX = Math.random() * (spawnAreaWidth - charImageWidth);
             const initialStartY = Math.random() * (containerRect.height - charImageHeight);
             
-            const pathStartX = initialStartX + charImageWidth / 2;
-            const pathStartY = initialStartY + charImageHeight / 2;
+            const p0 = { x: initialStartX + charImageWidth / 2, y: initialStartY + charImageHeight / 2 };
+            const p2 = { x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y };
+            const p1 = Math.random() > 0.5 ? { x: p0.x, y: p2.y } : { x: p2.x, y: p0.y };
 
             const newChar: StreamCharacter = {
                 id: `char-${Date.now()}`,
                 charImage: currentCharImageData,
                 startX: initialStartX,
                 startY: initialStartY,
-                path: [
-                    { x: pathStartX, y: pathStartY },
-                    Math.random() > 0.5
-                        ? { x: pathStartX, y: CENTRAL_CONNECTION_Y }
-                        : { x: CENTRAL_CONNECTION_X, y: pathStartY },
-                    { x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y }
-                ],
-                lineEnd: { x: pathStartX, y: pathStartY },
-                completedSegments: 0,
+                path: new PathManager(p0, p1, p2, 15),
                 animationState: 'appearing',
                 alpha: 0,
                 scale: 0.5,
-                color: networkGraphColor, // Assign the synchronized color
+                color: networkGraphColor,
+                headProgress: 0,
+                tailProgress: 0,
                 onFinished: () => onCharAnimationFinished(currentChar),
             };
             setStreamCharacters(prev => [...prev, newChar]);

@@ -1,5 +1,6 @@
 // src/types/index.ts
 import React from 'react';
+import { PathManager } from '../utils/path';
 
 /**
  * Type for activation data extracted from tensors.
@@ -107,22 +108,26 @@ export interface OcrDisplayLine {
     y: number;
 }
 
+
 /**
  * Represents a character being animated in the stream visualization.
  */
 export interface StreamCharacter {
     id: string;
     charImage: ImageData;
-    startX: number; // Top-left for drawing static image
-    startY: number; // Top-left for drawing static image
-    path: { x: number, y: number }[]; // Path for the line (from image center to central point)
-    lineEnd: { x: number, y: number }; // Current end of the line segment being drawn
-    completedSegments: number;
-    animationState: 'appearing' | 'drawingLine' | 'atCentralPoint' | 'fading' | 'finished';
+    startX: number;
+    startY: number;
+    path: PathManager; // The path utility instance for this character
+    animationState: 'appearing' | 'traveling' | 'fading' | 'finished';
     alpha: number;
-    scale: number; // For scaling animation
-    color: string; // The color for the outline and line
-    onFinished: () => void; // Callback when character reaches central point
+    scale: number;
+    color: string;
+    
+    // New properties for snake animation
+    headProgress: number; // Progress of the line's head (0 to 1)
+    tailProgress: number; // Progress of the line's tail (0 to 1)
+
+    onFinished: () => void;
 }
 
 export interface AnimationWave {

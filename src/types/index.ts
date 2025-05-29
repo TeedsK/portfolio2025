@@ -108,7 +108,6 @@ export interface OcrDisplayLine {
     y: number;
 }
 
-
 /**
  * Represents a character being animated in the stream visualization.
  */
@@ -117,15 +116,16 @@ export interface StreamCharacter {
     charImage: ImageData;
     startX: number;
     startY: number;
-    path: PathManager; // The path utility instance for this character
+    path: PathManager; 
     animationState: 'appearing' | 'traveling' | 'fading' | 'finished';
     alpha: number;
     scale: number;
-    color: string;
+    gradientSet: string[]; // Holds the array of colors for the gradient
     
-    // New properties for snake animation
-    headProgress: number; // Progress of the line's head (0 to 1)
-    tailProgress: number; // Progress of the line's tail (0 to 1)
+    headProgress: number; 
+    tailProgress: number;
+    
+    isRetractingColorOverride: boolean; // For graying box outline effect during retraction
 
     onFinished: () => void;
 }

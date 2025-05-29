@@ -10,7 +10,11 @@ import {
     CHAR_BOX_CONTENT_WIDTH,
     CHAR_BOX_CONTENT_HEIGHT,
     CHAR_BOX_PADDING,
+    // PULSE_LENGTH_RATIO, // No longer needed
+    // PULSE_ANIMATION_DURATION, // No longer needed
+    // PULSE_COLOR, // No longer needed
 } from '../../config/animation';
+import { PathManager } from '../../utils/path'; 
 
 interface CharacterStreamVizProps {
     characters: StreamCharacter[];
@@ -20,6 +24,46 @@ interface CharacterStreamVizProps {
 
 const offscreenCanvas = document.createElement('canvas');
 const offscreenCtx = offscreenCanvas.getContext('2d');
+
+// Helper function to draw a segment of the path
+function drawPathSegment(
+    ctx: CanvasRenderingContext2D, 
+    path: PathManager, 
+    startDist: number, 
+    endDist: number, 
+    strokeStyle: string | CanvasGradient, 
+    lineWidth: number
+) {
+    if (startDist >= endDist || path.totalLength === 0) return;
+
+    const clampedStartDist = Math.max(0, Math.min(startDist, path.totalLength));
+    const clampedEndDist = Math.max(0, Math.min(endDist, path.totalLength));
+
+    if (clampedStartDist >= clampedEndDist) return;
+
+    ctx.beginPath();
+    const segments = 30; 
+    const segmentActualLength = clampedEndDist - clampedStartDist;
+    const step = segmentActualLength / segments;
+    
+    let firstPoint = true;
+    for (let i = 0; i <= segments; i++) {
+        const dist = clampedStartDist + i * step;
+        const point = path.getPointAt(dist);
+        if (firstPoint) {
+            ctx.moveTo(point.x, point.y);
+            firstPoint = false;
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.strokeStyle = strokeStyle; 
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round'; 
+    ctx.stroke();
+}
+
 
 const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, containerSize, onCharacterFinished }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,6 +82,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             log(`[CharacterStreamViz] Initiating animation for character ID: ${character.id}`);
             
             character.animationState = 'traveling';
+            character.isRetractingColorOverride = false; 
             
             const lineGrowDuration = 0.4; 
             const lineShrinkDuration = 0.4;
@@ -56,36 +101,36 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 scale: 1,
                 duration: CHAR_FADE_IN_DURATION,
                 ease: 'power1.out',
-                onStart: () => log(`[CharacterStreamViz] Fade-in started for ${character.id}`),
             });
             
+            // Removed pulse animation for character.pulseProgress
+
             tl.to(character, {
                 headProgress: 1,
                 duration: lineGrowDuration,
                 ease: 'linear',
-                onStart: () => log(`[CharacterStreamViz] Line growth (head moving) started for ${character.id}`),
                 onComplete: () => {
-                     log(`[CharacterStreamViz] Line growth complete (head reached end) for ${character.id}. Firing onFinished for network graph.`);
                      character.onFinished(); 
                 }
-            }, ">"); 
+            }, CHAR_FADE_IN_DURATION); 
 
             const lineShrinkTl = gsap.timeline();
             lineShrinkTl.to(character, {
                 tailProgress: 1,
                 duration: lineShrinkDuration,
                 ease: 'linear',
-                onStart: () => log(`[CharacterStreamViz] Line shrink (tail moving) started for ${character.id}`),
-                onComplete: () => log(`[CharacterStreamViz] Line shrink complete for ${character.id}`),
+                onStart: () => {
+                    character.isRetractingColorOverride = true; 
+                },
             });
             lineShrinkTl.to(character, {
-                color: GRAY_COLOR,
+                // color: GRAY_COLOR, // Line color is now always gradient, box outline turns gray
                 scale: characterShrinkScale,
                 duration: lineShrinkDuration, 
                 ease: 'power1.inOut'
             }, 0); 
 
-            tl.add(lineShrinkTl, ">"); 
+            tl.add(lineShrinkTl, CHAR_FADE_IN_DURATION + lineGrowDuration); 
 
             tl.to(character, {
                 alpha: 0,
@@ -94,9 +139,8 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 ease: 'power1.in',
                 delay: CHAR_FADE_OUT_DELAY, 
                 onStart: () => {
-                    log(`[CharacterStreamViz] Character box final fade-out started for ${character.id}`);
                     character.animationState = 'fading';
-                    if(character.color !== GRAY_COLOR) character.color = GRAY_COLOR; 
+                    character.isRetractingColorOverride = true; 
                 },
             });
 
@@ -114,49 +158,43 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             ctx.clearRect(0, 0, containerSize.width, containerSize.height);
 
             characters.forEach((char) => {
-                const shouldDrawLine = char.headProgress > char.tailProgress || (char.headProgress === 1 && char.tailProgress < 1);
-
                 if (char.alpha < 0.01 && char.animationState === 'fading') return;
 
-                if (shouldDrawLine && char.alpha > 0) {
+                const path = char.path;
+                const snakeVisibleStartDist = char.tailProgress * path.totalLength;
+                const snakeVisibleEndDist = char.headProgress * path.totalLength;
+                
+                // Create the gradient for the line
+                let lineStrokeStyle: string | CanvasGradient = char.gradientSet[0]; // Fallback
+                if (path.totalLength > 0) {
+                    const p0 = path.getPointAt(0);
+                    const p2 = path.getPointAt(path.totalLength);
+                    const gradient = ctx.createLinearGradient(p0.x, p0.y, p2.x, p2.y);
+                    char.gradientSet.forEach((color, index) => {
+                        gradient.addColorStop(Math.min(1, index / (char.gradientSet.length -1 || 1)), color);
+                    });
+                    lineStrokeStyle = gradient;
+                }
+                // Line should NOT turn gray, always use its gradient.
+                // if(char.isRetractingColorOverride) { 
+                //     lineStrokeStyle = GRAY_COLOR; // This line is removed/commented
+                // }
+
+                if (char.alpha > 0) {
                     ctx.save();
                     ctx.globalAlpha = char.alpha; 
-                    ctx.beginPath();
-                    
-                    const path = char.path;
-                    const segments = 30; 
-                    const startDistance = char.tailProgress * path.totalLength;
-                    const endDistance = char.headProgress * path.totalLength;
-                    
-                    if (endDistance > startDistance && path.totalLength > 0) {
-                        const step = (endDistance - startDistance) / segments;
-                        let firstPoint = true;
-                        for (let i = 0; i <= segments; i++) {
-                            const dist = startDistance + i * step;
-                            const point = path.getPointAt(dist);
-                            if (firstPoint) {
-                                ctx.moveTo(point.x, point.y);
-                                firstPoint = false;
-                            } else {
-                                ctx.lineTo(point.x, point.y);
-                            }
-                        }
-                        ctx.strokeStyle = char.color; 
-                        ctx.lineWidth = 3;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round'; 
-                        ctx.stroke();
-                    }
-                    ctx.restore();
-                }
 
-                if (char.alpha > 0) { 
+                    // Draw the entire visible snake line with its gradient
+                    if (snakeVisibleStartDist < snakeVisibleEndDist) {
+                        drawPathSegment(ctx, path, snakeVisibleStartDist, snakeVisibleEndDist, lineStrokeStyle, 3);
+                    }
+                    ctx.restore(); 
+
+                    // Draw character box and image
                     ctx.save();
                     ctx.globalAlpha = char.alpha;
-
                     const totalBoxVisualWidth = CHAR_BOX_CONTENT_WIDTH + CHAR_BOX_PADDING * 2;
                     const totalBoxVisualHeight = CHAR_BOX_CONTENT_HEIGHT + CHAR_BOX_PADDING * 2;
-
                     const boxCenterX = char.startX + totalBoxVisualWidth / 2;
                     const boxCenterY = char.startY + totalBoxVisualHeight / 2;
                     
@@ -171,7 +209,23 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.fill();
                     
-                    ctx.strokeStyle = char.color; 
+                    let boxOutlineStyle: string | CanvasGradient = char.gradientSet[0]; // Fallback
+                    const boxGradient = ctx.createLinearGradient(
+                        char.startX, 
+                        char.startY, 
+                        char.startX + totalBoxVisualWidth, 
+                        char.startY + totalBoxVisualHeight
+                    );
+                    char.gradientSet.forEach((color, index) => {
+                        boxGradient.addColorStop(Math.min(1, index / (char.gradientSet.length - 1 || 1)), color);
+                    });
+                    boxOutlineStyle = boxGradient;
+
+                    if(char.isRetractingColorOverride) { // Box outline DOES turn gray
+                        boxOutlineStyle = GRAY_COLOR;
+                    }
+                    
+                    ctx.strokeStyle = boxOutlineStyle;
                     ctx.lineWidth = 2.5;
                     ctx.beginPath();
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
@@ -185,12 +239,11 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                         
                         let drawnImgWidth = charImg.width;
                         let drawnImgHeight = charImg.height;
-                        let fitScale = 1;
-
+                        
                         if (charImg.width > CHAR_BOX_CONTENT_WIDTH || charImg.height > CHAR_BOX_CONTENT_HEIGHT) {
                             const widthScaleRatio = CHAR_BOX_CONTENT_WIDTH / charImg.width;
                             const heightScaleRatio = CHAR_BOX_CONTENT_HEIGHT / charImg.height;
-                            fitScale = Math.min(widthScaleRatio, heightScaleRatio);
+                            const fitScale = Math.min(widthScaleRatio, heightScaleRatio);
                             drawnImgWidth = charImg.width * fitScale;
                             drawnImgHeight = charImg.height * fitScale;
                         }
@@ -200,7 +253,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                         
                         ctx.drawImage(offscreenCanvas, 0, 0, charImg.width, charImg.height, imgDrawX, imgDrawY, drawnImgWidth, drawnImgHeight);
                     }
-                    
                     ctx.restore();
                 }
             });

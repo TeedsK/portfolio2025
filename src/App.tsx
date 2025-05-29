@@ -27,6 +27,7 @@ import {
     OCR_OVERLAY_TEXT_COLOR_NORMAL,
     STATUS_TEXTS,
     getTagColorForProbability,
+    LINE_GRADIENT_SETS, 
 } from './constants';
 import { useTfModel } from './hooks/useTfModel';
 import { 
@@ -53,6 +54,8 @@ function App() {
     const [currentAppPhase, setCurrentAppPhase] = useState<number>(0);
     const [showMediaElement] = useState<boolean>(true);
     const [streamCharacters, setStreamCharacters] = useState<StreamCharacter[]>([]);
+    const gradientSetIndexRef = useRef(0); 
+
 
     const hasStartedAutoOcr = useRef<boolean>(false);
 
@@ -70,11 +73,10 @@ function App() {
         ocrDisplayLines,
         setOcrDisplayLines,
         ocrPredictedText,
-        networkWaves,
+        networkWaves, 
         onWaveFinished,
         currentChar,
         currentCharImageData,
-        networkGraphColor,
         onCharAnimationFinished,
     } = useOcrProcessing({ imageRef: imageRef as unknown as React.RefObject<HTMLImageElement> });
 
@@ -228,23 +230,27 @@ function App() {
             const p2 = { x: CENTRAL_CONNECTION_X, y: CENTRAL_CONNECTION_Y };
             const p1 = Math.random() > 0.5 ? { x: p0.x, y: p2.y } : { x: p2.x, y: p0.y };
 
+            const chosenGradientSet = LINE_GRADIENT_SETS[gradientSetIndexRef.current % LINE_GRADIENT_SETS.length];
+            gradientSetIndexRef.current++;
+
             const newChar: StreamCharacter = {
                 id: `char-${Date.now()}`,
                 charImage: currentCharImageData,
-                startX: initialStartX, // This is now the top-left of the standard box
-                startY: initialStartY, // This is now the top-left of the standard box
-                path: new PathManager(p0, p1, p2, 15), // Radius for the arc
+                startX: initialStartX, 
+                startY: initialStartY, 
+                path: new PathManager(p0, p1, p2, 15), 
                 animationState: 'appearing',
                 alpha: 0,
                 scale: 0.5,
-                color: networkGraphColor,
+                gradientSet: chosenGradientSet,
                 headProgress: 0,
                 tailProgress: 0,
+                isRetractingColorOverride: false,
                 onFinished: () => onCharAnimationFinished(currentChar),
             };
             setStreamCharacters(prev => [...prev, newChar]);
         }
-    }, [currentChar, currentCharImageData, onCharAnimationFinished, networkGraphColor]);
+    }, [currentChar, currentCharImageData, onCharAnimationFinished]); 
 
     useEffect(() => {
         if (isVideoPlaying && !hasStartedAutoOcr.current) {

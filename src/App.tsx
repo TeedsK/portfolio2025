@@ -246,7 +246,15 @@ function App() {
                 headProgress: 0,
                 tailProgress: 0,
                 isRetractingColorOverride: false,
-                onFinished: () => onCharAnimationFinished(currentChar),
+                // When StreamCharacter's line animation finishes, it calls this.
+                // App.tsx then calls onCharAnimationFinished from useOcrProcessing.
+                // 'currentChar' here is the specific character whose line just finished.
+                onFinished: () => {
+                    if(currentChar) { // Ensure currentChar is not null
+                        log(`[App.tsx] StreamCharacter line for '${currentChar}' finished. Calling onCharAnimationFinished.`);
+                        onCharAnimationFinished(currentChar);
+                    }
+                },
             };
             setStreamCharacters(prev => [...prev, newChar]);
         }
@@ -337,15 +345,25 @@ function App() {
                             />
                         )}
                         {(!showNetworkGraph || !showMediaElement) && <p>Neural network visualization appears here during OCR if enabled.</p>} 
-                        <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)'}}>
-                            {isProcessingOCR && <Spin tip="Analyzing characters..." />}
-                        </div>
+                        {/* <div style={{position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 15 }}>
+                            {isProcessingOCR && (
+                                <div style={{ background: 'rgba(255,255,255,0.8)', padding: '10px', borderRadius: '4px' }}>
+                                    <Spin tip="Analyzing characters..." />
+                                </div>
+                            )}
+                        </div> */}
                          {!showMediaElement && ocrDisplayLines.length > 0 && <p style={{textAlign:'center', color: '#555'}}>Handwriting analysis complete. Moving to typo check.</p>}
                     </div>
                 );
             case 2: {
                 const typosToShow = interactiveOcrParts.filter(p => p.isFlagged && !p.isWhitespace && p.originalToken);
-                if (isTypoCheckingAPILoading) return <div style={{width:'100%', textAlign:'center'}}><Spin tip="Fetching typo details..." /></div>;
+                if (isTypoCheckingAPILoading) return (
+                    <div style={{width:'100%', textAlign:'center'}}>
+                        <div style={{ background: 'rgba(255,255,255,0.8)', display: 'inline-block', padding: '10px', borderRadius: '4px' }}>
+                            <Spin tip="Fetching typo details..." />
+                        </div>
+                    </div>
+                );
                 if (typosToShow.length === 0 && !isTypoCheckingAPILoading) return <p>No typos found by the checker, or correction process complete!</p>;
                 const typoRows: DisplayTextPart[][] = [];
                 for (let i = 0; i < typosToShow.length; i += 8) {

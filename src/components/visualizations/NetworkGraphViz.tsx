@@ -1,62 +1,46 @@
 // src/components/visualizations/NetworkGraphViz.tsx
-import React, { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { ActivationDataValue, AnimationWave } from '../../types';
+import React, { useEffect, useMemo, useRef, useCallback } from 'react';
+import { ActivationDataValue, AnimationWave, Point } from '../../types';
 import gsap from 'gsap';
-import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
-import {
-    NET_WAVE_DURATION,
+import { 
     NET_NODE_PULSE_DURATION,
-    NET_CENTRAL_LINE_DURATION,
     NET_LAYER_ANIMATION_DELAY,
-} from '../../config/animation';
-
-
-gsap.registerPlugin(MotionPathPlugin);
+    NET_ALPHA_PREDICTED_LINE,
+    NET_ALPHA_OTHER_ACTIVE_MIN, // Corrected import name
+    NET_ALPHA_OTHER_ACTIVE_MAX, // Corrected import name
+    NET_ALPHA_INACTIVE_LINE
+} from '../../config/animation'; // Ensure this path is correct
+import { drawPathSegment } from '../../utils/canvasDrawing'; 
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
-const COLOR_DEFAULT_LINE = '#6a6f76';
+const COLOR_DEFAULT_LINE = '#DDDDDD'; 
 const COLOR_NODE_FILL = '#ffffff';
 const COLOR_OUTPUT_TEXT = '#333333';
 const COLOR_LAYER_LABEL = '#555555';
 const NODE_RADIUS = 7;
 const LAYER_GAP = 180;
 const CANVAS_HEIGHT = 500;
-const ACTIVATION_THRESHOLD = 0.1;
-
+const ACTIVATION_THRESHOLD = 0.05; 
 const MAX_NODES_TO_DRAW = 10;
 
-const LINE_ACTIVE_STROKE_WIDTH = 2.5;
 const LINE_INACTIVE_STROKE_WIDTH = 0.7;
-const LINE_ACTIVE_ALPHA = 0.9;
-const LINE_INACTIVE_ALPHA = 0.15;
-const NODE_INACTIVE_STROKE_COLOR = '#d0d4db';
+const LINE_ACTIVE_WIDTH = 2.5;
 
+const NODE_INACTIVE_STROKE_COLOR = '#d0d4db';
 export const FATTEN_LAYER_X = 550;
 
-export interface NetworkGraphVizProps {
-    waves: AnimationWave[];
+const NET_LINE_GROW_DURATION = 0.3;
+const NET_LINE_SHRINK_DURATION = 0.3;
+
+interface NetworkGraphVizProps {
+    waves: AnimationWave[]; 
     onWaveFinished: (waveId: string) => void;
     flattenLayerName: string;
     hiddenDenseLayerName: string;
     outputLayerName: string;
-    centralConnectionPoint?: { x: number, y: number };
+    centralConnectionPoint?: Point;
 }
-
-const getSlightlyLighterShade = (hexColor: string, percent: number = 30): string => {
-    try {
-        if (!hexColor || hexColor.charAt(0) !== '#' || (hexColor.length !== 4 && hexColor.length !== 7)) { return hexColor; }
-        let rStr, gStr, bStr;
-        if (hexColor.length === 4) { rStr = hexColor.slice(1, 2).repeat(2); gStr = hexColor.slice(2, 3).repeat(2); bStr = hexColor.slice(3, 4).repeat(2); }
-        else { rStr = hexColor.slice(1, 3); gStr = hexColor.slice(3, 5); bStr = hexColor.slice(5, 7); }
-        let r = parseInt(rStr, 16), g = parseInt(gStr, 16), b = parseInt(bStr, 16);
-        r = Math.min(255, Math.round(r + (255 - r) * (percent / 100)));
-        g = Math.min(255, Math.round(g + (255 - g) * (percent / 100)));
-        b = Math.min(255, Math.round(b + (255 - b) * (percent / 100)));
-        const toHex = (c: number) => ("0" + c.toString(16)).slice(-2);
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-    } catch (e) { console.error("Error lightening color:", hexColor, e); return hexColor; }
-};
 
 const getSampledActivations = (data: ActivationDataValue | undefined | null, count: number): number[] => {
     if (!data || !Array.isArray(data)) return new Array(count).fill(0);
@@ -73,38 +57,38 @@ const getSampledActivations = (data: ActivationDataValue | undefined | null, cou
     return result;
 };
 
-const calculateNodePositions = (count: number, x: number, totalHeight: number, nodeRadiusValue: number): { x: number, y: number }[] => {
+const calculateNodePositions = (count: number, x: number, totalHeight: number, nodeRadiusValue: number): Point[] => {
     const availableHeight = totalHeight - nodeRadiusValue * 4;
     const yStep = count <= 1 ? availableHeight / 2 : availableHeight / (count - 1 || 1);
     const startY = nodeRadiusValue * 2;
     return Array.from({ length: count }).map((_el, i) => ({ x: x, y: startY + i * yStep }));
 };
 
-interface AnimatableElement {
-    alpha: number;
+interface AnimatableLine { 
+    id: string; 
     waveId: string;
+    from: Point; 
+    to: Point;
+    totalLength: number;
+    headProgress: number; 
+    tailProgress: number; 
+    gradientSet: string[];
+    activationStrength: number; 
+    displayAlpha: number; 
+    isToPredictedOutputNode?: boolean; 
 }
-
-interface AnimatableLine extends AnimatableElement {
-    id: string; fromX: number; fromY: number; toX: number; toY: number;
-    activationProgress: number;
-    color: string;
-    strokeWidth: number;
-}
-interface AnimatableNode extends AnimatableElement {
-    id: string; x: number; y: number; label?: string;
+interface AnimatableNode { 
+    id: string; 
+    waveId: string;
+    x: number; y: number; label?: string;
     scale: number;
-    strokeColor: string;
+    strokeColor: string; 
     fillColor: string;
     textColor: string;
+    alpha: number; 
     isPredicted?: boolean;
 }
-interface CentralInputLine extends AnimatableElement {
-    id: string;
-    toX: number; toY: number;
-    progress: number;
-    color: string;
-}
+
 
 export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     waves, onWaveFinished,
@@ -112,11 +96,9 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     centralConnectionPoint
 }) => {
     const networkCanvasRef = useRef<HTMLCanvasElement>(null);
-    const animatablesRef = useRef<{
-        lines: AnimatableLine[];
-        nodes: AnimatableNode[];
-        centralInputLines: CentralInputLine[];
-    }>({ lines: [], nodes: [], centralInputLines: [] });
+    const allLinesRef = useRef<AnimatableLine[]>([]);
+    const allNodesRef = useRef<AnimatableNode[]>([]);
+    const activeTimelines = useRef(new Map<string, gsap.core.Timeline>()).current;
 
     const flattenNodePositions = useMemo(() => calculateNodePositions(MAX_NODES_TO_DRAW, FATTEN_LAYER_X, CANVAS_HEIGHT, NODE_RADIUS), []);
     const hiddenDenseNodePositions = useMemo(() => calculateNodePositions(MAX_NODES_TO_DRAW, FATTEN_LAYER_X + LAYER_GAP, CANVAS_HEIGHT, NODE_RADIUS), []);
@@ -129,31 +111,11 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         return FATTEN_LAYER_X + (LAYER_GAP * 2) + NODE_RADIUS * 4 + 60;
     }, [outputNodePositions]);
 
-    const drawNetwork = useCallback(() => {
-        const canvas = networkCanvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    const getLineLength = (p0: Point, p1: Point) => Math.sqrt(Math.pow(p1.x - p0.x, 2) + Math.pow(p1.y - p0.y, 2));
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const { lines, nodes, centralInputLines } = animatablesRef.current;
-
-        if (centralConnectionPoint) {
-            centralInputLines.forEach(line => {
-                if (line.alpha > 0.01 && line.progress > 0.01) {
-                    ctx.beginPath();
-                    ctx.moveTo(centralConnectionPoint.x, centralConnectionPoint.y);
-                    const currentX = centralConnectionPoint.x + (line.toX - centralConnectionPoint.x) * line.progress;
-                    const currentY = centralConnectionPoint.y + (line.toY - centralConnectionPoint.y) * line.progress;
-                    ctx.lineTo(currentX, currentY);
-                    ctx.strokeStyle = line.color;
-                    ctx.lineWidth = LINE_ACTIVE_STROKE_WIDTH * 0.9;
-                    ctx.globalAlpha = line.alpha;
-                    ctx.stroke();
-                }
-            });
-        }
-
+    const drawNetwork = useCallback((ctx: CanvasRenderingContext2D) => {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        
         ctx.font = '11px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = COLOR_LAYER_LABEL;
@@ -161,216 +123,250 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         if (hiddenDenseNodePositions.length > 0) ctx.fillText('Dense', hiddenDenseNodePositions[0].x, 15);
         if (outputNodePositions.length > 0) ctx.fillText('Output', outputNodePositions[0].x, 15);
 
-        lines.forEach(line => {
-            if (line.alpha > 0) {
+        allLinesRef.current.forEach(line => {
+            if (line.displayAlpha < 0.01) return; // Optimization: don't draw fully transparent lines
+
+            ctx.globalAlpha = line.displayAlpha;
+            let strokeStyle: string | CanvasGradient = COLOR_DEFAULT_LINE;
+            
+            const isActiveLineForGradient = line.activationStrength > ACTIVATION_THRESHOLD;
+
+            if (isActiveLineForGradient && line.gradientSet.length > 0) {
+                const gradient = ctx.createLinearGradient(line.from.x, line.from.y, line.to.x, line.to.y);
+                line.gradientSet.forEach((color, index) => {
+                    gradient.addColorStop(Math.min(1, index / (line.gradientSet.length - 1 || 1)), color);
+                });
+                strokeStyle = gradient;
+            } else { 
+                 strokeStyle = COLOR_DEFAULT_LINE; 
+            }
+
+            // Draw active lines with snake animation
+            if (isActiveLineForGradient && (line.headProgress > line.tailProgress || (line.headProgress === 1 && line.tailProgress < 1))) {
+                 drawPathSegment(
+                    ctx,
+                    { p0: line.from, p1: line.to, totalLength: line.totalLength },
+                    line.tailProgress * line.totalLength,
+                    line.headProgress * line.totalLength,
+                    strokeStyle,
+                    LINE_ACTIVE_WIDTH
+                );
+            } else if (!isActiveLineForGradient && line.displayAlpha >= NET_ALPHA_INACTIVE_LINE) { // Draw static inactive line if it has some alpha
                 ctx.beginPath();
-                ctx.moveTo(line.fromX, line.fromY);
-                ctx.lineTo(line.toX, line.toY);
-                ctx.strokeStyle = line.color;
-                ctx.lineWidth = line.strokeWidth;
-                ctx.globalAlpha = line.alpha;
+                ctx.moveTo(line.from.x, line.from.y);
+                ctx.lineTo(line.to.x, line.to.y);
+                ctx.strokeStyle = strokeStyle; 
+                ctx.lineWidth = LINE_INACTIVE_STROKE_WIDTH;
                 ctx.stroke();
             }
         });
+        
+        ctx.globalAlpha = 1; 
 
-        nodes.forEach(node => {
-            if (node.alpha > 0) {
-                ctx.save();
-                ctx.translate(node.x, node.y);
-                ctx.scale(node.scale, node.scale);
-                ctx.beginPath();
-                ctx.arc(0, 0, NODE_RADIUS, 0, Math.PI * 2);
-                ctx.fillStyle = COLOR_NODE_FILL;
-                ctx.globalAlpha = node.alpha;
-                ctx.fill();
-                ctx.strokeStyle = node.strokeColor;
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
+        allNodesRef.current.forEach(node => {
+            if (node.alpha <= 0.01) return;
+            ctx.save();
+            ctx.globalAlpha = node.alpha;
+            ctx.translate(node.x, node.y);
+            ctx.scale(node.scale, node.scale);
+            ctx.beginPath();
+            ctx.arc(0, 0, NODE_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = node.fillColor;
+            ctx.fill();
+            ctx.strokeStyle = node.strokeColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
 
-                if (node.label) {
-                    ctx.fillStyle = node.textColor;
-                    ctx.font = `9px sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(node.label.toUpperCase(), 0, 0);
-                }
-                ctx.restore();
+            if (node.label) {
+                ctx.fillStyle = node.isPredicted ? node.strokeColor : node.textColor; 
+                ctx.font = `bold 9px sans-serif`; 
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(node.label.toUpperCase(), 0, 0);
             }
+            ctx.restore();
         });
-        ctx.globalAlpha = 1;
 
-    }, [flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, centralConnectionPoint]);
+    }, [flattenNodePositions, hiddenDenseNodePositions, outputNodePositions]);
 
     useEffect(() => {
-        gsap.ticker.add(drawNetwork);
-        return () => gsap.ticker.remove(drawNetwork);
-    }, [drawNetwork]);
+        const canvas = networkCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        const renderLoop = () => {
+            drawNetwork(ctx);
+            requestAnimationFrame(renderLoop);
+        };
+        const animFrameId = requestAnimationFrame(renderLoop);
+        return () => {
+            cancelAnimationFrame(animFrameId);
+            activeTimelines.forEach(timeline => timeline.kill());
+            activeTimelines.clear();
+        };
+    }, [drawNetwork, activeTimelines]);
 
     useEffect(() => {
         waves.forEach(wave => {
-            const existingAnimatables = animatablesRef.current.centralInputLines.some(l => l.waveId === wave.id);
-            if (existingAnimatables) return;
+            if (activeTimelines.has(wave.id)) return;
 
-            const { activations, softmaxProbabilities, color: currentAnimBaseColor, id: waveId } = wave;
+            const { activations, softmaxProbabilities, gradientSet, id: waveId } = wave;
+            const nodePulseColor = gradientSet[0] || '#FF69B4'; 
+
             const currentFlattenAct = getSampledActivations(activations[flattenLayerName], MAX_NODES_TO_DRAW);
             const currentHiddenAct = getSampledActivations(activations[hiddenDenseLayerName], MAX_NODES_TO_DRAW);
             const currentOutputAct = softmaxProbabilities || new Array(EMNIST_CHARS.length).fill(0);
             const predictedOutputIndex = currentOutputAct.indexOf(Math.max(...currentOutputAct));
 
-            const newCentralLines: CentralInputLine[] = [];
+            const waveLines: AnimatableLine[] = [];
+            const waveNodes: AnimatableNode[] = [];
+            let lineIdCounter = 0;
+            let nodeIdCounter = 0;
+
+            const getDisplayAlpha = (
+                strength: number,
+                isLineToPredictedOutputNode: boolean 
+            ) => {
+                if (strength <= ACTIVATION_THRESHOLD) {
+                    return NET_ALPHA_INACTIVE_LINE;
+                }
+                if (isLineToPredictedOutputNode) {
+                    return NET_ALPHA_PREDICTED_LINE; // 1.0 for the direct path to predicted output
+                }
+                // For all other active lines (early layers OR non-predicted output layer lines)
+                // Map strength [ACTIVATION_THRESHOLD, 1.0] to alpha [MIN_OTHER, MAX_OTHER]
+                const normalizedStrength = Math.max(0, Math.min(1, (strength - ACTIVATION_THRESHOLD) / (1.0 - ACTIVATION_THRESHOLD))); 
+                return NET_ALPHA_OTHER_ACTIVE_MIN + normalizedStrength * (NET_ALPHA_OTHER_ACTIVE_MAX - NET_ALPHA_OTHER_ACTIVE_MIN);
+            };
+            
             if (centralConnectionPoint) {
                 flattenNodePositions.forEach((nodePos, index) => {
-                    newCentralLines.push({
-                        id: `cil-${waveId}-${index}`, waveId,
-                        toX: nodePos.x, toY: nodePos.y,
-                        progress: 0, alpha: 0, color: currentAnimBaseColor
+                    const strength = currentFlattenAct[index];
+                    waveLines.push({
+                        id: `l-cen-fl-${waveId}-${lineIdCounter++}`, waveId,
+                        from: centralConnectionPoint, to: nodePos,
+                        totalLength: getLineLength(centralConnectionPoint, nodePos),
+                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: strength,
+                        displayAlpha: getDisplayAlpha(strength, false) 
                     });
                 });
             }
-
-            const newLines: AnimatableLine[] = [];
-            let lineIdCounter = 0;
-            flattenNodePositions.forEach(fromPos => {
-                hiddenDenseNodePositions.forEach(toPos => {
-                    newLines.push({
+            
+            flattenNodePositions.forEach((fromPos, i) => {
+                const sourceStrength = currentFlattenAct[i];
+                hiddenDenseNodePositions.forEach((toPos) => {
+                     waveLines.push({
                         id: `l-fl-hd-${waveId}-${lineIdCounter++}`, waveId,
-                        fromX: fromPos.x, fromY: fromPos.y, toX: toPos.x, toY: toPos.y,
-                        activationProgress: 0, color: COLOR_DEFAULT_LINE, alpha: LINE_INACTIVE_ALPHA, strokeWidth: LINE_INACTIVE_STROKE_WIDTH
+                        from: fromPos, to: toPos,
+                        totalLength: getLineLength(fromPos, toPos),
+                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: sourceStrength,
+                        displayAlpha: getDisplayAlpha(sourceStrength, false)
                     });
                 });
             });
-            hiddenDenseNodePositions.forEach(fromPos => {
-                outputNodePositions.forEach(toPos => {
-                    newLines.push({
+            
+            hiddenDenseNodePositions.forEach((fromPos, i) => {
+                const sourceStrength = currentHiddenAct[i];
+                outputNodePositions.forEach((toPos, j) => {
+                    const isLineToPredictedNode = (j === predictedOutputIndex);
+                    waveLines.push({
                         id: `l-hd-out-${waveId}-${lineIdCounter++}`, waveId,
-                        fromX: fromPos.x, fromY: fromPos.y, toX: toPos.x, toY: toPos.y,
-                        activationProgress: 0, color: COLOR_DEFAULT_LINE, alpha: LINE_INACTIVE_ALPHA, strokeWidth: LINE_INACTIVE_STROKE_WIDTH
+                        from: fromPos, to: toPos,
+                        totalLength: getLineLength(fromPos, toPos),
+                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: sourceStrength,
+                        displayAlpha: getDisplayAlpha(sourceStrength, isLineToPredictedNode),
+                        isToPredictedOutputNode: isLineToPredictedNode
                     });
                 });
             });
-
-            const newNodes: AnimatableNode[] = [];
-            let nodeIdCounter = 0;
+            
             flattenNodePositions.forEach((pos) => {
-                newNodes.push({
+                 waveNodes.push({
                     id: `n-fl-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
+                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
+                    textColor: COLOR_OUTPUT_TEXT, alpha: 1,
                 });
             });
-            hiddenDenseNodePositions.forEach(pos => {
-                newNodes.push({
+            hiddenDenseNodePositions.forEach((pos) => {
+                 waveNodes.push({
                     id: `n-hd-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
+                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
+                    textColor: COLOR_OUTPUT_TEXT, alpha: 1,
                 });
             });
             outputNodePositions.forEach((pos, i) => {
-                newNodes.push({
+                waveNodes.push({
                     id: `n-out-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y, label: EMNIST_CHARS[i],
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1, isPredicted: false,
+                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
+                    textColor: COLOR_OUTPUT_TEXT, alpha: 1, isPredicted: (i === predictedOutputIndex),
                 });
             });
 
-            animatablesRef.current.centralInputLines.push(...newCentralLines);
-            animatablesRef.current.lines.push(...newLines);
-            animatablesRef.current.nodes.push(...newNodes);
-
+            allLinesRef.current.push(...waveLines);
+            allNodesRef.current.push(...waveNodes);
+            
             const tl = gsap.timeline({
                 onComplete: () => {
+                    activeTimelines.delete(waveId);
                     onWaveFinished(waveId);
-                    animatablesRef.current.centralInputLines = animatablesRef.current.centralInputLines.filter(l => l.waveId !== waveId);
-                    animatablesRef.current.lines = animatablesRef.current.lines.filter(l => l.waveId !== waveId);
-                    animatablesRef.current.nodes = animatablesRef.current.nodes.filter(n => n.waveId !== waveId);
+                    allLinesRef.current = allLinesRef.current.filter(l => l.waveId !== waveId);
+                    allNodesRef.current = allNodesRef.current.filter(n => n.waveId !== waveId);
                 }
             });
+            activeTimelines.set(waveId, tl);
 
-            let timeOffset = 0;
-            const NODE_PULSE_SCALE_FACTOR = 1.5;
+            let currentTime = 0;
 
-            if (centralConnectionPoint) {
-                newCentralLines.forEach((line, index) => {
-                    const isActiveNode = currentFlattenAct[index] >= ACTIVATION_THRESHOLD;
-                    tl.to(line, {
-                        progress: 1,
-                        alpha: isActiveNode ? LINE_ACTIVE_ALPHA : LINE_INACTIVE_ALPHA,
-                        duration: NET_CENTRAL_LINE_DURATION,
-                        delay: index * 0.03
-                    }, timeOffset);
+            const animateLayerConnections = (
+                linesForLayer: AnimatableLine[], 
+                nodesForLayer: AnimatableNode[], 
+                nodeActivations: number[],
+                isOutputLayerPass: boolean = false 
+            ) => {
+                linesForLayer.forEach(line => {
+                    if (line.activationStrength > ACTIVATION_THRESHOLD) { 
+                        tl.to(line, { headProgress: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' }, currentTime);
+                        tl.to(line, { tailProgress: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' }, currentTime + NET_LINE_GROW_DURATION);
+                    }
                 });
-            }
+                
+                const nodePulseStartTime = currentTime + NET_LINE_GROW_DURATION;
+                nodesForLayer.forEach((node, i) => {
+                    const isActive = nodeActivations[i] >= ACTIVATION_THRESHOLD;
+                    if (isActive) {
+                        let specificNodePulseColor = nodePulseColor;
+                        let specificNodeTextColor = COLOR_OUTPUT_TEXT;
+                        if(isOutputLayerPass && node.isPredicted){
+                            specificNodePulseColor = gradientSet[0] || nodePulseColor; 
+                            specificNodeTextColor = specificNodePulseColor; 
+                        }
 
-            const flattenNodeActivationTime = timeOffset + NET_CENTRAL_LINE_DURATION * 0.4;
-            newNodes.slice(0, MAX_NODES_TO_DRAW).forEach((node, i) => {
-                const isActive = currentFlattenAct[i] >= ACTIVATION_THRESHOLD;
-                if (isActive) {
-                    tl.to(node, { scale: NODE_PULSE_SCALE_FACTOR, strokeColor: currentAnimBaseColor, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.out' }, flattenNodeActivationTime)
-                      .to(node, { scale: 1, strokeColor: currentAnimBaseColor, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' });
-                }
-            });
-            timeOffset = flattenNodeActivationTime + NET_NODE_PULSE_DURATION + NET_LAYER_ANIMATION_DELAY;
-
-            let lineCursor = 0;
-            for (let i = 0; i < MAX_NODES_TO_DRAW; i++) {
-                const fromNodeActive = currentFlattenAct[i] >= ACTIVATION_THRESHOLD;
-                for (let j = 0; j < MAX_NODES_TO_DRAW; j++, lineCursor++) {
-                    const line = newLines[lineCursor];
-                    const targetNodeActive = currentHiddenAct[j] >= ACTIVATION_THRESHOLD;
-                    const isLineActive = fromNodeActive;
-                    tl.to(line, {
-                        activationProgress: 1, color: isLineActive ? (targetNodeActive ? currentAnimBaseColor : getSlightlyLighterShade(currentAnimBaseColor, 60)) : COLOR_DEFAULT_LINE,
-                        alpha: isLineActive ? LINE_ACTIVE_ALPHA : LINE_INACTIVE_ALPHA, strokeWidth: isLineActive ? LINE_ACTIVE_STROKE_WIDTH : LINE_INACTIVE_STROKE_WIDTH,
-                        duration: NET_WAVE_DURATION,
-                    }, timeOffset);
-                }
-            }
-
-            const hiddenNodeActivationTime = timeOffset + NET_WAVE_DURATION * 0.3;
-            newNodes.slice(MAX_NODES_TO_DRAW, MAX_NODES_TO_DRAW * 2).forEach((node, i) => {
-                const isActive = currentHiddenAct[i] >= ACTIVATION_THRESHOLD;
-                if (isActive) {
-                    tl.to(node, { scale: NODE_PULSE_SCALE_FACTOR, strokeColor: currentAnimBaseColor, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.out' }, hiddenNodeActivationTime)
-                      .to(node, { scale: 1, strokeColor: currentAnimBaseColor, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' });
-                }
-            });
-            timeOffset = hiddenNodeActivationTime + NET_NODE_PULSE_DURATION + NET_LAYER_ANIMATION_DELAY;
-
-            for (let i = 0; i < MAX_NODES_TO_DRAW; i++) {
-                const fromNodeActive = currentHiddenAct[i] >= ACTIVATION_THRESHOLD;
-                for (let j = 0; j < EMNIST_CHARS.length; j++, lineCursor++) {
-                    const line = newLines[lineCursor];
-                    const isTargetPredicted = j === predictedOutputIndex;
-                    const targetNodeSlightlyActive = currentOutputAct[j] > 0.05;
-                    const isLineActive = fromNodeActive;
-                    tl.to(line, {
-                        activationProgress: 1, color: isLineActive ? (isTargetPredicted ? currentAnimBaseColor : (targetNodeSlightlyActive ? currentAnimBaseColor : getSlightlyLighterShade(currentAnimBaseColor, 70))) : COLOR_DEFAULT_LINE,
-                        alpha: isLineActive ? LINE_ACTIVE_ALPHA : LINE_INACTIVE_ALPHA, strokeWidth: isLineActive ? LINE_ACTIVE_STROKE_WIDTH : LINE_INACTIVE_STROKE_WIDTH,
-                        duration: NET_WAVE_DURATION,
-                    }, timeOffset);
-                }
-            }
-
-            const outputNodeActivationTime = timeOffset + NET_WAVE_DURATION * 0.3;
-            newNodes.slice(MAX_NODES_TO_DRAW * 2).forEach((node, i) => {
-                const isPredicted = i === predictedOutputIndex;
-                const isSlightlyActive = currentOutputAct[i] > 0.05;
-                if (isPredicted || isSlightlyActive) {
-                    tl.to(node, {
-                        scale: isPredicted ? NODE_PULSE_SCALE_FACTOR * 1.1 : NODE_PULSE_SCALE_FACTOR,
-                        strokeColor: isPredicted ? currentAnimBaseColor : currentAnimBaseColor,
-                        textColor: isPredicted ? currentAnimBaseColor : COLOR_OUTPUT_TEXT,
-                        duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.out'
-                    }, outputNodeActivationTime)
-                    .to(node, { scale: 1, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' });
-                }
-            });
+                        tl.to(node, { 
+                            scale: (isOutputLayerPass && node.isPredicted) ? 1.6 : 1.5, 
+                            strokeColor: specificNodePulseColor, 
+                            textColor: specificNodeTextColor,
+                            duration: NET_NODE_PULSE_DURATION / 2, 
+                            ease: 'power1.out' 
+                        }, nodePulseStartTime)
+                          .to(node, { scale: 1, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' });
+                    }
+                });
+                return nodePulseStartTime + NET_NODE_PULSE_DURATION + NET_LAYER_ANIMATION_DELAY;
+            };
+            
+            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-cen-fl')), waveNodes.filter(n => n.id.startsWith('n-fl-')), currentFlattenAct);
+            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-fl-hd')), waveNodes.filter(n => n.id.startsWith('n-hd-')), currentHiddenAct);
+            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-hd-out')), waveNodes.filter(n => n.id.startsWith('n-out-')), currentOutputAct, true);
 
         });
-    }, [waves, flattenLayerName, hiddenDenseLayerName, outputLayerName, onWaveFinished,
-        flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, centralConnectionPoint]);
+    }, [waves, onWaveFinished, flattenLayerName, hiddenDenseLayerName, outputLayerName, 
+        centralConnectionPoint, flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, activeTimelines, drawNetwork]);
 
     return (
         <div>
             <canvas ref={networkCanvasRef} width={canvasWidth} height={CANVAS_HEIGHT} />
-            {waves.length === 0 &&
+            {waves.length === 0 && allLinesRef.current.length === 0 &&
                 <div style={{ color: COLOR_LAYER_LABEL, fontSize: '0.9em', marginTop: '10px', paddingLeft: `${FATTEN_LAYER_X - 200}px`, position: 'absolute', top: CANVAS_HEIGHT / 2 - 10, left: FATTEN_LAYER_X - 300, width: '200px', textAlign: 'center' }}>
                     Awaiting activation data...
                 </div>

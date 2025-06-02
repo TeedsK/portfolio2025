@@ -166,14 +166,6 @@
   padding-bottom: 0;
 }
 
-.steps-extra-info-container {
-  margin-top: 20px;
-  padding: 15px;
-  border-radius: 8px;
-  min-height: 150px;
-}
-
-
 /* Represents a row that can contain up to 8 typo items */
 .typo-details-row-wrapper {
   display: flex;
@@ -344,9 +336,7 @@
 .steps-extra-info-container {
   margin-top: 20px;
   padding: 15px;
-  border: 1px solid #f0f0f0;
   border-radius: 8px;
-  background-color: #fdfdfd;
   min-height: 150px;
 }
 

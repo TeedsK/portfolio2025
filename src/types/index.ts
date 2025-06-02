@@ -2,6 +2,11 @@
 import React from 'react';
 import { PathManager } from '../utils/path';
 
+export interface Point { // Ensure Point is defined/exported for use in canvasDrawing.ts if not already
+    x: number;
+    y: number;
+}
+
 /**
  * Type for activation data extracted from tensors.
  * Allows for scalars (number) and nested arrays up to 4 dimensions.
@@ -120,12 +125,12 @@ export interface StreamCharacter {
     animationState: 'appearing' | 'traveling' | 'fading' | 'finished';
     alpha: number;
     scale: number;
-    gradientSet: string[]; // Holds the array of colors for the gradient
+    gradientSet: string[]; 
     
     headProgress: number; 
-    tailProgress: number;
+    tailProgress: number; 
     
-    isRetractingColorOverride: boolean; // For graying box outline effect during retraction
+    isRetractingColorOverride: boolean; 
 
     onFinished: () => void;
 }
@@ -134,5 +139,5 @@ export interface AnimationWave {
     id: string;
     activations: ActivationData;
     softmaxProbabilities: number[];
-    color: string;
+    gradientSet: string[]; // Changed from color: string
 }

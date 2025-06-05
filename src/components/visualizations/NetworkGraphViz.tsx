@@ -6,10 +6,10 @@ import {
     NET_NODE_PULSE_DURATION,
     NET_LAYER_ANIMATION_DELAY,
     NET_ALPHA_PREDICTED_LINE,
-    NET_ALPHA_OTHER_ACTIVE_MIN, // Corrected import name
-    NET_ALPHA_OTHER_ACTIVE_MAX, // Corrected import name
+    NET_ALPHA_OTHER_ACTIVE_MIN,
+    NET_ALPHA_OTHER_ACTIVE_MAX,
     NET_ALPHA_INACTIVE_LINE
-} from '../../config/animation'; // Ensure this path is correct
+} from '../../config/animation';
 import { drawPathSegment } from '../../utils/canvasDrawing'; 
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
@@ -73,7 +73,7 @@ interface AnimatableLine {
     headProgress: number; 
     tailProgress: number; 
     gradientSet: string[];
-    activationStrength: number; 
+    activationStrength: number; // Strength of the source node (or target for central-to-flatten)
     displayAlpha: number; 
     isToPredictedOutputNode?: boolean; 
 }
@@ -124,7 +124,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         if (outputNodePositions.length > 0) ctx.fillText('Output', outputNodePositions[0].x, 15);
 
         allLinesRef.current.forEach(line => {
-            if (line.displayAlpha < 0.01) return; // Optimization: don't draw fully transparent lines
+            if (line.displayAlpha < 0.01) return;
 
             ctx.globalAlpha = line.displayAlpha;
             let strokeStyle: string | CanvasGradient = COLOR_DEFAULT_LINE;
@@ -141,7 +141,6 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
                  strokeStyle = COLOR_DEFAULT_LINE; 
             }
 
-            // Draw active lines with snake animation
             if (isActiveLineForGradient && (line.headProgress > line.tailProgress || (line.headProgress === 1 && line.tailProgress < 1))) {
                  drawPathSegment(
                     ctx,
@@ -151,7 +150,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
                     strokeStyle,
                     LINE_ACTIVE_WIDTH
                 );
-            } else if (!isActiveLineForGradient && line.displayAlpha >= NET_ALPHA_INACTIVE_LINE) { // Draw static inactive line if it has some alpha
+            } else if (!isActiveLineForGradient && line.displayAlpha >= NET_ALPHA_INACTIVE_LINE) { 
                 ctx.beginPath();
                 ctx.moveTo(line.from.x, line.from.y);
                 ctx.lineTo(line.to.x, line.to.y);
@@ -224,44 +223,61 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             let lineIdCounter = 0;
             let nodeIdCounter = 0;
 
+            // UPDATED getDisplayAlpha function
             const getDisplayAlpha = (
-                strength: number,
-                isLineToPredictedOutputNode: boolean 
+                sourceStrength: number,
+                targetStrength: number,
+                isLineToOverallPredictedOutputNode: boolean
             ) => {
-                if (strength <= ACTIVATION_THRESHOLD) {
-                    return NET_ALPHA_INACTIVE_LINE;
+                const isSourceActive = sourceStrength > ACTIVATION_THRESHOLD;
+                const isTargetActive = targetStrength > ACTIVATION_THRESHOLD;
+
+                // Condition 1: Both source and target nodes for THIS line segment are active.
+                if (isSourceActive && isTargetActive) {
+                    return NET_ALPHA_PREDICTED_LINE; // Solid
                 }
-                if (isLineToPredictedOutputNode) {
-                    return NET_ALPHA_PREDICTED_LINE; // 1.0 for the direct path to predicted output
+
+                // Condition 2: Line is part of the path to the *overall predicted character* AND the source of THIS line segment is active.
+                if (isLineToOverallPredictedOutputNode && isSourceActive) {
+                    return NET_ALPHA_PREDICTED_LINE; // Solid
                 }
-                // For all other active lines (early layers OR non-predicted output layer lines)
-                // Map strength [ACTIVATION_THRESHOLD, 1.0] to alpha [MIN_OTHER, MAX_OTHER]
-                const normalizedStrength = Math.max(0, Math.min(1, (strength - ACTIVATION_THRESHOLD) / (1.0 - ACTIVATION_THRESHOLD))); 
-                return NET_ALPHA_OTHER_ACTIVE_MIN + normalizedStrength * (NET_ALPHA_OTHER_ACTIVE_MAX - NET_ALPHA_OTHER_ACTIVE_MIN);
+
+                // Condition 3: Source is active, but target is not (and not covered by Condition 1 or 2).
+                if (isSourceActive) {
+                    const normalizedStrength = Math.max(0, Math.min(1, (sourceStrength - ACTIVATION_THRESHOLD) / (1.0 - ACTIVATION_THRESHOLD || 1)));
+                    return NET_ALPHA_OTHER_ACTIVE_MIN + normalizedStrength * (NET_ALPHA_OTHER_ACTIVE_MAX - NET_ALPHA_OTHER_ACTIVE_MIN);
+                }
+
+                // Condition 4: Source is not active.
+                return NET_ALPHA_INACTIVE_LINE;
             };
             
             if (centralConnectionPoint) {
+                const sourceStrengthForCentral = 1.0; // Conceptual strength for the wave origin
                 flattenNodePositions.forEach((nodePos, index) => {
-                    const strength = currentFlattenAct[index];
+                    const targetStrength = currentFlattenAct[index];
                     waveLines.push({
                         id: `l-cen-fl-${waveId}-${lineIdCounter++}`, waveId,
                         from: centralConnectionPoint, to: nodePos,
                         totalLength: getLineLength(centralConnectionPoint, nodePos),
-                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: strength,
-                        displayAlpha: getDisplayAlpha(strength, false) 
+                        headProgress: 0, tailProgress: 0, gradientSet,
+                        activationStrength: targetStrength, // Line's own animation driven by target's activation
+                        displayAlpha: getDisplayAlpha(sourceStrengthForCentral, targetStrength, false) 
                     });
                 });
             }
             
             flattenNodePositions.forEach((fromPos, i) => {
                 const sourceStrength = currentFlattenAct[i];
-                hiddenDenseNodePositions.forEach((toPos) => {
-                     waveLines.push({
+                hiddenDenseNodePositions.forEach((toPos, j_idx) => {
+                    const targetStrength = currentHiddenAct[j_idx];
+                    waveLines.push({
                         id: `l-fl-hd-${waveId}-${lineIdCounter++}`, waveId,
                         from: fromPos, to: toPos,
                         totalLength: getLineLength(fromPos, toPos),
-                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: sourceStrength,
-                        displayAlpha: getDisplayAlpha(sourceStrength, false)
+                        headProgress: 0, tailProgress: 0, gradientSet,
+                        activationStrength: sourceStrength,
+                        displayAlpha: getDisplayAlpha(sourceStrength, targetStrength, false)
                     });
                 });
             });
@@ -269,37 +285,42 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             hiddenDenseNodePositions.forEach((fromPos, i) => {
                 const sourceStrength = currentHiddenAct[i];
                 outputNodePositions.forEach((toPos, j) => {
+                    const targetStrength = currentOutputAct[j];
                     const isLineToPredictedNode = (j === predictedOutputIndex);
                     waveLines.push({
                         id: `l-hd-out-${waveId}-${lineIdCounter++}`, waveId,
                         from: fromPos, to: toPos,
                         totalLength: getLineLength(fromPos, toPos),
-                        headProgress: 0, tailProgress: 0, gradientSet, activationStrength: sourceStrength,
-                        displayAlpha: getDisplayAlpha(sourceStrength, isLineToPredictedNode),
+                        headProgress: 0, tailProgress: 0, gradientSet,
+                        activationStrength: sourceStrength,
+                        displayAlpha: getDisplayAlpha(sourceStrength, targetStrength, isLineToPredictedNode),
                         isToPredictedOutputNode: isLineToPredictedNode
                     });
                 });
             });
             
-            flattenNodePositions.forEach((pos) => {
+            flattenNodePositions.forEach((pos, i) => { // Added index i for currentFlattenAct
                  waveNodes.push({
                     id: `n-fl-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
-                    textColor: COLOR_OUTPUT_TEXT, alpha: 1,
+                    scale: 1, strokeColor: currentFlattenAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR, 
+                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
                 });
             });
-            hiddenDenseNodePositions.forEach((pos) => {
+            hiddenDenseNodePositions.forEach((pos, i) => { // Added index i for currentHiddenAct
                  waveNodes.push({
                     id: `n-hd-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
-                    textColor: COLOR_OUTPUT_TEXT, alpha: 1,
+                    scale: 1, strokeColor: currentHiddenAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR, 
+                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
                 });
             });
             outputNodePositions.forEach((pos, i) => {
+                const isPredictedAndActive = (i === predictedOutputIndex && currentOutputAct[i] > ACTIVATION_THRESHOLD);
                 waveNodes.push({
                     id: `n-out-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y, label: EMNIST_CHARS[i],
-                    scale: 1, strokeColor: NODE_INACTIVE_STROKE_COLOR, fillColor: COLOR_NODE_FILL, 
-                    textColor: COLOR_OUTPUT_TEXT, alpha: 1, isPredicted: (i === predictedOutputIndex),
+                    scale: 1, 
+                    strokeColor: isPredictedAndActive ? nodePulseColor : (currentOutputAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR),
+                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1, 
+                    isPredicted: (i === predictedOutputIndex),
                 });
             });
 
@@ -321,40 +342,58 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             const animateLayerConnections = (
                 linesForLayer: AnimatableLine[], 
                 nodesForLayer: AnimatableNode[], 
-                nodeActivations: number[],
+                nodeActivations: number[], // Activations for the TARGET nodes of these lines generally
                 isOutputLayerPass: boolean = false 
             ) => {
                 linesForLayer.forEach(line => {
+                    // Line animation (snake) is driven by its own activationStrength (source node's strength)
                     if (line.activationStrength > ACTIVATION_THRESHOLD) { 
                         tl.to(line, { headProgress: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' }, currentTime);
                         tl.to(line, { tailProgress: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' }, currentTime + NET_LINE_GROW_DURATION);
                     }
                 });
                 
-                const nodePulseStartTime = currentTime + NET_LINE_GROW_DURATION;
+                const nodePulseStartTime = currentTime + NET_LINE_GROW_DURATION * 0.5; // Start node pulse slightly before line finishes arriving
                 nodesForLayer.forEach((node, i) => {
-                    const isActive = nodeActivations[i] >= ACTIVATION_THRESHOLD;
-                    if (isActive) {
+                    // Node activation check based on its own activation value from the correct layer's activation array
+                    const actualNodeActivation = 
+                        node.id.startsWith('n-fl-') ? currentFlattenAct[i] :
+                        node.id.startsWith('n-hd-') ? currentHiddenAct[i] :
+                        node.id.startsWith('n-out-') ? currentOutputAct[i] : 0;
+
+                    if (actualNodeActivation >= ACTIVATION_THRESHOLD) {
                         let specificNodePulseColor = nodePulseColor;
-                        let specificNodeTextColor = COLOR_OUTPUT_TEXT;
-                        if(isOutputLayerPass && node.isPredicted){
+                        let specificNodeTextColor = COLOR_OUTPUT_TEXT; // Default text color
+                        
+                        if(node.id.startsWith('n-out-') && node.isPredicted){
                             specificNodePulseColor = gradientSet[0] || nodePulseColor; 
+                            // Text color for predicted output node should be its pulse color for emphasis
                             specificNodeTextColor = specificNodePulseColor; 
+                        } else if (node.id.startsWith('n-out-')) {
+                            // Other output nodes that are active but not predicted
+                            specificNodeTextColor = nodePulseColor; // color text to match pulse
                         }
 
+
                         tl.to(node, { 
-                            scale: (isOutputLayerPass && node.isPredicted) ? 1.6 : 1.5, 
+                            scale: (node.id.startsWith('n-out-') && node.isPredicted) ? 1.6 : 1.5, 
                             strokeColor: specificNodePulseColor, 
-                            textColor: specificNodeTextColor,
+                            textColor: specificNodeTextColor, // Apply potentially updated text color
                             duration: NET_NODE_PULSE_DURATION / 2, 
                             ease: 'power1.out' 
                         }, nodePulseStartTime)
-                          .to(node, { scale: 1, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' });
+                          .to(node, { 
+                              scale: 1, 
+                              strokeColor: node.id.startsWith('n-out-') && node.isPredicted ? specificNodePulseColor : (actualNodeActivation > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR), // Keep predicted output highlighted
+                              textColor: node.id.startsWith('n-out-') && node.isPredicted ? specificNodeTextColor : COLOR_OUTPUT_TEXT, // Revert non-predicted text color
+                           duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' 
+                          });
                     }
                 });
                 return nodePulseStartTime + NET_NODE_PULSE_DURATION + NET_LAYER_ANIMATION_DELAY;
             };
             
+            // For animateLayerConnections, nodeActivations should correspond to the layer the *nodes* belong to
             currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-cen-fl')), waveNodes.filter(n => n.id.startsWith('n-fl-')), currentFlattenAct);
             currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-fl-hd')), waveNodes.filter(n => n.id.startsWith('n-hd-')), currentHiddenAct);
             currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-hd-out')), waveNodes.filter(n => n.id.startsWith('n-out-')), currentOutputAct, true);

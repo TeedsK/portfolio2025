@@ -1,22 +1,11 @@
 // src/components/OcrOverlay.tsx
 import React, { useEffect } from 'react';
 import gsap from 'gsap';
-import { ProcessableLine, BoundingBoxData } from '../types';
+import { ProcessableLine, BoundingBoxData, OcrDisplayLine as AppOcrDisplayLine } from '../types';
+import { OCR_OVERLAY_TEXT_COLOR_NORMAL, OCR_OVERLAY_FONT_SIZE } from '../constants';
+import { TYPO_HIGHLIGHT_DELAY_MS } from '../config/animation';
 
-interface OcrDisplayLinePart {
-    id: string;
-    text: string;
-    isWhitespace: boolean;
-    isFlagged?: boolean;
-    ref: React.RefObject<HTMLSpanElement>;
-}
-
-export interface OcrDisplayLine {
-    id: string;
-    textDuringOcr: string;
-    parts: OcrDisplayLinePart[];
-    y: number;
-}
+export { type AppOcrDisplayLine as OcrDisplayLine };
 
 export interface ActiveBoxInfo {
     activeItemIndex: { line: number; item: number } | null;
@@ -24,37 +13,33 @@ export interface ActiveBoxInfo {
     imageDimensions: { width: number; height: number } | null;
     imageRef: React.RefObject<HTMLImageElement>;
     showMediaElement: boolean;
-    mediaOffset: { top: number; left: number } | null;
 }
 
 export interface OcrOverlayProps {
-    lines: OcrDisplayLine[];
+    lines: AppOcrDisplayLine[];
     isShowingHighlights: boolean;
     lineRefs: React.MutableRefObject<Map<string, HTMLDivElement | null>>;
     activeBoxInfo: ActiveBoxInfo;
 }
 
-const OCR_OVERLAY_FONT_SIZE = 30;
-const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
 const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)';
-const TYPO_ANIMATION_DELAY_MS = 60;
 
 const OcrOverlay: React.FC<OcrOverlayProps> = ({
     lines,
     isShowingHighlights,
     lineRefs,
-    activeBoxInfo
+    activeBoxInfo,
 }) => {
     const {
         activeItemIndex,
         processableLines,
-        imageDimensions,
+        imageDimensions, // These are the dimensions of the content area (mediaContainer - padding)
         imageRef,
         showMediaElement,
-        mediaOffset
     } = activeBoxInfo;
 
     useEffect(() => {
+        // GSAP animation for typo highlights (remains the same)
         if (isShowingHighlights && lines.some(line => line.parts.length > 0)) {
             const wordSpans: HTMLElement[] = [];
             lines.forEach(line => {
@@ -76,46 +61,77 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
                             duration: 0.3,
                             ease: 'power1.inOut'
                         },
-                        `-=${0.3 - TYPO_ANIMATION_DELAY_MS / 1000}`
+                        `-=${0.3 - TYPO_HIGHLIGHT_DELAY_MS / 1000}`
                     );
                 });
             }
         }
     }, [isShowingHighlights, lines]);
 
-    if (!imageDimensions) return null;
+    if (!imageDimensions || !imageRef.current || imageDimensions.width === 0 || imageDimensions.height === 0) {
+        return null;
+    }
 
+    // Overlay container is positioned relative to its parent (.media-container)
+    // It should fill the content area where the image is displayed.
+    // The parent .media-container has 4px padding.
+    // App.tsx now sets imageDimensions to be container.width - 8, container.height - 8.
+    // So, OcrOverlay's width/height should be these imageDimensions directly.
     const containerStyle: React.CSSProperties = {
         position: 'absolute',
-        top: mediaOffset ? `${mediaOffset.top + 4}px` : '0px',
-        left: mediaOffset ? `${mediaOffset.left + 4}px` : '0px',
-        width: imageDimensions.width - 8 + 'px',
-        height: imageDimensions.height - 8 + 'px',
+        top: '4px',  // To account for parent's padding
+        left: '4px', // To account for parent's padding
+        width: `${imageDimensions.width}px`, // imageDimensions is already content area
+        height: `${imageDimensions.height}px`,
         pointerEvents: 'none',
-        overflow: 'hidden',
-        zIndex: 3
+        overflow: 'hidden', // Important to clip content outside this box
+        zIndex: 3,
+        // border: '1px dashed lime', // For debugging layout
     };
+    
+    const naturalImgWidth = imageRef.current.naturalWidth;
+    const naturalImgHeight = imageRef.current.naturalHeight;
+
+    let displayedImgWidth = imageDimensions.width;
+    let displayedImgHeight = imageDimensions.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (naturalImgWidth > 0 && naturalImgHeight > 0) {
+        const containerAspectRatio = imageDimensions.width / imageDimensions.height;
+        const naturalAspectRatio = naturalImgWidth / naturalImgHeight;
+
+        if (naturalAspectRatio > containerAspectRatio) { // Image is wider than container aspect ratio, pillarboxed height
+            displayedImgHeight = imageDimensions.width / naturalAspectRatio;
+            offsetY = (imageDimensions.height - displayedImgHeight) / 2;
+        } else { // Image is taller, letterboxed width
+            displayedImgWidth = imageDimensions.height * naturalAspectRatio;
+            offsetX = (imageDimensions.width - displayedImgWidth) / 2;
+        }
+    }
+    
+    const scaleX = displayedImgWidth / naturalImgWidth;
+    const scaleY = displayedImgHeight / naturalImgHeight;
 
     const renderActiveBox = () => {
-        if (!activeItemIndex || !showMediaElement) return null;
-        if (!processableLines[activeItemIndex.line]) return null;
+        if (!activeItemIndex || !showMediaElement || !processableLines[activeItemIndex.line] || !(naturalImgWidth > 0 && naturalImgHeight > 0)) return null;
         const item = processableLines[activeItemIndex.line][activeItemIndex.item];
-        if (item === null || !imageRef.current) return null;
+        if (item === null) return null;
+        
         const box = item as BoundingBoxData;
-        const scaleX = imageDimensions.width / (imageRef.current.naturalWidth || 1);
-        const scaleY = imageDimensions.height / (imageRef.current.naturalHeight || 1);
-        const [x, y, w, h] = box;
+        const [charX, charY, charW, charH] = box;
+
         return (
             <div
                 style={{
                     position: 'absolute',
-                    left: `${x * scaleX}px`,
-                    top: `${y * scaleY}px`,
-                    width: `${w * scaleX}px`,
-                    height: `${h * scaleY}px`,
+                    left: `${offsetX + (charX * scaleX)}px`,
+                    top: `${offsetY + (charY * scaleY)}px`,
+                    width: `${charW * scaleX}px`,
+                    height: `${charH * scaleY}px`,
                     border: '2px solid rgba(255, 0, 0, 0.7)',
                     backgroundColor: 'rgba(255, 0, 0, 0.1)',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
                 }}
             />
         );
@@ -130,31 +146,33 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
                     ref={el => { lineRefs.current.set(line.id, el); }}
                     className="ocr-overlay-line"
                     style={{
-                        top: `${line.y}px`,
-                        left: '0px',
+                        top: `${offsetY + line.y}px`, // Adjust line.y based on image's vertical offset
+                        left: `${offsetX}px`, 
+                        width: `${displayedImgWidth}px`, 
+                        textAlign: 'center',
+                        position: 'absolute',
                         fontSize: `${OCR_OVERLAY_FONT_SIZE}px`,
-                        backgroundColor: isShowingHighlights ? 'transparent' : OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR
+                        backgroundColor: isShowingHighlights ? 'transparent' : OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR,
+                        color: OCR_OVERLAY_TEXT_COLOR_NORMAL, // Ensure text color is set
+                        whiteSpace: 'pre', // Important for rendering spaces correctly
                     }}
                 >
                     {isShowingHighlights && line.parts.length > 0 ? (
                         line.parts.map(part =>
                             part.isWhitespace ? (
-                                <span key={part.id} style={{ whiteSpace: 'pre' }}>
-                                    {part.text}
-                                </span>
+                                <span key={part.id}>{part.text}</span>
                             ) : (
                                 <span
                                     key={part.id}
                                     ref={part.ref}
                                     className={`typo-highlight-word ${part.isFlagged ? 'typo-incorrect' : 'typo-correct'}`}
-                                    style={{ color: OCR_OVERLAY_TEXT_COLOR_NORMAL }}
                                 >
                                     {part.text}
                                 </span>
                             )
                         )
                     ) : (
-                        <span style={{ color: OCR_OVERLAY_TEXT_COLOR_NORMAL }}>{line.textDuringOcr}</span>
+                        <span>{line.textDuringOcr}</span>
                     )}
                 </div>
             ))}

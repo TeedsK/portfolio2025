@@ -8,10 +8,23 @@ export const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
 export const FINAL_LAYER_NAME = 'dense_1';
 export const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
 
-// New Gradient Sets for Character Lines and Outlines
+// New Gradient Sets for specific OCR sources
+export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [
+    ['#4568DC', '#B06AB3'], // Original Set 1: Blue to Purple
+    ['#ef32d9', '#89fffd'], // Original Set 2: Pink to Cyan
+    ['#cc2b5e', '#753a88']  // Purple to Dark Purple
+];
+
+export const HELLO_WELCOME_GRADIENTS: string[][] = [
+    ['#FF8008', '#FFC837'], // Orange to Yellow
+    ['#1D976C', '#93F9B9'], // Green to Light Green
+    ['#f4791f', '#f1c40f']  // Orange to Gold
+];
+
+// Fallback if needed, or can be removed if new ones cover all cases.
 export const LINE_GRADIENT_SETS: string[][] = [
-    ['#4568DC', '#B06AB3'],                          // Set 1: Blue to Purplech
-    ['#ef32d9', '#89fffd']
+    ...TEXT_SCREENSHOT_GRADIENTS,
+    ...HELLO_WELCOME_GRADIENTS
 ];
 
 
@@ -20,7 +33,7 @@ export const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
 export const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)';
 
 export const STATUS_TEXTS = [
-    'Writing text...',
+    'Writing text...', 
     'Predicting handwriting...',
     'Checking typos...'
 ];

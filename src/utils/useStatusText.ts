@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
-import { STATUS_TEXTS } from '../constants';
+import { STATUS_TEXTS } from '../pages/landing/utils/constants';
 
 export default function useStatusText(currentAppPhase: number) {
   const statusTextRef = useRef<HTMLSpanElement>(null);

@@ -1,20 +1,18 @@
 // src/components/visualizations/CharacterStreamViz.tsx
 import React, { useEffect, useRef } from 'react';
-import { StreamCharacter } from '../../types';
 import gsap from 'gsap';
-import { log } from '../../utils/logger';
 import {
     CHAR_FADE_IN_DURATION,
     CHAR_FADE_OUT_DELAY,
     CHAR_FADE_OUT_DURATION,
+    CHAR_LINE_DRAW_DURATION,
     CHAR_BOX_CONTENT_WIDTH,
     CHAR_BOX_CONTENT_HEIGHT,
     CHAR_BOX_PADDING,
-    // PULSE_LENGTH_RATIO, // No longer needed
-    // PULSE_ANIMATION_DURATION, // No longer needed
-    // PULSE_COLOR, // No longer needed
-} from '../../config/animation';
-import { PathManager } from '../../utils/path'; 
+} from '../utils/animation';
+import { PathManager } from '../utils/path'; 
+import { StreamCharacter } from '../../../types';
+import { log } from '../../../utils/logger';
 
 interface CharacterStreamVizProps {
     characters: StreamCharacter[];
@@ -84,8 +82,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             character.animationState = 'traveling';
             character.isRetractingColorOverride = false; 
             
-            const lineGrowDuration = 0.4; 
-            const lineShrinkDuration = 0.4;
             const characterShrinkScale = 0.3; 
 
             const tl = gsap.timeline({
@@ -103,11 +99,9 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 ease: 'power1.out',
             });
             
-            // Removed pulse animation for character.pulseProgress
-
             tl.to(character, {
                 headProgress: 1,
-                duration: lineGrowDuration,
+                duration: CHAR_LINE_DRAW_DURATION,
                 ease: 'linear',
                 onComplete: () => {
                      character.onFinished(); 
@@ -117,20 +111,19 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             const lineShrinkTl = gsap.timeline();
             lineShrinkTl.to(character, {
                 tailProgress: 1,
-                duration: lineShrinkDuration,
+                duration: CHAR_LINE_DRAW_DURATION,
                 ease: 'linear',
                 onStart: () => {
                     character.isRetractingColorOverride = true; 
                 },
             });
             lineShrinkTl.to(character, {
-                // color: GRAY_COLOR, // Line color is now always gradient, box outline turns gray
                 scale: characterShrinkScale,
-                duration: lineShrinkDuration, 
+                duration: CHAR_LINE_DRAW_DURATION, 
                 ease: 'power1.inOut'
             }, 0); 
 
-            tl.add(lineShrinkTl, CHAR_FADE_IN_DURATION + lineGrowDuration); 
+            tl.add(lineShrinkTl, CHAR_FADE_IN_DURATION + CHAR_LINE_DRAW_DURATION); 
 
             tl.to(character, {
                 alpha: 0,
@@ -164,8 +157,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 const snakeVisibleStartDist = char.tailProgress * path.totalLength;
                 const snakeVisibleEndDist = char.headProgress * path.totalLength;
                 
-                // Create the gradient for the line
-                let lineStrokeStyle: string | CanvasGradient = char.gradientSet[0]; // Fallback
+                let lineStrokeStyle: string | CanvasGradient = char.gradientSet[0];
                 if (path.totalLength > 0) {
                     const p0 = path.getPointAt(0);
                     const p2 = path.getPointAt(path.totalLength);
@@ -175,22 +167,16 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     });
                     lineStrokeStyle = gradient;
                 }
-                // Line should NOT turn gray, always use its gradient.
-                // if(char.isRetractingColorOverride) { 
-                //     lineStrokeStyle = GRAY_COLOR; // This line is removed/commented
-                // }
 
                 if (char.alpha > 0) {
                     ctx.save();
                     ctx.globalAlpha = char.alpha; 
 
-                    // Draw the entire visible snake line with its gradient
                     if (snakeVisibleStartDist < snakeVisibleEndDist) {
                         drawPathSegment(ctx, path, snakeVisibleStartDist, snakeVisibleEndDist, lineStrokeStyle, 3);
                     }
                     ctx.restore(); 
 
-                    // Draw character box and image
                     ctx.save();
                     ctx.globalAlpha = char.alpha;
                     const totalBoxVisualWidth = CHAR_BOX_CONTENT_WIDTH + CHAR_BOX_PADDING * 2;
@@ -209,7 +195,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.fill();
                     
-                    let boxOutlineStyle: string | CanvasGradient = char.gradientSet[0]; // Fallback
+                    let boxOutlineStyle: string | CanvasGradient = char.gradientSet[0];
                     const boxGradient = ctx.createLinearGradient(
                         char.startX, 
                         char.startY, 
@@ -221,7 +207,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     });
                     boxOutlineStyle = boxGradient;
 
-                    if(char.isRetractingColorOverride) { // Box outline DOES turn gray
+                    if(char.isRetractingColorOverride) {
                         boxOutlineStyle = GRAY_COLOR;
                     }
                     

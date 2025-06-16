@@ -1,6 +1,6 @@
 // src/components/visualizations/NetworkGraphViz.tsx
 import React, { useEffect, useMemo, useRef, useCallback } from 'react';
-import { ActivationDataValue, AnimationWave, Point } from '../../types';
+import { ActivationDataValue, AnimationWave, Point } from '../../../types';
 import gsap from 'gsap';
 import { 
     NET_NODE_PULSE_DURATION,
@@ -9,8 +9,8 @@ import {
     NET_ALPHA_OTHER_ACTIVE_MIN,
     NET_ALPHA_OTHER_ACTIVE_MAX,
     NET_ALPHA_INACTIVE_LINE
-} from '../../config/animation';
-import { drawPathSegment } from '../../utils/canvasDrawing'; 
+} from '../utils/animation';
+import { drawPathSegment } from '../utils/canvasDrawing'; 
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'; 
 import * as tf from '@tensorflow/tfjs';
 import { ModelWeights } from '../types';
-import { log, error } from '../utils/logger';
+import { log, error } from './logger';
 
 export interface UseTfModelResult {
     model: tf.LayersModel | null;

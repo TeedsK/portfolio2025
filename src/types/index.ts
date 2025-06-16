@@ -1,6 +1,6 @@
 // src/types/index.ts
 import React from 'react';
-import { PathManager } from '../utils/path';
+import { PathManager } from '../pages/landing/utils/path';
 
 export interface Point { // Ensure Point is defined/exported for use in canvasDrawing.ts if not already
     x: number;

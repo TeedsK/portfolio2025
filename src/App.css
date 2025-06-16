@@ -1,290 +1,59 @@
 /* src/App.css */
 #root {
-  max-width: 1280px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  /* Center vertically */
-  align-items: center;
-  /* Center horizontally */
 }
 
 .app-container {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
   gap: 2rem;
-  /* Space between image and future controls/output */
-}
-
-.app-container h1 {
-  /* Style for "Theo Kremer" */
-  font-size: 2.8em;
-  /* Adjust as needed */
-  margin-bottom: 1rem;
-  /* Space below header */
-}
-
-.cursive-image {
-  max-width: 80%;
-  /* Adjust as needed */
-  height: auto;
-  border: 1px dashed #ccc;
-  /* Optional: to visualize image bounds */
-  cursor: pointer;
-  /* Indicate it's clickable later */
-}
-
-/* Add styles for future controls/toggles/visualizations later */
-.controls {
-  margin-top: 20px;
-  display: flex;
-  gap: 15px;
-}
-
-.app-title {
-  font-size: 9em;
-  font-weight: 700;
-  font-family: 'Cursive', sans-serif;
-  color: #333;
-  margin-bottom: 0;
-}
-
-.output {
-  margin-top: 20px;
-  font-size: 2em;
-  font-family: monospace;
-  min-height: 1.5em;
-  /* Reserve space */
-}
-
-.overlay-container {
-  position: absolute;
-  top: 0;
-  left: 0;
   width: 100%;
-  height: 100%;
-  z-index: 3;
-  pointer-events: none;
-  background-color: transparent;
-  color: black;
-}
-
-/* src/App.css - Ensure these or similar styles exist */
-.ocr-overlay-line {
-  width: 100%;
-  text-align: center;
-  position: absolute;
-  font-family: monospace;
-  padding: 2px 5px;
-  white-space: pre;
-  pointer-events: none;
-  box-sizing: border-box;
-}
-
-.typo-highlight-word {
-  padding: 0 1px;
-  border-radius: 3px;
-}
-
-.typo-details-list {
-  list-style-type: none;
-  padding-left: 0;
-}
-
-.typo-details-list li {
-  margin-bottom: 10px;
-  padding: 8px;
-  /* border: 1px solid #eee; */
-  border-radius: 4px;
-}
-
-.typo-details-list strong {
-  font-weight: bold;
-}
-
-.typo-original {
-  text-decoration: line-through;
-  color: #777;
-}
-
-.typo-suggestion {
-  color: #28a745;
-  /* Green */
-}
-
-.typo-probabilities {
-  font-size: 0.9em;
-  color: #555;
-  margin-left: 15px;
-}
-
-/* Style for NetworkGraphViz if it's constrained in the new area */
-.network-graph-container {
-  display: flex;
-  justify-content: center;
-  /* Center the graph if it's narrower than container */
-  overflow-x: auto;
-  /* Allow scrolling if graph is wide */
-  position: relative;
-}
-
-.typo-correct {
-  /* background-color: rgba(0, 255, 0, 0.7); */
-  /* If using background highlighting */
-  color: #28a745;
-  /* Green text for correct */
-  font-weight: bold;
-}
-
-.typo-incorrect {
-  /* background-color: rgba(255, 0, 0, 0.7); */
-  /* If using background highlighting */
-  color: #dc3545;
-  /* Red text for incorrect */
-  font-weight: bold;
-  /* text-decoration: underline rgba(255,0,0,0.7); Optional: wavy underline for typos */
-}
-
-
-
-.typo-detail-item {
-  /* Container for each full typo entry (text + predictions) */
-  margin-bottom: 18px;
-  /* Space between typo entries */
-  padding-bottom: 10px;
-  /* border-bottom: 1px dashed #ddd; */
-}
-
-.typo-detail-item:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-/* Represents a row that can contain up to 8 typo items */
-.typo-details-row-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  /* Allow items to wrap if they exceed container width */
-  margin-bottom: 10px;
-  /* Space between rows of typo items */
   align-items: flex-start;
-  /* Align items at the start of the cross axis */
 }
 
-/* Individual typo item container */
-.typo-detail-item-wrapper {
+.left-column {
+  flex: 1;
   display: flex;
-  /* Use flex for horizontal layout of [Original -> Fixed] and Tags */
   flex-direction: column;
-  /* Stack text row and tags vertically */
-  margin-right: 15px;
-  /* Space between typo items in a row */
-  margin-bottom: 15px;
-  /* Space if items wrap to multiple lines within the 8-item group */
-  padding: 10px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  background-color: #ffffff;
-  /* White background for each typo item */
-  min-width: 200px;
-  /* Minimum width for a typo item */
+  gap: 1.5rem;
+  max-width: 50%;
 }
 
-.typo-detail-text-row {
-  /* Contains "Original -> Fixed" */
+.right-column {
+  flex: 1;
   display: flex;
-  align-items: center;
-  margin-bottom: 6px;
+  flex-direction: column;
+  max-width: 50%;
+  position: sticky;
+  top: 2rem;
 }
 
-.typo-original-text {
-  text-decoration: wavy underline;
-  /* Wavy underline for original typo */
-  text-decoration-color: #dc3545;
-  color: black;
-  /* A stronger red for original typo */
-  margin-right: 8px;
-  font-size: 1em;
-}
-
-.typo-arrow {
-  margin: 0 8px;
-  font-size: 1.1em;
-  color: #2980b9;
-  /* A distinct blue for the arrow */
-}
-
-.typo-fixed-text {
-  color: #27ae60;
-  /* A stronger green for fixed suggestion */
-  font-weight: bold;
-  font-size: 1em;
-}
-
-.typo-prediction-tags {
-  margin-top: 4px;
-  display: flex;
-  /* Makes tags align horizontally */
-  flex-wrap: wrap;
-  /* Allow tags to wrap if many/long */
-  gap: 6px;
-  /* Space between tags */
-  justify-content: flex-start;
-  /* Float tags to the left */
-}
-
-/* Default Ant Tag styling is usually good, but you can override */
-.ant-tag {
-  /* background-color: #f0f0f0; /* Example: if you want custom tag background */
-  /* color: #333; */
-  font-size: 0.85em;
-}
-
-.network-graph-container {
-  display: flex;
-  justify-content: center;
-  overflow-x: auto;
-}
-
-.media-wrapper {
-  /* New wrapper for media + status text positioning */
-  position: relative;
-  /* For absolute positioning of status text */
-  margin-bottom: 20px;
-  /* Space before the "extra info" area */
+.media-column {
+  border: 1px solid #e0e0e0;
+  padding: 15px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .media-container {
   position: relative;
-  display: inline-block;
+  display: block;
   margin: 0;
-  /* Removed default margin, handled by media-wrapper */
   max-width: 100%;
   background-color: #f0f0f0;
-  /* Fallback background if media doesn't cover */
-  padding: 4px;
-  /* Padding to hide black lines */
   box-sizing: border-box;
   overflow: hidden;
-  /* transition: opacity 0.5s ease-in-out; */
-  /* For fading out */
+  border-radius: 4px;
 }
 
-.media-container.hidden-media {
-  opacity: 0;
-  /* Consider visibility: hidden; or height: 0; if it should collapse, but overlay needs space */
-}
-
-.media-container video,
-.media-container img {
+.media-container img,
+.media-container video {
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: auto;
   box-sizing: border-box;
 }
@@ -294,10 +63,10 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
   z-index: 1;
   pointer-events: none;
-  /* transition: opacity 0.4s ease-in-out; */
 }
 
 .media-container video {
@@ -305,102 +74,44 @@
   z-index: 2;
 }
 
-.status-text-container {
-  position: absolute;
-  bottom: -35px;
-  /* Positioned below the media-wrapper */
-  left: 0px;
-  padding: 6px 12px;
-  background-color: #ffffff;
-  color: #aeb0b4;
-  font-family: "Source Code Pro", monospace;
-  font-weight: 600;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  min-height: 1.6em;
-  /* Ensure space for text */
-  line-height: 1.6em;
-  white-space: nowrap;
+/* New Styles for OCR Output */
+.ocr-output-container {
+  padding: 10px 15px;
+  margin-bottom: 1rem;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background: #fafafa;
+  text-align: left;
 }
 
+.ocr-output-container h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+  color: #888;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-.status-text-animator {
-  /* The span holding the actual text */
-  display: inline-block;
-  /* Needed for transform */
-  position: relative;
-  /* For smooth y-translation */
+.ocr-output-text {
+  white-space: pre-wrap;
+  min-height: 1.5em;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.1em;
+  color: #333;
+  line-height: 1.4;
+}
+
+h1 {
+  font-size: 2.5em;
+  margin: 0;
 }
 
 .steps-extra-info-container {
-  margin-top: 20px;
+  border: 1px solid #e0e0e0;
   padding: 15px;
   border-radius: 8px;
-  min-height: 150px;
-}
-
-.typo-analysis-container {}
-
-.typo-details-row-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-  align-items: flex-start;
-}
-
-.typo-detail-item-wrapper {
-  display: flex;
-  flex-direction: column;
-  margin-right: 15px;
-  margin-bottom: 15px;
-  padding: 10px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  background-color: #ffffff;
-  min-width: 200px;
-}
-
-.typo-detail-text-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-}
-
-.typo-original-text {
-  text-decoration: line-through;
-  color: #c0392b;
-  margin-right: 8px;
-  font-size: 1em;
-}
-
-.typo-arrow {
-  margin: 0 8px;
-  font-size: 1.1em;
-  color: #2980b9;
-}
-
-.typo-fixed-text {
-  color: #27ae60;
-  font-weight: bold;
-  font-size: 1em;
-}
-
-.typo-prediction-tags {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-start;
-}
-
-.ant-tag {
-  font-size: 0.85em;
-}
-
-.network-graph-container {
-  display: flex;
-  justify-content: center;
-  overflow-x: auto;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }

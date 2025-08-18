@@ -184,7 +184,8 @@ export default function useOcrProcessing({
     }
   }, [setNetworkWaves]);
 
-  const startOcr = (/* imageDimensions: { width: number; height: number } */): Promise<string> => {
+  // NOTE: The parameter is not currently used, but is kept to preserve type-safety at call sites.
+  const startOcr = (_imageDimensions: { width: number; height: number }): Promise<string> => {
     return new Promise<string>((resolve) => {
       if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !model) {
         warn('Not ready for OCR processing.');

@@ -10,7 +10,7 @@
   display: flex;
   flex-direction: row;
   gap: 2rem;
-  width: 100%;
+  width: 2000px;
   align-items: flex-start;
 }
 
@@ -83,11 +83,19 @@
 
 .ocr-output-container {
   padding: 10px 15px;
-  margin-bottom: 1rem;
   border: 1px solid #e8e8e8;
   border-radius: 8px;
   background: #fafafa;
   text-align: left;
+}
+
+/* New: below-the-media style and slightly elevated look */
+.ocr-output-container--below {
+  margin-top: 12px;
+  background: #fcfcfd;
+  border: 1px solid #eaeaea;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
 
 .ocr-output-container h3 {
@@ -107,6 +115,7 @@
   font-size: 1.1em;
   color: #333;
   line-height: 1.4;
+  word-break: break-word;
 }
 
 .blinking-cursor {

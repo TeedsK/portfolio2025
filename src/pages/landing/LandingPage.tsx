@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Switch, Space, Alert, Spin } from 'antd';
 import '../../App.css';
+import gsap from 'gsap';
 import { log, warn } from '../../utils/logger';
 import OcrOverlay from "./components/OcrOverlay";
 import CharacterStreamViz from './components/CharacterStreamViz';
@@ -43,7 +44,10 @@ function LandingPage() {
     const [showMediaElement] = useState<boolean>(true);
     const [streamCharacters, setStreamCharacters] = useState<StreamCharacter[]>([]);
     const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
-    const gradientSetIndexRef = useRef(0);
+
+    // Independent gradient indices for the two demos
+    const gradientIndex1Ref = useRef(0);
+    const gradientIndex2Ref = useRef(0);
 
     // --- Section 1 state (Screenshot) ---
     const [imageDimensions1, setImageDimensions1] = useState<{ width: number; height: number } | null>(null);
@@ -55,6 +59,8 @@ function LandingPage() {
     const [isOcrDone1, setIsOcrDone1] = useState<boolean>(false);
     const imageRef1 = useRef<HTMLImageElement | null>(null);
     const mediaContainerRef1 = useRef<HTMLDivElement>(null);
+    const ocrOutputRef1 = useRef<HTMLDivElement>(null);
+    const hasAnimatedOutput1 = useRef(false);
 
     // --- Section 2 state (Handwriting) ---
     const [imageDimensions2, setImageDimensions2] = useState<{ width: number; height: number } | null>(null);
@@ -66,6 +72,8 @@ function LandingPage() {
     const [isOcrDone2, setIsOcrDone2] = useState<boolean>(false);
     const imageRef2 = useRef<HTMLImageElement | null>(null);
     const mediaContainerRef2 = useRef<HTMLDivElement>(null);
+    const ocrOutputRef2 = useRef<HTMLDivElement>(null);
+    const hasAnimatedOutput2 = useRef(false);
 
     const {
         model,
@@ -80,13 +88,14 @@ function LandingPage() {
         setNetworkWaves(prev => typeof updater === 'function' ? updater(prev) : updater);
     }, []);
 
+    // Independent OCR processors (already separate; now also independently animated/output)
     const ocrProcess1 = useOcrProcessing({ imageRef: imageRef1, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
     const ocrProcess2 = useOcrProcessing({ imageRef: imageRef2, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
     const networkContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { if (modelLoadError) setErrorState(modelLoadError); }, [modelLoadError]);
 
-    // Keep container height stable via ResizeObserver (we still use it to give overlay a concrete pixel size)
+    // Keep container height stable via ResizeObserver
     useEffect(() => {
         const setupObserver = (containerRef: React.RefObject<HTMLDivElement>, setDims: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>) => {
             if (!containerRef.current) return;
@@ -123,7 +132,7 @@ function LandingPage() {
         }
     }, []);
 
-    // Auto-start OCR 500ms after video starts
+    // Auto-start OCR 500ms after each video starts — independently.
     useEffect(() => {
         if (isVideoPlaying1 && !ocrProcess1.isProcessingOCR) {
             const timer = setTimeout(() => {
@@ -173,16 +182,20 @@ function LandingPage() {
         }]);
     }, []);
 
+    // Independently pick gradient sets for each stream
     useEffect(() => {
         if (ocrProcess1.currentChar && ocrProcess1.currentCharImageData) {
-            addCharacterToStream(ocrProcess1.currentChar, ocrProcess1.currentCharImageData, ocrProcess1.onCharAnimationFinished, "Scan 1 (Video)", TEXT_SCREENSHOT_GRADIENTS[gradientSetIndexRef.current % TEXT_SCREENSHOT_GRADIENTS.length]);
+            const idx = gradientIndex1Ref.current % TEXT_SCREENSHOT_GRADIENTS.length;
+            addCharacterToStream(ocrProcess1.currentChar, ocrProcess1.currentCharImageData, ocrProcess1.onCharAnimationFinished, "Scan 1 (Video)", TEXT_SCREENSHOT_GRADIENTS[idx]);
+            gradientIndex1Ref.current++;
         }
     }, [ocrProcess1.currentChar, ocrProcess1.currentCharImageData, ocrProcess1.onCharAnimationFinished, addCharacterToStream]);
 
     useEffect(() => {
         if (ocrProcess2.currentChar && ocrProcess2.currentCharImageData) {
-            gradientSetIndexRef.current++;
-            addCharacterToStream(ocrProcess2.currentChar, ocrProcess2.currentCharImageData, ocrProcess2.onCharAnimationFinished, "Scan 2 (Static)", HELLO_WELCOME_GRADIENTS[gradientSetIndexRef.current % HELLO_WELCOME_GRADIENTS.length]);
+            const idx = gradientIndex2Ref.current % HELLO_WELCOME_GRADIENTS.length;
+            addCharacterToStream(ocrProcess2.currentChar, ocrProcess2.currentCharImageData, ocrProcess2.onCharAnimationFinished, "Scan 2 (Static)", HELLO_WELCOME_GRADIENTS[idx]);
+            gradientIndex2Ref.current++;
         }
     }, [ocrProcess2.currentChar, ocrProcess2.currentCharImageData, ocrProcess2.onCharAnimationFinished, addCharacterToStream]);
 
@@ -203,7 +216,7 @@ function LandingPage() {
         }
     };
 
-    // Collapse (shrink) the image after typo animation completes
+    // Collapse (shrink) the image after typo animation completes – independently
     const onTypoAnimationComplete = (sourceIndex: OcrSourceIndex) => {
         if (sourceIndex === 0) {
             if (isOcrDone1) setCollapseImage1(true);
@@ -212,29 +225,31 @@ function LandingPage() {
         }
     };
 
+    // Animate the appearance of OCR output containers (once per section)
+    useEffect(() => {
+        const shouldAnimate1 = (ocrProcess1.liveOcrText.length > 0 || correctedTextParts1.length > 0) && !hasAnimatedOutput1.current;
+        if (shouldAnimate1 && ocrOutputRef1.current) {
+            hasAnimatedOutput1.current = true;
+            gsap.fromTo(ocrOutputRef1.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' });
+        }
+    }, [ocrProcess1.liveOcrText, correctedTextParts1.length]);
+
+    useEffect(() => {
+        const shouldAnimate2 = (ocrProcess2.liveOcrText.length > 0 || correctedTextParts2.length > 0) && !hasAnimatedOutput2.current;
+        if (shouldAnimate2 && ocrOutputRef2.current) {
+            hasAnimatedOutput2.current = true;
+            gsap.fromTo(ocrOutputRef2.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' });
+        }
+    }, [ocrProcess2.liveOcrText, correctedTextParts2.length]);
+
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
 
     return (
         <React.Fragment>
             <div className="left-column">
+                {/* ------ Section 2: Handwriting (kept on top as in your original layout) ------ */}
                 <div className="media-column">
-                    <div className="ocr-output-container">
-                        <h3>Live OCR Output (Handwriting)</h3>
-                        {ocrProcess2.isProcessingOCR ? (
-                            <p className="ocr-output-text">{ocrProcess2.liveOcrText}<span className="blinking-cursor">|</span></p>
-                        ) : (
-                            correctedTextParts2.length > 0 ? (
-                                <AnimatedTypoText
-                                    parts={correctedTextParts2}
-                                    onComplete={() => onTypoAnimationComplete(1)}
-                                />
-                            ) : (
-                                <p className="ocr-output-text">Awaiting OCR...</p>
-                            )
-                        )}
-                    </div>
-
                     <div
                         ref={mediaContainerRef2}
                         className="media-container"
@@ -279,27 +294,29 @@ function LandingPage() {
                             />
                         )}
                     </div>
-                </div>
 
-                <h1>Theo Kremer</h1>
-
-                <div className="media-column">
-                    <div className="ocr-output-container">
-                        <h3>Live OCR Output (Screenshot)</h3>
-                        {ocrProcess1.isProcessingOCR ? (
-                            <p className="ocr-output-text">{ocrProcess1.liveOcrText}<span className="blinking-cursor">|</span></p>
+                    {/* Live OCR Output BELOW the media */}
+                    <div ref={ocrOutputRef2} className="ocr-output-container ocr-output-container--below">
+                        <h3>Live OCR Output (Handwriting)</h3>
+                        {ocrProcess2.isProcessingOCR ? (
+                            <p className="ocr-output-text">{ocrProcess2.liveOcrText}<span className="blinking-cursor">|</span></p>
                         ) : (
-                            correctedTextParts1.length > 0 ? (
+                            correctedTextParts2.length > 0 ? (
                                 <AnimatedTypoText
-                                    parts={correctedTextParts1}
-                                    onComplete={() => onTypoAnimationComplete(0)}
+                                    parts={correctedTextParts2}
+                                    onComplete={() => onTypoAnimationComplete(1)}
                                 />
                             ) : (
                                 <p className="ocr-output-text">Awaiting OCR...</p>
                             )
                         )}
                     </div>
+                </div>
 
+                <h1>Theo Kremer</h1>
+
+                {/* ------ Section 1: Screenshot text ------ */}
+                <div className="media-column">
                     <div
                         ref={mediaContainerRef1}
                         className="media-container"
@@ -342,6 +359,23 @@ function LandingPage() {
                                 recognizedChars={ocrProcess1.recognizedChars}
                                 activeBoxInfo={{ activeItemIndex: ocrProcess1.activeItemIndex, processableLines: ocrProcess1.processableLines, imageDimensions: imageDimensions1, imageRef: imageRef1, showMediaElement }}
                             />
+                        )}
+                    </div>
+
+                    {/* Live OCR Output BELOW the media */}
+                    <div ref={ocrOutputRef1} className="ocr-output-container ocr-output-container--below">
+                        <h3>Live OCR Output (Screenshot)</h3>
+                        {ocrProcess1.isProcessingOCR ? (
+                            <p className="ocr-output-text">{ocrProcess1.liveOcrText}<span className="blinking-cursor">|</span></p>
+                        ) : (
+                            correctedTextParts1.length > 0 ? (
+                                <AnimatedTypoText
+                                    parts={correctedTextParts1}
+                                    onComplete={() => onTypoAnimationComplete(0)}
+                                />
+                            ) : (
+                                <p className="ocr-output-text">Awaiting OCR...</p>
+                            )
                         )}
                     </div>
                 </div>

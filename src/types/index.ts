@@ -2,7 +2,7 @@
 import React from 'react';
 import { PathManager } from '../pages/landing/utils/path';
 
-export interface Point { // Ensure Point is defined/exported for use in canvasDrawing.ts if not already
+export interface Point {
     x: number;
     y: number;
 }
@@ -44,30 +44,19 @@ export type ProcessableLine = ProcessableBox[];
 /**
  * Structure for storing all extracted model weights, keyed by layer name.
  */
-export type ModelWeights = Record<string, Conv2DWeights /* | DenseWeights | ... */ >;
+export type ModelWeights = Record<string, Conv2DWeights>;
 
 // --- New Types for Typo Correction Backend ---
-
-/**
- * Represents the probability distribution for a single token's predicted tags.
- * Key is the tag name (e.g., "KEEP", "DELETE", "REPLACE_word"), value is the probability.
- */
 export interface TagProbabilities {
     [tag: string]: number;
 }
 
-/**
- * Represents the detailed information for a single token from the typo correction backend.
- */
 export interface TokenTypoDetail {
-    token: string;         // The original token
-    pred_tag: string;      // The predicted tag (e.g., "KEEP", "DELETE", "REPLACE_correctedword")
-    top_probs: TagProbabilities; // Top-k predicted tags and their probabilities
+    token: string;
+    pred_tag: string;
+    top_probs: TagProbabilities;
 }
 
-/**
- * Represents the overall response from the typo correction backend.
- */
 export interface TypoCorrectionResponse {
     original_sentence: string;
     corrected_sentence: string;
@@ -78,23 +67,15 @@ export interface TypoCorrectionResponse {
     message: string;
 }
 
-/**
- * Represents a part of the text to be displayed, including correction info for popovers.
- * This will be used to render the sentence with popovers on flagged words.
- */
 export interface DisplayTextPart {
-    text: string;          // The word or whitespace to display
+    text: string;
     isWhitespace: boolean;
-    isFlagged: boolean;    // True if the original token was changed or flagged by the model
-    originalToken?: string; // The original token if different from displayed text or if flagged
-    predictions?: TagProbabilities; // Predictions to show in the popover
-    predictedTag?: string; // The primary predicted tag for this token
+    isFlagged: boolean;
+    originalToken?: string;
+    predictions?: TagProbabilities;
+    predictedTag?: string;
 }
 
-/**
- * Represents a segment of OCR text for overlay display.
- * Includes highlighting information and a span ref for animations.
- */
 export interface OcrDisplayLinePart {
     id: string;
     text: string;
@@ -103,9 +84,6 @@ export interface OcrDisplayLinePart {
     ref: React.RefObject<HTMLSpanElement>;
 }
 
-/**
- * Represents a single line of OCR text shown on the image overlay.
- */
 export interface OcrDisplayLine {
     id: string;
     textDuringOcr: string;
@@ -131,7 +109,6 @@ export interface StreamCharacter {
     tailProgress: number; 
     
     isRetractingColorOverride: boolean; 
-
     onFinished: () => void;
 }
 
@@ -139,5 +116,14 @@ export interface AnimationWave {
     id: string;
     activations: ActivationData;
     softmaxProbabilities: number[];
-    gradientSet: string[]; // Changed from color: string
+    gradientSet: string[];
+}
+
+/**
+ * NEW: A recognized character (for placing under the scanned bounding box).
+ */
+export interface RecognizedCharResult {
+    id: string;
+    box: BoundingBoxData;   // original image coords
+    char: string;           // predicted letter
 }

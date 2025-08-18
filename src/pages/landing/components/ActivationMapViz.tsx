@@ -1,7 +1,7 @@
-// src/components/visualizations/ActivationMapViz.tsx
+// src/pages/landing/components/ActivationMapViz.tsx
 import React, { useRef, useEffect } from 'react';
-import { ActivationData } from '../../types';
-import { log } from '../../utils/logger';
+import { ActivationData } from '../../../types';
+import { log } from '../../../utils/logger';
 
 interface Props {
     activations: ActivationData | null;
@@ -41,28 +41,23 @@ export const ActivationMapViz: React.FC<Props> = ({ activations, layerName }) =>
     useEffect(() => {
         if (!canvasRef.current || !activationValue) return;
 
-        // Check if it's suitable data for heatmap (e.g., 2D array)
-        // Conv layers usually produce 3D [h, w, channels] or 4D [b, h, w, c]
-        // We'll visualize the first channel/feature map if it's 3D/4D
         let mapData: number[][] | null = null;
 
         if (Array.isArray(activationValue) && activationValue.length > 0) {
-            if (Array.isArray(activationValue[0]) && activationValue[0].length > 0 && Array.isArray(activationValue[0][0]) && typeof activationValue[0][0][0] === 'number') {
+            if (Array.isArray(activationValue[0]) && activationValue[0].length > 0 && Array.isArray((activationValue as any)[0][0]) && typeof (activationValue as any)[0][0][0] === 'number') {
                 // Likely 3D [h, w, channels] -> take first channel [h, w]
                 mapData = (activationValue as number[][][]).map(row => row.map(pixel => pixel[0]));
                 log(`Visualizing first channel of 3D activation map for ${layerName}`);
-            } else if (Array.isArray(activationValue[0]) && typeof activationValue[0][0] === 'number') {
+            } else if (Array.isArray(activationValue[0]) && typeof (activationValue as any)[0][0] === 'number') {
                 // Likely 2D [h, w]
                 mapData = activationValue as number[][];
                 log(`Visualizing 2D activation map for ${layerName}`);
             }
-            // Add checks for 4D if needed (squeeze batch and take first channel)
         }
 
         if (mapData) {
             drawHeatmap(canvasRef.current, mapData);
         } else {
-            // Clear canvas or show placeholder if data is not 2D/3D
             const ctx = canvasRef.current.getContext('2d');
             if (ctx) {
                 canvasRef.current.width = 100; canvasRef.current.height = 30;
@@ -74,7 +69,7 @@ export const ActivationMapViz: React.FC<Props> = ({ activations, layerName }) =>
             log(`Cannot draw heatmap for layer ${layerName}, data shape not suitable.`);
         }
 
-    }, [activationValue, layerName]); // Redraw when activation data changes
+    }, [activationValue, layerName]);
 
     if (!activationValue) {
         return <div style={{ color: '#888', fontSize: '0.9em' }}>Awaiting activation data for {layerName}...</div>;
@@ -84,7 +79,6 @@ export const ActivationMapViz: React.FC<Props> = ({ activations, layerName }) =>
         <div>
             <h4 style={{ marginBottom: '5px', fontWeight: 'normal' }}>Layer: {layerName}</h4>
             <canvas ref={canvasRef} style={{ border: '1px solid #eee', background: '#f0f0f0' }}></canvas>
-            {/* We could add more info like tensor shape here */}
         </div>
     );
 };

@@ -5,6 +5,7 @@ import {
   EMNIST_CHARS,
   FINAL_LAYER_NAME,
   ACTIVATION_LAYER_NAMES,
+  OCR_PROCESSING_DELAY_MS,
 } from '../utils/constants';
 import { findCharacterBoxes } from '../../../utils/ml/segmentation';
 import { preprocessCharacterTensor } from '../../../utils/ml/preprocess';
@@ -14,6 +15,7 @@ import {
   BoundingBoxData,
   ProcessableLine,
   AnimationWave,
+  RecognizedCharResult,
 } from '../../../types';
 import { warn, error, log } from '../../../utils/logger';
 
@@ -49,9 +51,8 @@ interface UseOcrProcessingResult {
   currentChar: string | null;
   currentCharImageData: ImageData | null;
   onCharAnimationFinished: (processedCharString: string, gradientSetForWave: string[]) => void;
+  recognizedChars: RecognizedCharResult[];
 }
-
-const OCR_PROCESSING_DELAY_MS = 250;
 
 export default function useOcrProcessing({
   imageRef,
@@ -67,6 +68,8 @@ export default function useOcrProcessing({
   const [liveOcrText, setLiveOcrText] = useState('');
   const [currentChar, setCurrentChar] = useState<string | null>(null);
   const [currentCharImageData, setCurrentCharImageData] = useState<ImageData | null>(null);
+
+  const [recognizedChars, setRecognizedChars] = useState<RecognizedCharResult[]>([]);
 
   const resolveOcrPromise = useRef<((text: string) => void) | null>(null);
   const rawOutputText = useRef<string>('');
@@ -105,7 +108,7 @@ export default function useOcrProcessing({
     })();
 
     const processedTensor = preprocessCharacterTensor(tf.browser.fromPixels(paddedImageData, 4));
-    
+
     let predictedLetter = '?';
     if (processedTensor) {
       try {
@@ -138,11 +141,20 @@ export default function useOcrProcessing({
         tf.dispose(processedTensor);
       }
     }
-    
+
     rawOutputText.current += predictedLetter;
     setLiveOcrText(prev => prev + predictedLetter);
     setCurrentChar(predictedLetter);
     setCurrentCharImageData(paddedImageData);
+
+    setRecognizedChars(prev => [
+      ...prev,
+      {
+        id: `rc-${lineIndex}-${itemIndex}-${Date.now()}-${Math.random()}`,
+        box,
+        char: predictedLetter,
+      },
+    ]);
   }, [visModel]);
 
   const runProcessingLoop = useCallback(async (queue: QueueItem[]) => {
@@ -159,26 +171,33 @@ export default function useOcrProcessing({
   const onCharAnimationFinished = useCallback((processedCharString: string, gradientSetForWave: string[]) => {
     const pendingData = pendingNetworkDataRef.current[processedCharString];
     if (pendingData) {
-      setNetworkWaves(prev => [...prev, {
-        id: `wave-${Date.now()}-${Math.random()}`,
-        activations: pendingData.activations,
-        softmaxProbabilities: pendingData.softmaxProbabilities,
-        gradientSet: gradientSetForWave
-      }]);
+      setNetworkWaves(prev => [
+        ...prev,
+        {
+          id: `wave-${Date.now()}-${Math.random()}`,
+          activations: pendingData.activations,
+          softmaxProbabilities: pendingData.softmaxProbabilities,
+          gradientSet: gradientSetForWave
+        }
+      ]);
       delete pendingNetworkDataRef.current[processedCharString];
     }
   }, [setNetworkWaves]);
 
-  const startOcr = (imageDimensions: { width: number; height: number }): Promise<string> => {
-    return new Promise((resolve) => {
+  const startOcr = (/* imageDimensions: { width: number; height: number } */): Promise<string> => {
+    return new Promise<string>((resolve) => {
       if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !model) {
         warn('Not ready for OCR processing.');
         return resolve('');
       }
-      
+
       setIsProcessingOCR(true);
       setProcessableLines([]);
       setLiveOcrText('');
+      setRecognizedChars([]);
+      setCurrentChar(null);
+      setCurrentCharImageData(null);
+
       rawOutputText.current = '';
       pendingNetworkDataRef.current = {};
       resolveOcrPromise.current = resolve;
@@ -188,7 +207,7 @@ export default function useOcrProcessing({
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return resolve('');
+      if (!ctx) { resolve(''); return; }
       ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
       imageCanvasRef.current = canvas;
 
@@ -196,7 +215,7 @@ export default function useOcrProcessing({
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const linesToProcess = findCharacterBoxes(imageData);
         setProcessableLines(linesToProcess);
-        
+
         const characterQueue: QueueItem[] = [];
         linesToProcess.forEach((line, lineIndexGlobal) => {
           line.forEach((item, itemIndex) => {
@@ -231,5 +250,6 @@ export default function useOcrProcessing({
     currentChar,
     currentCharImageData,
     onCharAnimationFinished,
+    recognizedChars,
   };
 }

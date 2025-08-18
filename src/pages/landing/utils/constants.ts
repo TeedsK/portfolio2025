@@ -1,4 +1,4 @@
-// src/constants.ts
+// src/pages/landing/utils/constants.ts
 
 export const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
 export const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
@@ -7,6 +7,12 @@ export const ACTIVATION_LAYER_NAMES = ['conv2d', 'max_pooling2d', 'conv2d_1', 'm
 export const CONV_LAYER_WEIGHT_NAMES = ['conv2d', 'conv2d_1', 'conv2d_2'];
 export const FINAL_LAYER_NAME = 'dense_1';
 export const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
+
+// ⬇️ Start OCR exactly 500 ms after the respective video starts
+export const OCR_START_DELAY_MS = 500;
+
+// How long to wait between characters
+export const OCR_PROCESSING_DELAY_MS = 50;
 
 // New Gradient Sets for specific OCR sources
 export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [
@@ -26,7 +32,6 @@ export const LINE_GRADIENT_SETS: string[][] = [
     ...TEXT_SCREENSHOT_GRADIENTS,
     ...HELLO_WELCOME_GRADIENTS
 ];
-
 
 export const OCR_OVERLAY_FONT_SIZE = 30;
 export const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';

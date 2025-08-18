@@ -37,6 +37,7 @@
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.5s ease-in-out;
 }
 
 .media-container {
@@ -48,14 +49,17 @@
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 4px;
+  /* Height is now controlled by inline style aspect-ratio on the element */
 }
 
+/* Children always fill container; container height is stable via aspect-ratio */
 .media-container img,
 .media-container video {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   box-sizing: border-box;
+  object-fit: contain;
 }
 
 .screenshot-underlay {
@@ -69,12 +73,14 @@
   pointer-events: none;
 }
 
+/* Keep video absolutely layered above the image so fading it out doesn't change layout */
 .media-container video {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   z-index: 2;
 }
 
-/* New Styles for OCR Output */
 .ocr-output-container {
   padding: 10px 15px;
   margin-bottom: 1rem;
@@ -103,6 +109,17 @@
   line-height: 1.4;
 }
 
+.blinking-cursor {
+  font-weight: bold;
+  animation: blink 1s step-start 0s infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 h1 {
   font-size: 2.5em;
   margin: 0;
@@ -114,4 +131,27 @@ h1 {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Optional hooks for the flip (most styles inline to avoid collisions) */
+.typo-token .front {
+  z-index: 1;
+}
+
+.typo-token .back {
+  z-index: 1;
+  backface-visibility: hidden;
+}
+
+/* ---- New: graceful vertical shrink for the screenshot when done ---- */
+.shrink-vertical {
+  transform-origin: top center;
+  animation: shrinkVertical 0.45s ease-in forwards;
+}
+
+@keyframes shrinkVertical {
+  to {
+    transform: scaleY(0);
+    opacity: 0;
+  }
 }

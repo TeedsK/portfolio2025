@@ -1,15 +1,14 @@
-// src/components/visualizations/ConvolutionFiltersViz.tsx
+// src/pages/landing/components/ConvolutionFiltersViz.tsx
 import React from 'react';
-import { ModelWeights, Conv2DWeights } from '../../types';
+import { ModelWeights, Conv2DWeights } from '../../../types';
 
 interface Props {
     weights: ModelWeights | null;
     layerName: string; // e.g., 'conv2d'
-    // Add other props needed for animation later (image size, etc.)
 }
 
 export const ConvolutionFiltersViz: React.FC<Props> = ({ weights, layerName }) => {
-    const layerWeights = weights ? weights[layerName] as Conv2DWeights : null;
+    const layerWeights = weights ? (weights[layerName] as Conv2DWeights) : null;
 
     if (!layerWeights || !layerWeights.kernel) {
         return <div style={{ color: '#888', fontSize: '0.9em' }}>Awaiting kernel data for {layerName}...</div>;
@@ -27,7 +26,6 @@ export const ConvolutionFiltersViz: React.FC<Props> = ({ weights, layerName }) =
                 <p>Kernel Shape: [{h}, {w}]</p>
                 <p>Output Filters: {outChannels}</p>
                 <p><i>(Animated filter visualization placeholder)</i></p>
-                {/* GSAP animation would go here, drawing kernel outlines moving over an image representation */}
             </div>
         </div>
     );

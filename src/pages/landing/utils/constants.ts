@@ -12,7 +12,7 @@ export const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
 export const OCR_START_DELAY_MS = 500;
 
 // How long to wait between characters
-export const OCR_PROCESSING_DELAY_MS = 50;
+export const OCR_PROCESSING_DELAY_MS = 150;
 
 // New Gradient Sets for specific OCR sources
 export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [

@@ -14,9 +14,9 @@ export const CHAR_FADE_OUT_DURATION = 0.3;
 // CHAR_SCALE_OUT_DURATION is implicitly CHAR_FADE_OUT_DURATION
 
 // --- CharacterStreamViz Box Sizing (in pixels) ---
-export const CHAR_BOX_CONTENT_WIDTH = 28;   
-export const CHAR_BOX_CONTENT_HEIGHT = 28;  
-export const CHAR_BOX_PADDING = 8;          
+export const CHAR_BOX_CONTENT_WIDTH = 18;   
+export const CHAR_BOX_CONTENT_HEIGHT = 18;  
+export const CHAR_BOX_PADDING = 3;          
 
 // --- NetworkGraphViz Timings (in seconds) ---
 // NET_WAVE_DURATION is not directly used, line animations have their own durations

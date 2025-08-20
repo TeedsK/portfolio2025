@@ -10,6 +10,9 @@ import {
     CHAR_BOX_CONTENT_HEIGHT,
     CHAR_BOX_PADDING,
 } from '../utils/animation';
+
+import { STREAM_LINE_WIDTH } from '../utils/constants';
+
 import { PathManager } from '../utils/path'; 
 import { StreamCharacter } from '../../../types';
 import { log } from '../../../utils/logger';
@@ -82,7 +85,8 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             character.animationState = 'traveling';
             character.isRetractingColorOverride = false; 
             
-            const characterShrinkScale = 0.3; 
+            const characterShrinkScale = 0.28; 
+            const characterMaxScale = 0.85;
 
             const tl = gsap.timeline({
                 onComplete: () => {
@@ -94,7 +98,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
             tl.to(character, {
                 alpha: 1,
-                scale: 1,
+                scale: characterMaxScale,
                 duration: CHAR_FADE_IN_DURATION,
                 ease: 'power1.out',
             });
@@ -173,7 +177,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     ctx.globalAlpha = char.alpha; 
 
                     if (snakeVisibleStartDist < snakeVisibleEndDist) {
-                        drawPathSegment(ctx, path, snakeVisibleStartDist, snakeVisibleEndDist, lineStrokeStyle, 3);
+                        drawPathSegment(ctx, path, snakeVisibleStartDist, snakeVisibleEndDist, lineStrokeStyle, STREAM_LINE_WIDTH);
                     }
                     ctx.restore(); 
 
@@ -212,7 +216,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     }
                     
                     ctx.strokeStyle = boxOutlineStyle;
-                    ctx.lineWidth = 2.5;
+                    ctx.lineWidth = STREAM_LINE_WIDTH;
                     ctx.beginPath();
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.stroke();
@@ -260,7 +264,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             ref={canvasRef}
             width={containerSize.width}
             height={containerSize.height}
-            style={{ position: 'absolute', top: 0, left: 0, zIndex: 10, pointerEvents: 'none' }}
+            style={{ position: 'absolute', top: 0, left: 0, zIndex: 1, pointerEvents: 'none' }}
         />
     );
 };

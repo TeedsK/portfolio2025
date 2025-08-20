@@ -1,4 +1,11 @@
 // src/pages/landing/utils/constants.ts
+export const CHAR_BOX_CONTENT_WIDTH = 18;   // smaller characters
+export const CHAR_BOX_CONTENT_HEIGHT = 18;  // smaller characters
+export const CHAR_BOX_PADDING = 3;          // tighter box
+
+// If your CharacterStreamViz uses these, lines will be thinner
+export const STREAM_LINE_WIDTH = 1;         // was larger before
+export const STREAM_GLOW_WIDTH = 1.5;       // subtle glow if used
 
 export const EMNIST_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mbotsu/emnist-letters@master/models/model_fp32/model.json';
 export const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
@@ -16,15 +23,17 @@ export const OCR_PROCESSING_DELAY_MS = 150;
 
 // New Gradient Sets for specific OCR sources
 export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [
-    ['#4568DC', '#B06AB3'], // Original Set 1: Blue to Purple
-    ['#ef32d9', '#89fffd'], // Original Set 2: Pink to Cyan
-    ['#cc2b5e', '#753a88']  // Purple to Dark Purple
+    ['#5a10b5', '#5a10b5'], // Original Set 1: Blue to Purple
+    ['#227de6', '#227de6'], // Original Set 2: Pink to Cyan
+    ['#12dea7', '#12dea7'], // Purple to Dark Purple
+    ['#d40b8a', '#d40b8a']
 ];
 
 export const HELLO_WELCOME_GRADIENTS: string[][] = [
-    ['#FF8008', '#FFC837'], // Orange to Yellow
-    ['#1D976C', '#93F9B9'], // Green to Light Green
-    ['#f4791f', '#f1c40f']  // Orange to Gold
+    ['#7020e8', '#7020e8'], // Orange to Yellow
+    ['#227de6', '#227de6'], // Original Set 2: Pink to Cyan
+    ['#12dea7', '#12dea7'],  // Purple to Dark Purple
+    ['#d40b8a', '#d40b8a']
 ];
 
 // Fallback if needed, or can be removed if new ones cover all cases.
@@ -52,3 +61,10 @@ export const getTagColorForProbability = (probability: number): string => {
     if (percent > 0) return 'red';
     return 'default';
 };
+
+/** ========= Media crop (visual + OCR) =========
+ * Crop off 5px from the top and bottom of source images/videos to hide black lines.
+ * This value is used both in CSS (visual) and in pixel-space OCR preprocessing.
+ */
+export const MEDIA_CROP_TOP_PX = 5;
+export const MEDIA_CROP_BOTTOM_PX = 5;

@@ -10,49 +10,65 @@
   display: flex;
   flex-direction: row;
   gap: 2rem;
-  width: 2000px;
+  width: 100%;
   align-items: flex-start;
 }
 
+/* ===== Left / Right split ===== */
 .left-column {
-  flex: 1;
+  flex: 0 0 40%;
+  min-width: 40%;
+  max-width: 40%;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  max-width: 50%;
+
+  /* ensure overlay renders UNDER the columns */
+  position: relative;
+  z-index: 2;
 }
 
 .right-column {
-  flex: 1;
+  flex: 0 0 60%;
+  min-width: 60%;
+  max-width: 60%;
   display: flex;
   flex-direction: column;
-  max-width: 50%;
   position: sticky;
   top: 2rem;
+
+  /* ensure overlay renders UNDER the columns */
+  z-index: 2;
 }
 
+/* Respect your 650px card width and no chrome */
 .media-column {
-  border: 1px solid #e0e0e0;
+  width: 650px;
+  /* your default width but responsive */
   padding: 15px;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  transition: all 0.5s ease-in-out;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  /* keep content breathing room */
+  /* DO NOT reintroduce chrome you removed */
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .media-container {
   position: relative;
   display: block;
   margin: 0;
+  width: 100%;
   max-width: 100%;
-  background-color: #f0f0f0;
+  background: transparent;
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 4px;
-  /* Height is now controlled by inline style aspect-ratio on the element */
 }
 
-/* Children always fill container; container height is stable via aspect-ratio */
 .media-container img,
 .media-container video {
   display: block;
@@ -60,42 +76,50 @@
   height: 100%;
   box-sizing: border-box;
   object-fit: contain;
+
+  /* Make white act like transparency so the backdrop shows through */
+  mix-blend-mode: multiply;
+
+  /* ⬇️ Visually crop 5px from the top and bottom to hide black lines */
+  clip-path: inset(5px 0 5px 0);
+  -webkit-clip-path: inset(5px 0 5px 0);
+  /* Safari */
 }
 
 .screenshot-underlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   object-fit: contain;
   z-index: 1;
   pointer-events: none;
 }
 
-/* Keep video absolutely layered above the image so fading it out doesn't change layout */
 .media-container video {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   z-index: 2;
 }
 
-.ocr-output-container {
+/* OCR areas stay width-stable, chrome-free */
+.ocr-output-container,
+.ocr-output-container--below {
+  width: 100%;
   padding: 10px 15px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  background: #fafafa;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   text-align: left;
 }
 
-/* New: below-the-media style and slightly elevated look */
 .ocr-output-container--below {
   margin-top: 12px;
-  background: #fcfcfd;
-  border: 1px solid #eaeaea;
-  border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+
+.ocr-output-body {
+  display: block;
+  width: 100%;
+  font-size: 1.1em;
+  transform-origin: left center;
 }
 
 .ocr-output-container h3 {
@@ -109,13 +133,17 @@
 }
 
 .ocr-output-text {
+  display: block;
+  width: 100%;
   white-space: pre-wrap;
   min-height: 1.5em;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 1.1em;
+  font-size: inherit;
   color: #333;
   line-height: 1.4;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  hyphens: auto;
 }
 
 .blinking-cursor {
@@ -129,30 +157,30 @@
   }
 }
 
+/* Title pin */
 h1 {
-  font-size: 2.5em;
+  font-size: 3.2em;
+  line-height: 1.1;
   margin: 0;
 }
 
+.portfolio-title {
+  text-align: left;
+  margin: 0;
+  font-size: 5em;
+  margin-left: 30px;
+}
+
+/* Right column container remains chrome-free */
 .steps-extra-info-container {
-  border: 1px solid #e0e0e0;
-  padding: 15px;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-/* Optional hooks for the flip (most styles inline to avoid collisions) */
-.typo-token .front {
-  z-index: 1;
-}
-
-.typo-token .back {
-  z-index: 1;
-  backface-visibility: hidden;
-}
-
-/* ---- New: graceful vertical shrink for the screenshot when done ---- */
+/* Media collapse effect (kept as-is) */
 .shrink-vertical {
   transform-origin: top center;
   animation: shrinkVertical 0.45s ease-in forwards;
@@ -163,4 +191,23 @@ h1 {
     transform: scaleY(0);
     opacity: 0;
   }
+}
+
+/* ===== Full-page overlay for roaming characters (UNDER content) ===== */
+.character-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1;
+  /* BELOW columns (z=2), ABOVE page background */
+  overflow: visible;
+}
+
+.character-stream-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
 }

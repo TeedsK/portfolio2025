@@ -1,7 +1,9 @@
 // src/pages/landing/components/OcrOverlay.tsx
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProcessableLine, BoundingBoxData, RecognizedCharResult } from '../../../types';
 import AnimatedScanBox, { RectPx } from './AnimatedScanBox';
+import RecognizedCharLabel from './RecognizedCharLabel';
+import { MEDIA_CROP_TOP_PX, MEDIA_CROP_BOTTOM_PX } from '../utils/constants';
 
 export interface ActiveBoxInfo {
     activeItemIndex: { line: number; item: number } | null;
@@ -21,8 +23,8 @@ export interface OcrOverlayProps {
 
 /**
  * Overlay layered over the media container, mapping natural image coordinates
- * to displayed coordinates. Now delegates the scanning rectangle animation to
- * <AnimatedScanBox /> so the box smoothly morphs to fit each character.
+ * to displayed coordinates. Delegates the scanning rectangle animation to
+ * <AnimatedScanBox />, and uses ephemeral, animated labels for characters.
  */
 const OcrOverlay: React.FC<OcrOverlayProps> = ({
     activeBoxInfo,
@@ -85,10 +87,22 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
     const scaleX = displayedImgWidth / naturalImgWidth;
     const scaleY = displayedImgHeight / naturalImgHeight;
 
+    // Respect the **visual** crop applied to the media (top & bottom by 5px)
+    const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
+    const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
+
+    // The visible content band inside the media element (in overlay px)
+    const contentTopInOverlay = offsetY + cropTop * scaleY;
+    const contentBottomInOverlay = offsetY + displayedImgHeight - cropBottom * scaleY;
+
     /**
      * Compute the rectangle in *overlay pixel coordinates* for the current active character.
      * Add a small padding so the outline fully encapsulates the glyph even with minor
      * segmentation or antialiasing variances.
+     *
+     * NOTE: The segmentation pipeline consumes a *cropped* image (top/bottom removed),
+     * so all y-coordinates from segmentation are relative to the cropped origin. To align
+     * with the visually cropped media, we add cropTop * scaleY to the overlay mapping.
      */
     const activeRect: RectPx | null = useMemo(() => {
         if (
@@ -105,19 +119,26 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
 
         const [charX, charY, charW, charH] = item as BoundingBoxData;
 
-        // Padding in final on-screen pixels — small but ensures “fully encapsulate”.
+        // Padding in on-screen pixels — small but ensures “fully encapsulate”.
         const PAD = 2; // px
-        const left = offsetX + charX * scaleX - PAD;
-        const top = offsetY + charY * scaleY - PAD;
-        const width = charW * scaleX + PAD * 2;
-        const height = charH * scaleY + PAD * 2;
 
-        // Clamp within overlay bounds to avoid accidental spill due to rounding.
+        const left = offsetX + charX * scaleX - PAD;
+        // y from segmentation is relative to cropped top → add cropTop * scaleY
+        const topRaw = contentTopInOverlay + charY * scaleY - PAD;
+        const widthRaw = charW * scaleX + PAD * 2;
+        const heightRaw = charH * scaleY + PAD * 2;
+
+        // Clamp within the **visible content band** to avoid spill due to rounding.
+        const leftClamped = Math.max(0, Math.min(left, imageDimensions.width - 1));
+        const topClamped = Math.max(contentTopInOverlay, Math.min(topRaw, contentBottomInOverlay - 1));
+        const maxHeight = Math.max(1, contentBottomInOverlay - topClamped);
+        const heightClamped = Math.max(1, Math.min(heightRaw, maxHeight));
+
         const clamped: RectPx = {
-            left: Math.max(0, Math.min(left, imageDimensions.width - 1)),
-            top: Math.max(0, Math.min(top, imageDimensions.height - 1)),
-            width: Math.max(1, Math.min(width, imageDimensions.width - left)),
-            height: Math.max(1, Math.min(height, imageDimensions.height - top)),
+            left: leftClamped,
+            top: topClamped,
+            width: Math.max(1, Math.min(widthRaw, imageDimensions.width - leftClamped)),
+            height: heightClamped,
         };
 
         return clamped;
@@ -126,48 +147,51 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         processableLines,
         showMediaElement,
         offsetX,
-        offsetY,
         scaleX,
         scaleY,
         imageDimensions.width,
         imageDimensions.height,
         naturalImgWidth,
         naturalImgHeight,
+        contentTopInOverlay,
+        contentBottomInOverlay,
     ]);
 
-    const renderRecognizedLabels = () => {
-        if (!recognizedChars.length) return null;
-        return recognizedChars.map((rc) => {
+    // --- Ephemeral, animated labels for recognized characters ---
+    // Only show *new* recognized items briefly; they auto-remove after their out-animation.
+    const [visibleLabels, setVisibleLabels] = useState<RecognizedCharResult[]>([]);
+    const seenIdsRef = useRef<Set<string>>(new Set());
+
+    // Add only unseen items to the visible list
+    useEffect(() => {
+        if (!recognizedChars || recognizedChars.length === 0) return;
+        const newlyAdded: RecognizedCharResult[] = [];
+        for (const rc of recognizedChars) {
+            if (!seenIdsRef.current.has(rc.id)) {
+                seenIdsRef.current.add(rc.id);
+                newlyAdded.push(rc);
+            }
+        }
+        if (newlyAdded.length) {
+            setVisibleLabels(prev => [...prev, ...newlyAdded]);
+        }
+    }, [recognizedChars]);
+
+    // Stable callback so child effects do NOT restart on each render
+    const handleLabelDone = useCallback((id: string) => {
+        setVisibleLabels(prev => prev.filter(rc => rc.id !== id));
+    }, []);
+
+    // Precompute positioned labels (in overlay pixel coordinates), anchored beneath each box
+    const positionedLabels = useMemo(() => {
+        return visibleLabels.map(rc => {
             const [x, y, w, h] = rc.box;
             const left = offsetX + x * scaleX + (w * scaleX) / 2;
-            const top = offsetY + (y + h) * scaleY + 4; // below the box
-
-            return (
-                <div
-                    key={rc.id}
-                    style={{
-                        position: 'absolute',
-                        left: `${left}px`,
-                        top: `${top}px`,
-                        transform: 'translateX(-50%)',
-                        fontFamily: 'Courier New, monospace',
-                        fontSize: '12px',
-                        color: '#222',
-                        background: 'rgba(255,255,255,0.85)',
-                        border: `1px dashed ${accentColor}`,
-                        borderRadius: '4px',
-                        padding: '2px 6px',
-                        pointerEvents: 'none',
-                        whiteSpace: 'nowrap',
-                        zIndex: 3,
-                    }}
-                    aria-label={`recognized-${rc.char}`}
-                >
-                    {rc.char.toUpperCase()}
-                </div>
-            );
+            // y from segmentation relative to cropped origin → add cropTop * scaleY
+            const top = contentTopInOverlay + (y + h) * scaleY + 4; // 4px below the box
+            return { id: rc.id, char: rc.char, left, top };
         });
-    };
+    }, [visibleLabels, offsetX, scaleX, scaleY, contentTopInOverlay]);
 
     return (
         <div className="overlay-container" style={containerStyle}>
@@ -178,8 +202,21 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
                 visible={Boolean(activeRect)}
             />
 
-            {/* Stable recognized labels below the active box */}
-            {renderRecognizedLabels()}
+            {/* Ephemeral animated labels for recently recognized characters */}
+            {/* {positionedLabels.map(lbl => (
+                <RecognizedCharLabel
+                    key={lbl.id}
+                    id={lbl.id}
+                    char={lbl.char}
+                    left={lbl.left}
+                    top={lbl.top}
+                    accentColor={accentColor}
+                    onDone={handleLabelDone}
+                    appearDurationMs={220}
+                    holdDurationMs={500}
+                    disappearDurationMs={220}
+                />
+            ))} */}
         </div>
     );
 };

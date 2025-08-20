@@ -222,19 +222,24 @@ export function findCharacterBoxes(
         centerDists.sort((a, b) => a - b);
 
         const averageCharWidth = line.reduce((sum, box) => sum + box.width, 0) / line.length;
-        let spaceThreshold;
 
         const potentialIntraWordDists = centerDists.filter(d => d < averageCharWidth);
+        let spaceThreshold: number;
+        let medianIntraWordDist: number | null = null;
 
-        // if (potentialIntraWordDists.length > 1) {
-            const medianIntraWordDist = potentialIntraWordDists[Math.floor(potentialIntraWordDists.length / 2)];
-            spaceThreshold = medianIntraWordDist * 2.8;
-        // } else {
-        //     spaceThreshold = averageCharWidth * 1;
-        // }
+        if (potentialIntraWordDists.length > 1) {
+          medianIntraWordDist = potentialIntraWordDists[Math.floor(potentialIntraWordDists.length / 2)];
+          spaceThreshold = medianIntraWordDist * 2.8;
+        } else {
+          // fallback: a conservative gap ~1.6× average char width
+          spaceThreshold = averageCharWidth * 1.6;
+        }
 
-        log(`Line median center-dist: N/A (using new logic), space threshold: ${spaceThreshold.toFixed(1)}`);
-
+        log(
+          `Line center-dist median: ${
+            medianIntraWordDist !== null ? medianIntraWordDist.toFixed(1) : 'n/a'
+          }, space threshold: ${spaceThreshold.toFixed(1)}`
+        );
         processedLine.push([line[0].x, line[0].y, line[0].width, line[0].height]);
         for (let i = 0; i < line.length - 1; i++) {
             const currentDist = line[i + 1].centerX - line[i].centerX;

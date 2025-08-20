@@ -1,415 +1,510 @@
-// src/components/visualizations/NetworkGraphViz.tsx
+// src/pages/landing/components/NetworkGraphViz.tsx
 import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import { ActivationDataValue, AnimationWave, Point } from '../../../types';
 import gsap from 'gsap';
-import { 
+import {
     NET_NODE_PULSE_DURATION,
     NET_LAYER_ANIMATION_DELAY,
     NET_ALPHA_PREDICTED_LINE,
     NET_ALPHA_OTHER_ACTIVE_MIN,
     NET_ALPHA_OTHER_ACTIVE_MAX,
-    NET_ALPHA_INACTIVE_LINE
+    NET_ALPHA_INACTIVE_LINE,
 } from '../utils/animation';
-import { drawPathSegment } from '../utils/canvasDrawing'; 
+import { drawPathSegment } from '../utils/canvasDrawing';
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
-const COLOR_DEFAULT_LINE = '#DDDDDD'; 
+const COLOR_DEFAULT_LINE = '#DDDDDD';
 const COLOR_NODE_FILL = '#ffffff';
 const COLOR_OUTPUT_TEXT = '#333333';
-const COLOR_LAYER_LABEL = '#555555';
-const NODE_RADIUS = 7;
-const LAYER_GAP = 180;
-const CANVAS_HEIGHT = 500;
-const ACTIVATION_THRESHOLD = 0.05; 
+
+// Smaller, smoother styling (already thinned in your last step)
+const NODE_RADIUS = 5;
+const LINE_INACTIVE_STROKE_WIDTH = 0.5;
+const LINE_ACTIVE_WIDTH = 1.4;
+
+// How much of the skeleton to show (alpha)
+const STATIC_LINE_ALPHA = 0.18;
+
+const ACTIVATION_THRESHOLD = 0.5;
 const MAX_NODES_TO_DRAW = 10;
-
-const LINE_INACTIVE_STROKE_WIDTH = 0.7;
-const LINE_ACTIVE_WIDTH = 2.5;
-
-const NODE_INACTIVE_STROKE_COLOR = '#d0d4db';
-export const FATTEN_LAYER_X = 550;
 
 const NET_LINE_GROW_DURATION = 0.3;
 const NET_LINE_SHRINK_DURATION = 0.3;
 
 interface NetworkGraphVizProps {
-    waves: AnimationWave[]; 
+    waves: AnimationWave[];
     onWaveFinished: (waveId: string) => void;
     flattenLayerName: string;
     hiddenDenseLayerName: string;
     outputLayerName: string;
+    width: number;
+    height: number;
     centralConnectionPoint?: Point;
 }
 
-const getSampledActivations = (data: ActivationDataValue | undefined | null, count: number): number[] => {
+// ---- helpers (unchanged semantics) ----
+const getSampledActivations = (
+    data: ActivationDataValue | undefined | null,
+    count: number,
+): number[] => {
     if (!data || !Array.isArray(data)) return new Array(count).fill(0);
-    const flatData = data.flat(Infinity).filter(n => typeof n === 'number') as number[];
+    const flatData = (data as any).flat(Infinity).filter((n: any) => typeof n === 'number') as number[];
     if (flatData.length === 0) return new Array(count).fill(0);
     const result: number[] = [];
     if (flatData.length <= count) {
-        for (let i = 0; i < flatData.length; i++) { result.push(Math.max(0, Math.min(1, flatData[i]))); }
-        while (result.length < count) { result.push(0); }
+        for (let i = 0; i < flatData.length; i++) result.push(Math.max(0, Math.min(1, flatData[i])));
+        while (result.length < count) result.push(0);
     } else {
         const step = Math.floor(flatData.length / count);
-        for (let i = 0; i < count; i++) { result.push(Math.max(0, Math.min(1, flatData[i * step]))); }
+        for (let i = 0; i < count; i++) result.push(Math.max(0, Math.min(1, flatData[i * step])));
     }
     return result;
 };
 
-const calculateNodePositions = (count: number, x: number, totalHeight: number, nodeRadiusValue: number): Point[] => {
-    const availableHeight = totalHeight - nodeRadiusValue * 4;
-    const yStep = count <= 1 ? availableHeight / 2 : availableHeight / (count - 1 || 1);
-    const startY = nodeRadiusValue * 2;
-    return Array.from({ length: count }).map((_el, i) => ({ x: x, y: startY + i * yStep }));
+const calculateNodePositions = (count: number, x: number, totalHeight: number, r: number): Point[] => {
+    const available = totalHeight - r * 4;
+    const yStep = count <= 1 ? available / 2 : available / (count - 1 || 1);
+    const startY = r * 2;
+    return Array.from({ length: count }).map((_el, i) => ({ x, y: startY + i * yStep }));
 };
 
-interface AnimatableLine { 
-    id: string; 
-    waveId: string;
-    from: Point; 
-    to: Point;
-    totalLength: number;
-    headProgress: number; 
-    tailProgress: number; 
-    gradientSet: string[];
-    activationStrength: number; // Strength of the source node (or target for central-to-flatten)
-    displayAlpha: number; 
-    isToPredictedOutputNode?: boolean; 
-}
-interface AnimatableNode { 
-    id: string; 
-    waveId: string;
-    x: number; y: number; label?: string;
-    scale: number;
-    strokeColor: string; 
-    fillColor: string;
-    textColor: string;
-    alpha: number; 
-    isPredicted?: boolean;
-}
+const dist = (p0: Point, p1: Point) => Math.hypot(p1.x - p0.x, p1.y - p0.y);
 
+// ---- Static graph types ----
+type StaticLine = { p0: Point; p1: Point; totalLength: number };
+type StaticNode = { id: string; x: number; y: number; label?: string; layer: 'flatten' | 'hidden' | 'output' };
+
+// ---- Overlay (animated) line for a wave ----
+interface OverlayLine extends StaticLine {
+    id: string;
+    waveId: string;
+    head: number;
+    tail: number;
+    gradientSet: string[];
+    alpha: number; // display alpha for this overlay
+}
 
 export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
-    waves, onWaveFinished,
-    flattenLayerName, hiddenDenseLayerName, outputLayerName,
-    centralConnectionPoint
+    waves,
+    onWaveFinished,
+    flattenLayerName,
+    hiddenDenseLayerName,
+    outputLayerName,
+    width,
+    height,
+    centralConnectionPoint,
 }) => {
-    const networkCanvasRef = useRef<HTMLCanvasElement>(null);
-    const allLinesRef = useRef<AnimatableLine[]>([]);
-    const allNodesRef = useRef<AnimatableNode[]>([]);
+    // Canvas
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Static graph (single source of truth)
+    const staticLinesRef = useRef<{ cf: StaticLine[]; fh: StaticLine[]; ho: StaticLine[] }>({
+        cf: [],
+        fh: [],
+        ho: [],
+    });
+    const staticNodesRef = useRef<StaticNode[]>([]);
+
+    // Node visual state (shared, pulses update these values)
+    const nodeStateRef = useRef<Record<string, { scale: number; stroke: string; alpha: number }>>({});
+
+    // Active wave overlay lines
+    const overlayLinesRef = useRef<OverlayLine[]>([]);
+
+    // Manage active timelines per wave
     const activeTimelines = useRef(new Map<string, gsap.core.Timeline>()).current;
 
-    const flattenNodePositions = useMemo(() => calculateNodePositions(MAX_NODES_TO_DRAW, FATTEN_LAYER_X, CANVAS_HEIGHT, NODE_RADIUS), []);
-    const hiddenDenseNodePositions = useMemo(() => calculateNodePositions(MAX_NODES_TO_DRAW, FATTEN_LAYER_X + LAYER_GAP, CANVAS_HEIGHT, NODE_RADIUS), []);
-    const outputNodePositions = useMemo(() => calculateNodePositions(EMNIST_CHARS.length, FATTEN_LAYER_X + LAYER_GAP * 2, CANVAS_HEIGHT, NODE_RADIUS), []);
-
-    const canvasWidth = useMemo(() => {
-        if (outputNodePositions.length > 0) {
-            return outputNodePositions[0].x + NODE_RADIUS * 2 + 30;
-        }
-        return FATTEN_LAYER_X + (LAYER_GAP * 2) + NODE_RADIUS * 4 + 60;
-    }, [outputNodePositions]);
-
-    const getLineLength = (p0: Point, p1: Point) => Math.sqrt(Math.pow(p1.x - p0.x, 2) + Math.pow(p1.y - p0.y, 2));
-
-    const drawNetwork = useCallback((ctx: CanvasRenderingContext2D) => {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        
-        ctx.font = '11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = COLOR_LAYER_LABEL;
-        if (flattenNodePositions.length > 0) ctx.fillText('Flatten', flattenNodePositions[0].x, 15);
-        if (hiddenDenseNodePositions.length > 0) ctx.fillText('Dense', hiddenDenseNodePositions[0].x, 15);
-        if (outputNodePositions.length > 0) ctx.fillText('Output', outputNodePositions[0].x, 15);
-
-        allLinesRef.current.forEach(line => {
-            if (line.displayAlpha < 0.01) return;
-
-            ctx.globalAlpha = line.displayAlpha;
-            let strokeStyle: string | CanvasGradient = COLOR_DEFAULT_LINE;
-            
-            const isActiveLineForGradient = line.activationStrength > ACTIVATION_THRESHOLD;
-
-            if (isActiveLineForGradient && line.gradientSet.length > 0) {
-                const gradient = ctx.createLinearGradient(line.from.x, line.from.y, line.to.x, line.to.y);
-                line.gradientSet.forEach((color, index) => {
-                    gradient.addColorStop(Math.min(1, index / (line.gradientSet.length - 1 || 1)), color);
-                });
-                strokeStyle = gradient;
-            } else { 
-                 strokeStyle = COLOR_DEFAULT_LINE; 
+    // Central connector
+    const centralPoint: Point = useMemo(() => {
+        return (
+            centralConnectionPoint ?? {
+                x: Math.max(20, Math.floor(width * 0.15)),
+                y: Math.floor(height / 2),
             }
+        );
+    }, [centralConnectionPoint, width, height]);
 
-            if (isActiveLineForGradient && (line.headProgress > line.tailProgress || (line.headProgress === 1 && line.tailProgress < 1))) {
-                 drawPathSegment(
-                    ctx,
-                    { p0: line.from, p1: line.to, totalLength: line.totalLength },
-                    line.tailProgress * line.totalLength,
-                    line.headProgress * line.totalLength,
-                    strokeStyle,
-                    LINE_ACTIVE_WIDTH
-                );
-            } else if (!isActiveLineForGradient && line.displayAlpha >= NET_ALPHA_INACTIVE_LINE) { 
-                ctx.beginPath();
-                ctx.moveTo(line.from.x, line.from.y);
-                ctx.lineTo(line.to.x, line.to.y);
-                ctx.strokeStyle = strokeStyle; 
-                ctx.lineWidth = LINE_INACTIVE_STROKE_WIDTH;
-                ctx.stroke();
-            }
-        });
-        
-        ctx.globalAlpha = 1; 
+    // Layer X positions (responsive)
+    const { flattenX, hiddenX, outputX } = useMemo(() => {
+        const marginRight = Math.max(16, Math.floor(width * 0.04));
+        const fx = Math.max(centralPoint.x + 50, 20);
+        const remaining = Math.max(width - marginRight - fx, 100);
+        const gap = remaining / 2;
+        return {
+            flattenX: fx,
+            hiddenX: fx + gap,
+            outputX: fx + 2 * gap,
+        };
+    }, [width, centralPoint.x]);
 
-        allNodesRef.current.forEach(node => {
-            if (node.alpha <= 0.01) return;
-            ctx.save();
-            ctx.globalAlpha = node.alpha;
-            ctx.translate(node.x, node.y);
-            ctx.scale(node.scale, node.scale);
-            ctx.beginPath();
-            ctx.arc(0, 0, NODE_RADIUS, 0, Math.PI * 2);
-            ctx.fillStyle = node.fillColor;
-            ctx.fill();
-            ctx.strokeStyle = node.strokeColor;
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
+    // Node positions
+    const flattenNodePositions = useMemo(
+        () => calculateNodePositions(MAX_NODES_TO_DRAW, flattenX, height, NODE_RADIUS),
+        [flattenX, height],
+    );
+    const hiddenNodePositions = useMemo(
+        () => calculateNodePositions(MAX_NODES_TO_DRAW, hiddenX, height, NODE_RADIUS),
+        [hiddenX, height],
+    );
+    const outputNodePositions = useMemo(
+        () => calculateNodePositions(EMNIST_CHARS.length, outputX, height, NODE_RADIUS),
+        [outputX, height],
+    );
 
-            if (node.label) {
-                ctx.fillStyle = node.isPredicted ? node.strokeColor : node.textColor; 
-                ctx.font = `bold 9px sans-serif`; 
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(node.label.toUpperCase(), 0, 0);
-            }
-            ctx.restore();
-        });
-
-    }, [flattenNodePositions, hiddenDenseNodePositions, outputNodePositions]);
-
+    // Build static graph once per geometry change
     useEffect(() => {
-        const canvas = networkCanvasRef.current;
+        // Kill any running wave animations – geometry changed
+        activeTimelines.forEach((tl) => tl.kill());
+        activeTimelines.clear();
+        overlayLinesRef.current = [];
+
+        // Nodes
+        const nodes: StaticNode[] = [];
+        flattenNodePositions.forEach((p, i) => nodes.push({ id: `fl-${i}`, x: p.x, y: p.y, layer: 'flatten' }));
+        hiddenNodePositions.forEach((p, i) => nodes.push({ id: `hd-${i}`, x: p.x, y: p.y, layer: 'hidden' }));
+        outputNodePositions.forEach((p, i) =>
+            nodes.push({ id: `out-${i}`, x: p.x, y: p.y, label: EMNIST_CHARS[i], layer: 'output' }),
+        );
+        staticNodesRef.current = nodes;
+
+        // Node state defaults
+        const st: Record<string, { scale: number; stroke: string; alpha: number }> = {};
+        nodes.forEach((n) => {
+            st[n.id] = { scale: 1, stroke: '#d0d4db', alpha: 1 };
+        });
+        nodeStateRef.current = st;
+
+        // Lines (center→flatten, flatten→hidden, hidden→output)
+        const cf: StaticLine[] = flattenNodePositions.map((p) => ({
+            p0: centralPoint,
+            p1: p,
+            totalLength: dist(centralPoint, p),
+        }));
+
+        const fh: StaticLine[] = [];
+        flattenNodePositions.forEach((fp) => {
+            hiddenNodePositions.forEach((hp) => {
+                fh.push({ p0: fp, p1: hp, totalLength: dist(fp, hp) });
+            });
+        });
+
+        const ho: StaticLine[] = [];
+        hiddenNodePositions.forEach((hp) => {
+            outputNodePositions.forEach((op) => {
+                ho.push({ p0: hp, p1: op, totalLength: dist(hp, op) });
+            });
+        });
+
+        staticLinesRef.current = { cf, fh, ho };
+    }, [
+        activeTimelines,
+        centralPoint.x,
+        centralPoint.y,
+        flattenNodePositions,
+        hiddenNodePositions,
+        outputNodePositions,
+    ]);
+
+    // Drawing
+    const draw = useCallback(
+        (ctx: CanvasRenderingContext2D) => {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            // 1) Static skeleton lines (thin, faint)
+            ctx.globalAlpha = STATIC_LINE_ALPHA;
+            ctx.lineWidth = LINE_INACTIVE_STROKE_WIDTH;
+            ctx.strokeStyle = COLOR_DEFAULT_LINE;
+
+            const { cf, fh, ho } = staticLinesRef.current;
+
+            const drawStaticList = (list: StaticLine[]) => {
+                list.forEach((ln) => {
+                    ctx.beginPath();
+                    ctx.moveTo(ln.p0.x, ln.p0.y);
+                    ctx.lineTo(ln.p1.x, ln.p1.y);
+                    ctx.stroke();
+                });
+            };
+            drawStaticList(cf);
+            drawStaticList(fh);
+            drawStaticList(ho);
+
+            // 2) Overlay animated segments (gradient + active width)
+            ctx.globalAlpha = 1;
+            overlayLinesRef.current.forEach((ln) => {
+                if (ln.alpha <= 0.01) return;
+                if (ln.head <= ln.tail) return;
+
+                let stroke: string | CanvasGradient = ln.gradientSet[0] ?? '#888';
+                const grad = ctx.createLinearGradient(ln.p0.x, ln.p0.y, ln.p1.x, ln.p1.y);
+                ln.gradientSet.forEach((c, i) => {
+                    grad.addColorStop(Math.min(1, i / (ln.gradientSet.length - 1 || 1)), c);
+                });
+                stroke = grad;
+
+                drawPathSegment(
+                    ctx,
+                    { p0: ln.p0, p1: ln.p1, totalLength: ln.totalLength },
+                    ln.tail * ln.totalLength,
+                    ln.head * ln.totalLength,
+                    stroke,
+                    LINE_ACTIVE_WIDTH,
+                );
+            });
+
+            // 3) Nodes (single set, re-used; scale from nodeState)
+            staticNodesRef.current.forEach((n) => {
+                const st = nodeStateRef.current[n.id] || { scale: 1, stroke: '#d0d4db', alpha: 1 };
+                if (st.alpha <= 0.01) return;
+
+                ctx.save();
+                ctx.translate(n.x, n.y);
+                ctx.scale(st.scale, st.scale);
+                ctx.translate(-n.x, -n.y);
+
+                // circle
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = COLOR_NODE_FILL;
+                ctx.fill();
+
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = st.stroke;
+                ctx.stroke();
+
+                // label for output nodes
+                if (n.layer === 'output' && n.label) {
+                    ctx.fillStyle = COLOR_OUTPUT_TEXT;
+                    ctx.font = `bold 8px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(n.label.toUpperCase(), n.x, n.y);
+                }
+                ctx.restore();
+            });
+        },
+        [/* no external deps; refs used */],
+    );
+
+    // Render loop
+    useEffect(() => {
+        const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        
-        const renderLoop = () => {
-            drawNetwork(ctx);
-            requestAnimationFrame(renderLoop);
-        };
-        const animFrameId = requestAnimationFrame(renderLoop);
-        return () => {
-            cancelAnimationFrame(animFrameId);
-            activeTimelines.forEach(timeline => timeline.kill());
-            activeTimelines.clear();
-        };
-    }, [drawNetwork, activeTimelines]);
 
+        let rafId = 0;
+        const loop = () => {
+            draw(ctx);
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+
+        return () => {
+            cancelAnimationFrame(rafId);
+            activeTimelines.forEach((tl) => tl.kill());
+            activeTimelines.clear();
+            overlayLinesRef.current = [];
+        };
+    }, [draw, activeTimelines]);
+
+    // Utility for node pulses (shared nodes, not per-wave duplicates)
+    const pulseNodes = useCallback(
+        (ids: string[], strokeColor: string) => {
+            ids.forEach((id) => {
+                const st = nodeStateRef.current[id];
+                if (!st) return;
+
+                // create a small TL to pulse scale and temporarily tint stroke
+                const tl = gsap.timeline();
+                tl.to(st, { scale: 1.5, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.out' })
+                    .to(st, { scale: 1, duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' }, '>-0.02');
+
+                // stroke tint (soft)
+                gsap.to(st, { stroke: strokeColor, duration: 0.12, overwrite: 'auto' });
+                gsap.to(st, { stroke: '#d0d4db', duration: 0.25, delay: 0.25, overwrite: 'auto' });
+            });
+        },
+        [],
+    );
+
+    // New waves → attach overlays to the persistent graph
     useEffect(() => {
-        waves.forEach(wave => {
-            if (activeTimelines.has(wave.id)) return;
+        const { cf, fh, ho } = staticLinesRef.current;
+
+        waves.forEach((wave) => {
+            if (activeTimelines.has(wave.id)) return; // already animating this wave
 
             const { activations, softmaxProbabilities, gradientSet, id: waveId } = wave;
-            const nodePulseColor = gradientSet[0] || '#FF69B4'; 
+            const flatAct = getSampledActivations(activations[flattenLayerName], MAX_NODES_TO_DRAW);
+            const hidAct = getSampledActivations(activations[hiddenDenseLayerName], MAX_NODES_TO_DRAW);
+            const outAct = softmaxProbabilities || new Array(EMNIST_CHARS.length).fill(0);
+            const predIdx = outAct.indexOf(Math.max(...outAct));
 
-            const currentFlattenAct = getSampledActivations(activations[flattenLayerName], MAX_NODES_TO_DRAW);
-            const currentHiddenAct = getSampledActivations(activations[hiddenDenseLayerName], MAX_NODES_TO_DRAW);
-            const currentOutputAct = softmaxProbabilities || new Array(EMNIST_CHARS.length).fill(0);
-            const predictedOutputIndex = currentOutputAct.indexOf(Math.max(...currentOutputAct));
+            // Decide which overlay segments to draw (only active)
+            const overlays: OverlayLine[] = [];
 
-            const waveLines: AnimatableLine[] = [];
-            const waveNodes: AnimatableNode[] = [];
-            let lineIdCounter = 0;
-            let nodeIdCounter = 0;
-
-            // UPDATED getDisplayAlpha function
-            const getDisplayAlpha = (
-                sourceStrength: number,
-                targetStrength: number,
-                isLineToOverallPredictedOutputNode: boolean
-            ) => {
-                const isSourceActive = sourceStrength > ACTIVATION_THRESHOLD;
-                const isTargetActive = targetStrength > ACTIVATION_THRESHOLD;
-
-                // Condition 1: Both source and target nodes for THIS line segment are active.
-                if (isSourceActive && isTargetActive) {
-                    return NET_ALPHA_PREDICTED_LINE; // Solid
-                }
-
-                // Condition 2: Line is part of the path to the *overall predicted character* AND the source of THIS line segment is active.
-                if (isLineToOverallPredictedOutputNode && isSourceActive) {
-                    return NET_ALPHA_PREDICTED_LINE; // Solid
-                }
-
-                // Condition 3: Source is active, but target is not (and not covered by Condition 1 or 2).
-                if (isSourceActive) {
-                    const normalizedStrength = Math.max(0, Math.min(1, (sourceStrength - ACTIVATION_THRESHOLD) / (1.0 - ACTIVATION_THRESHOLD || 1)));
-                    return NET_ALPHA_OTHER_ACTIVE_MIN + normalizedStrength * (NET_ALPHA_OTHER_ACTIVE_MAX - NET_ALPHA_OTHER_ACTIVE_MIN);
-                }
-
-                // Condition 4: Source is not active.
-                return NET_ALPHA_INACTIVE_LINE;
-            };
-            
-            if (centralConnectionPoint) {
-                const sourceStrengthForCentral = 1.0; // Conceptual strength for the wave origin
-                flattenNodePositions.forEach((nodePos, index) => {
-                    const targetStrength = currentFlattenAct[index];
-                    waveLines.push({
-                        id: `l-cen-fl-${waveId}-${lineIdCounter++}`, waveId,
-                        from: centralConnectionPoint, to: nodePos,
-                        totalLength: getLineLength(centralConnectionPoint, nodePos),
-                        headProgress: 0, tailProgress: 0, gradientSet,
-                        activationStrength: targetStrength, // Line's own animation driven by target's activation
-                        displayAlpha: getDisplayAlpha(sourceStrengthForCentral, targetStrength, false) 
+            // Center → Flatten: only for active flatten nodes
+            flatAct.forEach((a, i) => {
+                if (a > ACTIVATION_THRESHOLD) {
+                    const base = cf[i]; // one-to-one
+                    overlays.push({
+                        id: `ol-cf-${waveId}-${i}`,
+                        waveId,
+                        p0: base.p0,
+                        p1: base.p1,
+                        totalLength: base.totalLength,
+                        head: 0,
+                        tail: 0,
+                        gradientSet,
+                        alpha: NET_ALPHA_PREDICTED_LINE,
                     });
-                });
-            }
-            
-            flattenNodePositions.forEach((fromPos, i) => {
-                const sourceStrength = currentFlattenAct[i];
-                hiddenDenseNodePositions.forEach((toPos, j_idx) => {
-                    const targetStrength = currentHiddenAct[j_idx];
-                    waveLines.push({
-                        id: `l-fl-hd-${waveId}-${lineIdCounter++}`, waveId,
-                        from: fromPos, to: toPos,
-                        totalLength: getLineLength(fromPos, toPos),
-                        headProgress: 0, tailProgress: 0, gradientSet,
-                        activationStrength: sourceStrength,
-                        displayAlpha: getDisplayAlpha(sourceStrength, targetStrength, false)
+                }
+            });
+
+            // Flatten → Hidden: only active→active pairs
+            flatAct.forEach((aF, iF) => {
+                if (aF <= ACTIVATION_THRESHOLD) return;
+                hidAct.forEach((aH, iH) => {
+                    if (aH <= ACTIVATION_THRESHOLD) return;
+                    const idx = iF * MAX_NODES_TO_DRAW + iH;
+                    const base = fh[idx];
+                    // alpha scales with source activation strength
+                    const norm =
+                        (aF - ACTIVATION_THRESHOLD) / (1.0 - ACTIVATION_THRESHOLD || 1);
+                    const alpha =
+                        NET_ALPHA_OTHER_ACTIVE_MIN +
+                        norm * (NET_ALPHA_OTHER_ACTIVE_MAX - NET_ALPHA_OTHER_ACTIVE_MIN);
+                    overlays.push({
+                        id: `ol-fh-${waveId}-${idx}`,
+                        waveId,
+                        p0: base.p0,
+                        p1: base.p1,
+                        totalLength: base.totalLength,
+                        head: 0,
+                        tail: 0,
+                        gradientSet,
+                        alpha,
                     });
                 });
             });
-            
-            hiddenDenseNodePositions.forEach((fromPos, i) => {
-                const sourceStrength = currentHiddenAct[i];
-                outputNodePositions.forEach((toPos, j) => {
-                    const targetStrength = currentOutputAct[j];
-                    const isLineToPredictedNode = (j === predictedOutputIndex);
-                    waveLines.push({
-                        id: `l-hd-out-${waveId}-${lineIdCounter++}`, waveId,
-                        from: fromPos, to: toPos,
-                        totalLength: getLineLength(fromPos, toPos),
-                        headProgress: 0, tailProgress: 0, gradientSet,
-                        activationStrength: sourceStrength,
-                        displayAlpha: getDisplayAlpha(sourceStrength, targetStrength, isLineToPredictedNode),
-                        isToPredictedOutputNode: isLineToPredictedNode
-                    });
-                });
-            });
-            
-            flattenNodePositions.forEach((pos, i) => { // Added index i for currentFlattenAct
-                 waveNodes.push({
-                    id: `n-fl-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: currentFlattenAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR, 
-                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
-                });
-            });
-            hiddenDenseNodePositions.forEach((pos, i) => { // Added index i for currentHiddenAct
-                 waveNodes.push({
-                    id: `n-hd-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y,
-                    scale: 1, strokeColor: currentHiddenAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR, 
-                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1,
-                });
-            });
-            outputNodePositions.forEach((pos, i) => {
-                const isPredictedAndActive = (i === predictedOutputIndex && currentOutputAct[i] > ACTIVATION_THRESHOLD);
-                waveNodes.push({
-                    id: `n-out-${waveId}-${nodeIdCounter++}`, waveId, x: pos.x, y: pos.y, label: EMNIST_CHARS[i],
-                    scale: 1, 
-                    strokeColor: isPredictedAndActive ? nodePulseColor : (currentOutputAct[i] > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR),
-                    fillColor: COLOR_NODE_FILL, textColor: COLOR_OUTPUT_TEXT, alpha: 1, 
-                    isPredicted: (i === predictedOutputIndex),
+
+            // Hidden → Output: only to the predicted output node for smoothness
+            hidAct.forEach((aH, iH) => {
+                if (aH <= ACTIVATION_THRESHOLD) return;
+                const idx = iH * EMNIST_CHARS.length + predIdx;
+                const base = ho[idx];
+                overlays.push({
+                    id: `ol-ho-${waveId}-${idx}`,
+                    waveId,
+                    p0: base.p0,
+                    p1: base.p1,
+                    totalLength: base.totalLength,
+                    head: 0,
+                    tail: 0,
+                    gradientSet,
+                    alpha: NET_ALPHA_PREDICTED_LINE,
                 });
             });
 
-            allLinesRef.current.push(...waveLines);
-            allNodesRef.current.push(...waveNodes);
-            
+            // Attach overlays
+            overlayLinesRef.current.push(...overlays);
+
+            // Node pulses (shared nodes)
+            const flattenPulseIds = flatAct
+                .map((a, i) => (a > ACTIVATION_THRESHOLD ? `fl-${i}` : null))
+                .filter(Boolean) as string[];
+            const hiddenPulseIds = hidAct
+                .map((a, i) => (a > ACTIVATION_THRESHOLD ? `hd-${i}` : null))
+                .filter(Boolean) as string[];
+            const outPulseId = [`out-${predIdx}`];
+
+            // build GSAP TL for the wave
             const tl = gsap.timeline({
                 onComplete: () => {
+                    // remove this wave's overlays
+                    overlayLinesRef.current = overlayLinesRef.current.filter((ol) => ol.waveId !== waveId);
                     activeTimelines.delete(waveId);
                     onWaveFinished(waveId);
-                    allLinesRef.current = allLinesRef.current.filter(l => l.waveId !== waveId);
-                    allNodesRef.current = allNodesRef.current.filter(n => n.waveId !== waveId);
-                }
+                },
             });
             activeTimelines.set(waveId, tl);
 
-            let currentTime = 0;
-
-            const animateLayerConnections = (
-                linesForLayer: AnimatableLine[], 
-                nodesForLayer: AnimatableNode[], 
-                nodeActivations: number[], // Activations for the TARGET nodes of these lines generally
-                isOutputLayerPass: boolean = false 
-            ) => {
-                linesForLayer.forEach(line => {
-                    // Line animation (snake) is driven by its own activationStrength (source node's strength)
-                    if (line.activationStrength > ACTIVATION_THRESHOLD) { 
-                        tl.to(line, { headProgress: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' }, currentTime);
-                        tl.to(line, { tailProgress: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' }, currentTime + NET_LINE_GROW_DURATION);
-                    }
+            // phase 1: center→flatten
+            overlays
+                .filter((o) => o.id.startsWith('ol-cf-'))
+                .forEach((o) => {
+                    tl.to(
+                        o,
+                        { head: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' },
+                        0,
+                    );
+                    tl.to(
+                        o,
+                        { tail: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' },
+                        NET_LINE_GROW_DURATION,
+                    );
                 });
-                
-                const nodePulseStartTime = currentTime + NET_LINE_GROW_DURATION * 0.5; // Start node pulse slightly before line finishes arriving
-                nodesForLayer.forEach((node, i) => {
-                    // Node activation check based on its own activation value from the correct layer's activation array
-                    const actualNodeActivation = 
-                        node.id.startsWith('n-fl-') ? currentFlattenAct[i] :
-                        node.id.startsWith('n-hd-') ? currentHiddenAct[i] :
-                        node.id.startsWith('n-out-') ? currentOutputAct[i] : 0;
+            // pulse flatten nodes midway
+            tl.add(() => pulseNodes(flattenPulseIds, gradientSet[0] || '#FF69B4'), NET_LINE_GROW_DURATION * 0.5);
 
-                    if (actualNodeActivation >= ACTIVATION_THRESHOLD) {
-                        let specificNodePulseColor = nodePulseColor;
-                        let specificNodeTextColor = COLOR_OUTPUT_TEXT; // Default text color
-                        
-                        if(node.id.startsWith('n-out-') && node.isPredicted){
-                            specificNodePulseColor = gradientSet[0] || nodePulseColor; 
-                            // Text color for predicted output node should be its pulse color for emphasis
-                            specificNodeTextColor = specificNodePulseColor; 
-                        } else if (node.id.startsWith('n-out-')) {
-                            // Other output nodes that are active but not predicted
-                            specificNodeTextColor = nodePulseColor; // color text to match pulse
-                        }
-
-
-                        tl.to(node, { 
-                            scale: (node.id.startsWith('n-out-') && node.isPredicted) ? 1.6 : 1.5, 
-                            strokeColor: specificNodePulseColor, 
-                            textColor: specificNodeTextColor, // Apply potentially updated text color
-                            duration: NET_NODE_PULSE_DURATION / 2, 
-                            ease: 'power1.out' 
-                        }, nodePulseStartTime)
-                          .to(node, { 
-                              scale: 1, 
-                              strokeColor: node.id.startsWith('n-out-') && node.isPredicted ? specificNodePulseColor : (actualNodeActivation > ACTIVATION_THRESHOLD ? nodePulseColor : NODE_INACTIVE_STROKE_COLOR), // Keep predicted output highlighted
-                              textColor: node.id.startsWith('n-out-') && node.isPredicted ? specificNodeTextColor : COLOR_OUTPUT_TEXT, // Revert non-predicted text color
-                           duration: NET_NODE_PULSE_DURATION / 2, ease: 'power1.in' 
-                          });
-                    }
+            // phase 2: flatten→hidden
+            const phase2Start =
+                NET_LINE_GROW_DURATION + NET_LINE_SHRINK_DURATION + NET_LAYER_ANIMATION_DELAY;
+            overlays
+                .filter((o) => o.id.startsWith('ol-fh-'))
+                .forEach((o) => {
+                    tl.to(
+                        o,
+                        { head: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' },
+                        phase2Start,
+                    );
+                    tl.to(
+                        o,
+                        { tail: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' },
+                        phase2Start + NET_LINE_GROW_DURATION,
+                    );
                 });
-                return nodePulseStartTime + NET_NODE_PULSE_DURATION + NET_LAYER_ANIMATION_DELAY;
-            };
-            
-            // For animateLayerConnections, nodeActivations should correspond to the layer the *nodes* belong to
-            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-cen-fl')), waveNodes.filter(n => n.id.startsWith('n-fl-')), currentFlattenAct);
-            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-fl-hd')), waveNodes.filter(n => n.id.startsWith('n-hd-')), currentHiddenAct);
-            currentTime = animateLayerConnections(waveLines.filter(l => l.id.startsWith('l-hd-out')), waveNodes.filter(n => n.id.startsWith('n-out-')), currentOutputAct, true);
+            tl.add(() => pulseNodes(hiddenPulseIds, gradientSet[0] || '#FF69B4'), phase2Start + NET_LINE_GROW_DURATION * 0.5);
 
+            // phase 3: hidden→output (predicted only)
+            const phase3Start =
+                phase2Start + NET_LINE_GROW_DURATION + NET_LINE_SHRINK_DURATION + NET_LAYER_ANIMATION_DELAY;
+            overlays
+                .filter((o) => o.id.startsWith('ol-ho-'))
+                .forEach((o) => {
+                    tl.to(
+                        o,
+                        { head: 1, duration: NET_LINE_GROW_DURATION, ease: 'linear' },
+                        phase3Start,
+                    );
+                    tl.to(
+                        o,
+                        { tail: 1, duration: NET_LINE_SHRINK_DURATION, ease: 'linear' },
+                        phase3Start + NET_LINE_GROW_DURATION,
+                    );
+                });
+            tl.add(() => pulseNodes(outPulseId, gradientSet[0] || '#FF69B4'), phase3Start + NET_LINE_GROW_DURATION * 0.5);
         });
-    }, [waves, onWaveFinished, flattenLayerName, hiddenDenseLayerName, outputLayerName, 
-        centralConnectionPoint, flattenNodePositions, hiddenDenseNodePositions, outputNodePositions, activeTimelines, drawNetwork]);
+    }, [
+        waves,
+        onWaveFinished,
+        flattenLayerName,
+        hiddenDenseLayerName,
+        outputLayerName,
+        activeTimelines,
+        pulseNodes,
+    ]);
 
     return (
         <div>
-            <canvas ref={networkCanvasRef} width={canvasWidth} height={CANVAS_HEIGHT} />
-            {waves.length === 0 && allLinesRef.current.length === 0 &&
-                <div style={{ color: COLOR_LAYER_LABEL, fontSize: '0.9em', marginTop: '10px', paddingLeft: `${FATTEN_LAYER_X - 200}px`, position: 'absolute', top: CANVAS_HEIGHT / 2 - 10, left: FATTEN_LAYER_X - 300, width: '200px', textAlign: 'center' }}>
-                    Awaiting activation data...
-                </div>
-            }
+            <canvas
+                ref={canvasRef}
+                width={width}
+                height={height}
+                style={{ pointerEvents: 'none', display: 'block' }}
+            />
         </div>
     );
 };

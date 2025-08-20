@@ -6,6 +6,8 @@ import {
   FINAL_LAYER_NAME,
   ACTIVATION_LAYER_NAMES,
   OCR_PROCESSING_DELAY_MS,
+  MEDIA_CROP_TOP_PX,
+  MEDIA_CROP_BOTTOM_PX,
 } from '../utils/constants';
 import { findCharacterBoxes } from '../../../utils/ml/segmentation';
 import { preprocessCharacterTensor } from '../../../utils/ml/preprocess';
@@ -204,12 +206,28 @@ export default function useOcrProcessing({
       resolveOcrPromise.current = resolve;
 
       const img = imageRef.current;
+      const natW = img.naturalWidth;
+      const natH = img.naturalHeight;
+
+      // ⬇️ Crop 5px top & bottom so black lines never reach the OCR pixels
+      const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
+      const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
+      const srcW = natW;
+      const srcH = Math.max(0, natH - cropTop - cropBottom);
+
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = srcW;
+      canvas.height = srcH > 0 ? srcH : natH; // fallback to full height if something odd happens
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) { resolve(''); return; }
-      ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+
+      if (srcH > 0) {
+        ctx.drawImage(img, 0, cropTop, srcW, srcH, 0, 0, srcW, srcH);
+      } else {
+        // fallback (shouldn't happen, but safe)
+        ctx.drawImage(img, 0, 0, natW, natH);
+      }
+
       imageCanvasRef.current = canvas;
 
       try {

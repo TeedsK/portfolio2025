@@ -10,6 +10,7 @@ import { StreamCharacter, AnimationWave } from '../../types';
 import { processOcrText, CorrectedTextPart } from './utils/correctionData';
 import { NetworkGraphViz } from './components/NetworkGraphViz';
 import AnimatedTypoText from './components/AnimatedTypoText';
+import WorkExperience from './components/WorkExperience';
 import {
     EMNIST_MODEL_URL,
     ACTIVATION_LAYER_NAMES,
@@ -18,6 +19,8 @@ import {
     TEXT_SCREENSHOT_GRADIENTS,
     HELLO_WELCOME_GRADIENTS,
     OCR_START_DELAY_MS,
+    MEDIA_CROP_TOP_PX,
+    MEDIA_CROP_BOTTOM_PX
 } from './utils/constants';
 import { useTfModel } from '../../utils/useTfModel';
 import {
@@ -26,6 +29,7 @@ import {
     CHAR_BOX_PADDING
 } from './utils/animation';
 import { PathManager } from './utils/path';
+import { WhiteToAlphaCanvas } from './components/WhiteToAlphaCanvas';
 
 const GRAPH_CANVAS_HEIGHT = 340; // smaller overall footprint
 
@@ -43,7 +47,7 @@ function LandingPage() {
     const [hasCollapsedMedia2, setHasCollapsedMedia2] = useState<boolean>(false);
 
     // --- Section 1 state (Screenshot) ---
-    const [imageDimensions1, setImageDimensions1] = useState<{ width: number; height: number } | null>(null);
+    const [imageDimensions1, setImageDimensions1] = useState<{ width: number; height: number } | null>(null); // DISPLAY dims (from ResizeObserver)
     const [isVideoPlaying1, setIsVideoPlaying1] = useState<boolean>(true);
     const [shouldStartOcr1, setShouldStartOcr1] = useState<boolean>(false);
     const [correctedTextParts1, setCorrectedTextParts1] = useState<CorrectedTextPart[]>([]);
@@ -51,13 +55,14 @@ function LandingPage() {
     const [collapseImage1, setCollapseImage1] = useState<boolean>(false);
     const [isOcrDone1, setIsOcrDone1] = useState<boolean>(false);
     const imageRef1 = useRef<HTMLImageElement | null>(null);
+    const videoRef1 = useRef<HTMLVideoElement | null>(null);
     const mediaContainerRef1 = useRef<HTMLDivElement>(null);
     const mediaColumnRef1 = useRef<HTMLDivElement>(null);
     const ocrOutputRef1 = useRef<HTMLDivElement>(null);
     const hasAnimatedOutput1 = useRef(false);
 
     // --- Section 2 state (Handwriting) ---
-    const [imageDimensions2, setImageDimensions2] = useState<{ width: number; height: number } | null>(null);
+    const [imageDimensions2, setImageDimensions2] = useState<{ width: number; height: number } | null>(null); // DISPLAY dims (from ResizeObserver)
     const [isVideoPlaying2, setIsVideoPlaying2] = useState<boolean>(true);
     const [shouldStartOcr2, setShouldStartOcr2] = useState<boolean>(false);
     const [correctedTextParts2, setCorrectedTextParts2] = useState<CorrectedTextPart[]>([]);
@@ -65,6 +70,7 @@ function LandingPage() {
     const [collapseImage2, setCollapseImage2] = useState<boolean>(false);
     const [isOcrDone2, setIsOcrDone2] = useState<boolean>(false);
     const imageRef2 = useRef<HTMLImageElement | null>(null);
+    const videoRef2 = useRef<HTMLVideoElement | null>(null);
     const mediaContainerRef2 = useRef<HTMLDivElement>(null);
     const mediaColumnRef2 = useRef<HTMLDivElement>(null);
     const ocrOutputRef2 = useRef<HTMLDivElement>(null);
@@ -88,14 +94,17 @@ function LandingPage() {
     const networkContainerRef = useRef<HTMLDivElement>(null);
     useEffect(() => { if (modelLoadError) setErrorState(modelLoadError); }, [modelLoadError]);
 
-    // Resize observers for media
+    // Resize observers for media (track DISPLAY size for overlay/canvas)
     useEffect(() => {
-        const setupObserver = (containerRef: React.RefObject<HTMLDivElement>, setDims: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>) => {
+        const setupObserver = (
+            containerRef: React.RefObject<HTMLDivElement>,
+            setDims: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>
+        ) => {
             if (!containerRef.current) return;
             const observer = new ResizeObserver(entries => {
                 for (const entry of entries) {
                     const { width, height } = entry.contentRect;
-                    if (width > 0 && height > 0) setDims({ width, height });
+                    if (width > 0 && height > 0) setDims({ width: Math.round(width), height: Math.round(height) });
                 }
             });
             observer.observe(containerRef.current);
@@ -232,7 +241,7 @@ function LandingPage() {
         ]));
     }, [viewportSize.width, viewportSize.height, getCentralConnectionPoint]);
 
-    // Feed characters (unchanged)
+    // Feed characters
     useEffect(() => {
         if (ocrProcess1.currentChar && ocrProcess1.currentCharImageData) {
             const idx = gradientIndex1Ref.current % TEXT_SCREENSHOT_GRADIENTS.length;
@@ -268,14 +277,13 @@ function LandingPage() {
         setNetworkWaves(prev => prev.filter(w => w.id !== waveId));
     }, []);
 
+    // Only compute aspect ratio on load; DO NOT overwrite display size from ResizeObserver
     const handleImageOnLoad = (sourceIndex: OcrSourceIndex) => {
         const ref = sourceIndex === 0 ? imageRef1 : imageRef2;
-        const setDims = sourceIndex === 0 ? setImageDimensions1 : setImageDimensions2;
         const setAspect = sourceIndex === 0 ? setAspectRatio1 : setAspectRatio2;
         if (ref.current) {
             const w = ref.current.naturalWidth || 1920;
             const h = ref.current.naturalHeight || 1080;
-            setDims({ width: w, height: h });
             if (w > 0 && h > 0) setAspect(w / h);
         }
     };
@@ -310,7 +318,7 @@ function LandingPage() {
         // 1) Collapse media container
         tl.to(containerEl, { height: 0, opacity: 0, duration: 0.55 });
 
-        // 2) No chrome to melt on column (you already removed it) — keep noop but safe
+        // 2) Remove chrome
         if (columnEl) {
             tl.to(columnEl, {
                 boxShadow: '0px 0px 0px 0px rgba(0,0,0,0)',
@@ -321,7 +329,7 @@ function LandingPage() {
             }, 0);
         }
 
-        // 3) Remove H3 label & enlarge OCR text (top→2em, bottom→1.8em)
+        // 3) Enlarge OCR text
         if (outputEl) {
             const heading = outputEl.querySelector('h3') as HTMLElement | null;
             if (heading) {
@@ -370,150 +378,217 @@ function LandingPage() {
 
     return (
         <React.Fragment>
-            <div className="left-column">
-                {/* ------ Section 2: Handwriting (TOP) ------ */}
-                <div className="media-column" ref={mediaColumnRef2}>
-                    <div ref={mediaContainerRef2} className="media-container" style={{ aspectRatio: aspectRatio2 }}>
-                        <img
-                            ref={imageRef2}
-                            src="/hello_and_welcome.png"
-                            alt="Hello and Welcome OCR"
-                            className={`screenshot-underlay ${collapseImage2 ? 'shrink-vertical' : ''}`}
-                            style={{ opacity: isVideoPlaying2 ? 0 : 1 }}
-                            onLoad={() => handleImageOnLoad(1)}
-                            crossOrigin="anonymous"
-                        />
-                        <video
-                            src="/hello_and_welcome_writing.mp4"
-                            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 2, opacity: isVideoPlaying2 ? 1 : 0, visibility: isVideoPlaying2 ? 'visible' : 'hidden', pointerEvents: 'none' }}
-                            autoPlay
-                            muted
-                            onEnded={handleVideoEnd2}
-                            playsInline
-                        />
-                        {imageDimensions2 && !collapseImage2 && !hasCollapsedMedia2 && (
-                            <OcrOverlay
-                                accentColor={ACCENT_COLOR_2}
-                                recognizedChars={ocrProcess2.recognizedChars}
-                                activeBoxInfo={{
-                                    activeItemIndex: ocrProcess2.activeItemIndex,
-                                    processableLines: ocrProcess2.processableLines,
-                                    imageDimensions: imageDimensions2,
-                                    imageRef: imageRef2,
-                                    showMediaElement: !hasCollapsedMedia2
-                                }}
+            {/* ======= Split top hero (left OCR, right graph) ======= */}
+            <div className="split-layout">
+                <div className="left-column">
+                    {/* ------ Section 2: Handwriting (TOP) ------ */}
+                    <div className="media-column" ref={mediaColumnRef2}>
+                        <div ref={mediaContainerRef2} className="media-container" style={{ aspectRatio: aspectRatio2 }}>
+                            {/* Hidden sources */}
+                            <img
+                                ref={imageRef2}
+                                src="/hello_and_welcome.png"
+                                alt="Hello and Welcome OCR"
+                                className={`screenshot-underlay ${collapseImage2 ? 'shrink-vertical' : ''}`}
+                                style={{ opacity: 0, visibility: 'hidden' }}
+                                onLoad={() => handleImageOnLoad(1)}
+                                crossOrigin="anonymous"
                             />
-                        )}
+                            <video
+                                ref={videoRef2}
+                                src="/hello_and_welcome_writing.mp4"
+                                style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0, opacity: 0, visibility: 'hidden', pointerEvents: 'none' }}
+                                autoPlay
+                                muted
+                                onEnded={handleVideoEnd2}
+                                playsInline
+                            />
+
+                            {/* White→Alpha canvases */}
+                            {imageDimensions2 && (
+                                <>
+                                    <WhiteToAlphaCanvas
+                                        sourceRef={videoRef2}
+                                        kind="video"
+                                        width={imageDimensions2.width}
+                                        height={imageDimensions2.height}
+                                        show={isVideoPlaying2 && !collapseImage2 && !hasCollapsedMedia2}
+                                        zIndex={2}
+                                        clipTopPx={MEDIA_CROP_TOP_PX}
+                                        clipBottomPx={MEDIA_CROP_BOTTOM_PX}
+                                        whiteLow={235}
+                                        whiteHigh={252}
+                                    />
+                                    <WhiteToAlphaCanvas
+                                        sourceRef={imageRef2}
+                                        kind="image"
+                                        width={imageDimensions2.width}
+                                        height={imageDimensions2.height}
+                                        show={!isVideoPlaying2 && !collapseImage2 && !hasCollapsedMedia2}
+                                        zIndex={2}
+                                        clipTopPx={MEDIA_CROP_TOP_PX}
+                                        clipBottomPx={MEDIA_CROP_BOTTOM_PX}
+                                        whiteLow={235}
+                                        whiteHigh={252}
+                                    />
+                                </>
+                            )}
+
+                            {imageDimensions2 && !collapseImage2 && !hasCollapsedMedia2 && (
+                                <OcrOverlay
+                                    accentColor={ACCENT_COLOR_2}
+                                    recognizedChars={ocrProcess2.recognizedChars}
+                                    activeBoxInfo={{
+                                        activeItemIndex: ocrProcess2.activeItemIndex,
+                                        processableLines: ocrProcess2.processableLines,
+                                        imageDimensions: imageDimensions2,
+                                        imageRef: imageRef2,
+                                        showMediaElement: !hasCollapsedMedia2
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        <div ref={ocrOutputRef2} className="ocr-output-container ocr-output-container--below">
+                            <div className="ocr-output-body">
+                                {ocrProcess2.isProcessingOCR ? (
+                                    <p className="ocr-output-text">
+                                        {ocrProcess2.liveOcrText}
+                                        <span className="blinking-cursor">|</span>
+                                    </p>
+                                ) : (
+                                    correctedTextParts2.length > 0 ? (
+                                        <AnimatedTypoText parts={correctedTextParts2} onComplete={() => onTypoAnimationComplete(1)} />
+                                    ) : (
+                                        <p className="ocr-output-text">Awaiting OCR...</p>
+                                    )
+                                )}
+                            </div>
+                        </div>
                     </div>
 
-                    <div ref={ocrOutputRef2} className="ocr-output-container ocr-output-container--below">
-                        {/* <h3>Live OCR Output (Handwriting)</h3> */}
-                        <div className="ocr-output-body">
-                            {ocrProcess2.isProcessingOCR ? (
-                                <p className="ocr-output-text">
-                                    {ocrProcess2.liveOcrText}
-                                    <span className="blinking-cursor">|</span>
-                                </p>
-                            ) : (
-                                correctedTextParts2.length > 0 ? (
-                                    <AnimatedTypoText parts={correctedTextParts2} onComplete={() => onTypoAnimationComplete(1)} />
+                    {/* Portfolio title — always left aligned with 15px margin */}
+                    <h1 className="portfolio-title">Theo Kremer</h1>
+
+                    {/* ------ Section 1: Screenshot (BOTTOM) ------ */}
+                    <div className="media-column" ref={mediaColumnRef1}>
+                        <div ref={mediaContainerRef1} className="media-container" style={{ aspectRatio: aspectRatio1 }}>
+                            {/* Hidden sources */}
+                            <img
+                                ref={imageRef1}
+                                src="/text_screenshot.png"
+                                alt="Text input for OCR"
+                                className={`screenshot-underlay ${collapseImage1 ? 'shrink-vertical' : ''}`}
+                                style={{ opacity: 0, visibility: 'hidden' }}
+                                onLoad={() => handleImageOnLoad(0)}
+                                crossOrigin="anonymous"
+                            />
+                            <video
+                                ref={videoRef1}
+                                src="/text_writing.mp4"
+                                style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0, opacity: 0, visibility: 'hidden', pointerEvents: 'none' }}
+                                autoPlay
+                                muted
+                                onEnded={handleVideoEnd1}
+                                playsInline
+                            />
+
+                            {/* White→Alpha canvases */}
+                            {imageDimensions1 && (
+                                <>
+                                    <WhiteToAlphaCanvas
+                                        sourceRef={videoRef1}
+                                        kind="video"
+                                        width={imageDimensions1.width}
+                                        height={imageDimensions1.height}
+                                        show={isVideoPlaying1 && !collapseImage1 && !hasCollapsedMedia1}
+                                        zIndex={2}
+                                        clipTopPx={MEDIA_CROP_TOP_PX}
+                                        clipBottomPx={MEDIA_CROP_BOTTOM_PX}
+                                        whiteLow={235}
+                                        whiteHigh={252}
+                                    />
+                                    <WhiteToAlphaCanvas
+                                        sourceRef={imageRef1}
+                                        kind="image"
+                                        width={imageDimensions1.width}
+                                        height={imageDimensions1.height}
+                                        show={!isVideoPlaying1 && !collapseImage1 && !hasCollapsedMedia1}
+                                        zIndex={2}
+                                        clipTopPx={MEDIA_CROP_TOP_PX}
+                                        clipBottomPx={MEDIA_CROP_BOTTOM_PX}
+                                        whiteLow={235}
+                                        whiteHigh={252}
+                                    />
+                                </>
+                            )}
+
+                            {imageDimensions1 && !collapseImage1 && !hasCollapsedMedia1 && (
+                                <OcrOverlay
+                                    accentColor={ACCENT_COLOR_1}
+                                    recognizedChars={ocrProcess1.recognizedChars}
+                                    activeBoxInfo={{
+                                        activeItemIndex: ocrProcess1.activeItemIndex,
+                                        processableLines: ocrProcess1.processableLines,
+                                        imageDimensions: imageDimensions1,
+                                        imageRef: imageRef1,
+                                        showMediaElement: !hasCollapsedMedia1
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        <div ref={ocrOutputRef1} className="ocr-output-container ocr-output-container--below">
+                            <div className="ocr-output-body">
+                                {ocrProcess1.isProcessingOCR ? (
+                                    <p className="ocr-output-text">
+                                        {ocrProcess1.liveOcrText}
+                                        <span className="blinking-cursor">|</span>
+                                    </p>
                                 ) : (
-                                    <p className="ocr-output-text">Awaiting OCR...</p>
-                                )
+                                    correctedTextParts1.length > 0 ? (
+                                        <AnimatedTypoText parts={correctedTextParts1} onComplete={() => onTypoAnimationComplete(0)} />
+                                    ) : (
+                                        <p className="ocr-output-text">Awaiting OCR...</p>
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="right-column">
+                    <div className="steps-extra-info-container" style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}>
+                        {(ocrProcess1.isProcessingOCR || ocrProcess2.isProcessingOCR) && (
+                            <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
+                                <Spin tip="Processing OCR..." />
+                            </div>
+                        )}
+                        <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
+                            {networkContainerRef.current && (
+                                <NetworkGraphViz
+                                    waves={networkWaves}
+                                    onWaveFinished={onNetworkWaveFinishedApp}
+                                    flattenLayerName="flatten"
+                                    hiddenDenseLayerName="dense"
+                                    outputLayerName={FINAL_LAYER_NAME}
+                                    width={networkContainerRef.current.clientWidth}
+                                    height={GRAPH_CANVAS_HEIGHT}
+                                    centralConnectionPoint={getCentralConnectionPoint()}
+                                />
                             )}
                         </div>
                     </div>
-                </div>
 
-                {/* Portfolio title — always left aligned with 15px margin */}
-                <h1 className="portfolio-title">Theo Kremer</h1>
-
-                {/* ------ Section 1: Screenshot (BOTTOM) ------ */}
-                <div className="media-column" ref={mediaColumnRef1}>
-                    <div ref={mediaContainerRef1} className="media-container" style={{ aspectRatio: aspectRatio1 }}>
-                        <img
-                            ref={imageRef1}
-                            src="/text_screenshot.png"
-                            alt="Text input for OCR"
-                            className={`screenshot-underlay ${collapseImage1 ? 'shrink-vertical' : ''}`}
-                            style={{ opacity: isVideoPlaying1 ? 0 : 1 }}
-                            onLoad={() => handleImageOnLoad(0)}
-                            crossOrigin="anonymous"
-                        />
-                        <video
-                            src="/text_writing.mp4"
-                            style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 2, opacity: isVideoPlaying1 ? 1 : 0, visibility: isVideoPlaying1 ? 'visible' : 'hidden', pointerEvents: 'none' }}
-                            autoPlay
-                            muted
-                            onEnded={handleVideoEnd1}
-                            playsInline
-                        />
-                        {imageDimensions1 && !collapseImage1 && !hasCollapsedMedia1 && (
-                            <OcrOverlay
-                                accentColor={ACCENT_COLOR_1}
-                                recognizedChars={ocrProcess1.recognizedChars}
-                                activeBoxInfo={{
-                                    activeItemIndex: ocrProcess1.activeItemIndex,
-                                    processableLines: ocrProcess1.processableLines,
-                                    imageDimensions: imageDimensions1,
-                                    imageRef: imageRef1,
-                                    showMediaElement: !hasCollapsedMedia1
-                                }}
-                            />
-                        )}
-                    </div>
-
-                    <div ref={ocrOutputRef1} className="ocr-output-container ocr-output-container--below">
-                        {/* <h3>Live OCR Output (Screenshot)</h3> */}
-                        <div className="ocr-output-body">
-                            {ocrProcess1.isProcessingOCR ? (
-                                <p className="ocr-output-text">
-                                    {ocrProcess1.liveOcrText}
-                                    <span className="blinking-cursor">|</span>
-                                </p>
-                            ) : (
-                                correctedTextParts1.length > 0 ? (
-                                    <AnimatedTypoText parts={correctedTextParts1} onComplete={() => onTypoAnimationComplete(0)} />
-                                ) : (
-                                    <p className="ocr-output-text">Awaiting OCR...</p>
-                                )
-                            )}
-                        </div>
-                    </div>
+                    <Alert.ErrorBoundary>
+                        {!tfReady && !errorState && !isLoadingModel && <Alert message="Initializing TensorFlow.js..." type="info" showIcon />}
+                        {isLoadingModel && tfReady && (<Alert message={<span>Loading EMNIST Model... <Spin size="small" /></span>} type="info" showIcon />)}
+                        {errorState && (<Alert message={errorState} type="error" showIcon closable onClose={() => setErrorState(null)} />)}
+                    </Alert.ErrorBoundary>
                 </div>
             </div>
 
-            <div className="right-column">
-                <div className="steps-extra-info-container" style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}>
-                    {(ocrProcess1.isProcessingOCR || ocrProcess2.isProcessingOCR) && (
-                        <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
-                            <Spin tip="Processing OCR..." />
-                        </div>
-                    )}
-                    <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
-                        {networkContainerRef.current && (
-                            <NetworkGraphViz
-                                waves={networkWaves}
-                                onWaveFinished={onNetworkWaveFinishedApp}
-                                flattenLayerName="flatten"
-                                hiddenDenseLayerName="dense"
-                                outputLayerName={FINAL_LAYER_NAME}
-                                width={networkContainerRef.current.clientWidth}
-                                height={GRAPH_CANVAS_HEIGHT}
-                                centralConnectionPoint={getCentralConnectionPoint()}
-                            />
-                        )}
-                    </div>
-                </div>
-
-                <Alert.ErrorBoundary>
-                    {!tfReady && !errorState && !isLoadingModel && <Alert message="Initializing TensorFlow.js..." type="info" showIcon />}
-                    {isLoadingModel && tfReady && (<Alert message={<span>Loading EMNIST Model... <Spin size="small" /></span>} type="info" showIcon />)}
-                    {errorState && (<Alert message={errorState} type="error" showIcon closable onClose={() => setErrorState(null)} />)}
-                </Alert.ErrorBoundary>
-            </div>
-
-            {/* UNDER content overlay */}
+            {/* UNDER content overlay (fixed) */}
             <div ref={characterOverlayRef} className="character-overlay" aria-hidden>
                 <CharacterStreamViz
                     characters={streamCharacters}
@@ -521,6 +596,9 @@ function LandingPage() {
                     onCharacterFinished={onCharacterFinishedStreamViz}
                 />
             </div>
+
+            {/* ======= Work Experience Section ======= */}
+            <WorkExperience />
         </React.Fragment>
     );
 }

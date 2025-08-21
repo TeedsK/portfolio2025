@@ -6,7 +6,17 @@
   text-align: center;
 }
 
+/* The page now stacks sections vertically; the hero itself manages its split */
 .app-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+  width: 100%;
+  align-items: stretch;
+}
+
+/* ===== Split hero (left / right) ===== */
+.split-layout {
   display: flex;
   flex-direction: row;
   gap: 2rem;
@@ -14,7 +24,7 @@
   align-items: flex-start;
 }
 
-/* ===== Left / Right split ===== */
+/* ===== Left / Right columns inside the hero ===== */
 .left-column {
   flex: 0 0 40%;
   min-width: 40%;
@@ -50,8 +60,6 @@
   padding-bottom: 0;
   margin-top: 0;
   margin-bottom: 0;
-  /* keep content breathing room */
-  /* DO NOT reintroduce chrome you removed */
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -69,6 +77,7 @@
   border-radius: 4px;
 }
 
+/* Keep sources invisible; canvases render the visible content */
 .media-container img,
 .media-container video {
   display: block;
@@ -76,28 +85,24 @@
   height: 100%;
   box-sizing: border-box;
   object-fit: contain;
-
-  /* Make white act like transparency so the backdrop shows through */
-  mix-blend-mode: multiply;
-
-  /* ⬇️ Visually crop 5px from the top and bottom to hide black lines */
-  clip-path: inset(5px 0 5px 0);
-  -webkit-clip-path: inset(5px 0 5px 0);
-  /* Safari */
+  opacity: 0;
+  /* hidden but still usable as canvas source */
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .screenshot-underlay {
   position: absolute;
   inset: 0;
   object-fit: contain;
-  z-index: 1;
+  z-index: 0;
   pointer-events: none;
 }
 
 .media-container video {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 0;
 }
 
 /* OCR areas stay width-stable, chrome-free */
@@ -210,4 +215,212 @@ h1 {
   position: absolute;
   top: 0;
   left: 0;
+}
+
+/* ===========================================================
+   Work Experience Section
+   =========================================================== */
+.work-section {
+  width: 100%;
+  text-align: left;
+  margin-top: 2rem;
+}
+
+.work-header {
+  display: grid;
+  grid-template-columns: 58px auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding-inline: clamp(16px, 6vw, 48px);
+}
+
+.work-title {
+  margin: 0;
+  font-size: clamp(28px, 3.2vw, 36px);
+  line-height: 1.15;
+  color: #0f172a;
+  /* slate-900 */
+}
+
+.work-subtitle {
+  margin: 4px 0;
+  color: #475569;
+  /* slate-600 */
+  font-size: 16px;
+}
+
+.work-meta {
+  margin: 0;
+  color: #64748b;
+  /* slate-500 */
+  font-size: 13px;
+}
+
+/* Horizontal scroller with snap */
+.work-cards-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: clamp(16px, 6vw, 48px);
+  padding-inline: clamp(16px, 6vw, 48px);
+  /* left/right gaps at the edges */
+  padding-bottom: 8px;
+}
+
+.work-cards-rail {
+  display: flex;
+  flex-direction: row;
+  gap: 18px;
+  min-height: 1px;
+  /* The right gap will naturally be respected by the viewport padding */
+}
+
+/* Individual card */
+.experience-card {
+  scroll-snap-align: start;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  /* subtle outline to match provided visual */
+  border-radius: 14px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.03);
+  width: 560px;
+  /* fixed card width for consistent snap */
+  padding: 16px 16px 12px;
+  flex: 0 0 auto;
+  /* do not shrink */
+}
+
+@media (max-width: 720px) {
+  .experience-card {
+    width: 85vw;
+    /* keep snap on smaller screens */
+  }
+}
+
+/* Card top row */
+.experience-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.experience-card__ident {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.experience-card__titles {
+  display: grid;
+  gap: 2px;
+}
+
+.experience-card__role {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.experience-card__team {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+}
+
+/* Expand button (text-like) */
+.experience-card__expand {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.experience-card__expand:hover {
+  text-decoration: underline;
+}
+
+.experience-card__expand:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+/* Body */
+.experience-card__body {
+  margin-top: 12px;
+}
+
+.experience-card__desc {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.experience-card__desc li+li {
+  margin-top: 6px;
+}
+
+.experience-card__extra {
+  color: #0f172a;
+}
+
+/* Tech chips row */
+.experience-card__tech {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tech-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: #f8fafc;
+}
+
+/* Dark mode tolerances */
+@media (prefers-color-scheme: dark) {
+  .experience-card {
+    background: #0b1020;
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .work-title {
+    color: #e5e7eb;
+  }
+
+  .work-subtitle {
+    color: #94a3b8;
+  }
+
+  .work-meta {
+    color: #94a3b8;
+  }
+
+  .experience-card__role {
+    color: #e2e8f0;
+  }
+
+  .experience-card__team {
+    color: #94a3b8;
+  }
+
+  .experience-card__desc {
+    color: #cbd5e1;
+  }
 }

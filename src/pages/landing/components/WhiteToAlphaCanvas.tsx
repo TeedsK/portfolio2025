@@ -1,3 +1,4 @@
+// src/pages/landing/components/WhiteToAlphaCanvas.tsx
 import React, { useEffect, useRef } from 'react';
 
 type WhiteToAlphaCanvasProps = {
@@ -12,8 +13,11 @@ type WhiteToAlphaCanvasProps = {
     show?: boolean;
     /** Stacking order to sit above/below other layers */
     zIndex?: number;
-    /** Cut 5px from top and bottom as requested */
-    clipTopBottomPx?: number;
+
+    /** Separate top/bottom trims in DISPLAY pixels */
+    clipTopPx?: number;
+    clipBottomPx?: number;
+
     /**
      * Luminance thresholds:
      *  - pixels >= high are fully transparent
@@ -22,6 +26,7 @@ type WhiteToAlphaCanvasProps = {
      */
     whiteLow?: number;   // start fading (default 230)
     whiteHigh?: number;  // fully transparent (default 250)
+
     /** Pause processing for performance if not on screen, etc. */
     paused?: boolean;
     /** Optional className for positioning tweaks */
@@ -35,7 +40,8 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
     height,
     show = true,
     zIndex = 1,
-    clipTopBottomPx = 5,
+    clipTopPx = 0,
+    clipBottomPx = 0,
     whiteLow = 230,
     whiteHigh = 250,
     paused = false,
@@ -45,56 +51,64 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
     const tmpCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const rafRef = useRef<number | null>(null);
 
-    // Compute letterbox fit of source into our container
-    const getDestRect = (srcW: number, srcH: number) => {
+    // Compute letterboxed destination and equivalent source crop
+    const getRects = (srcW: number, srcH: number) => {
         const containerW = width;
         const containerH = height;
 
         if (containerW <= 0 || containerH <= 0 || srcW <= 0 || srcH <= 0) {
-            return { dx: 0, dy: 0, dw: 0, dh: 0 };
+            return { dx: 0, dy: 0, dw: 0, dh: 0, sx: 0, sy: 0, sw: 0, sh: 0 };
         }
 
         const srcAR = srcW / srcH;
         const dstAR = containerW / containerH;
 
-        let dw: number, dh: number, dx: number, dy: number;
-
+        // First, letterbox-fit the full source (no crop)
+        let dw0: number, dh0: number, dx0: number, dy0: number;
         if (srcAR > dstAR) {
             // fit to width
-            dw = containerW;
-            dh = containerW / srcAR;
-            dx = 0;
-            dy = (containerH - dh) / 2;
+            dw0 = containerW;
+            dh0 = containerW / srcAR;
+            dx0 = 0;
+            dy0 = (containerH - dh0) / 2;
         } else {
             // fit to height
-            dh = containerH;
-            dw = containerH * srcAR;
-            dy = 0;
-            dx = (containerW - dw) / 2;
+            dh0 = containerH;
+            dw0 = containerH * srcAR;
+            dy0 = 0;
+            dx0 = (containerW - dw0) / 2;
         }
 
-        // Trim 5px top & bottom in destination space
-        const clip = clipTopBottomPx ?? 0;
-        dy += clip;
-        dh = Math.max(0, dh - clip * 2);
+        const topCut = Math.max(0, clipTopPx || 0);
+        const bottomCut = Math.max(0, clipBottomPx || 0);
 
-        return { dx, dy, dw, dh };
+        // Destination rect after trimming in DISPLAY space
+        const dx = dx0;
+        const dy = dy0 + topCut;
+        const dw = dw0;
+        const dh = Math.max(0, dh0 - topCut - bottomCut);
+
+        // Convert the display-space trims back into SOURCE pixels, so we crop
+        // without changing the scale of the visible content.
+        const scaleY = dh0 > 0 ? dh0 / srcH : 1; // display px per source px (pre-trim)
+        const sy = Math.max(0, topCut / (scaleY || 1));
+        const sh = Math.max(1, srcH - sy - Math.max(0, bottomCut / (scaleY || 1)));
+        const sx = 0;
+        const sw = srcW;
+
+        return { dx, dy, dw, dh, sx, sy, sw, sh };
     };
 
     const processFrame = () => {
         const canvas = canvasRef.current;
         const srcEl = sourceRef.current;
-
         if (!canvas || !srcEl) return;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const srcW =
-            srcEl instanceof HTMLVideoElement ? srcEl.videoWidth : srcEl.naturalWidth;
-        const srcH =
-            srcEl instanceof HTMLVideoElement ? srcEl.videoHeight : srcEl.naturalHeight;
-
+        const srcW = srcEl instanceof HTMLVideoElement ? srcEl.videoWidth : (srcEl as HTMLImageElement).naturalWidth;
+        const srcH = srcEl instanceof HTMLVideoElement ? srcEl.videoHeight : (srcEl as HTMLImageElement).naturalHeight;
         if (!srcW || !srcH) return;
 
         // Prepare canvases
@@ -102,29 +116,26 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
             canvas.width = width;
             canvas.height = height;
         }
+        if (!tmpCanvasRef.current) tmpCanvasRef.current = document.createElement('canvas');
 
-        if (!tmpCanvasRef.current) {
-            tmpCanvasRef.current = document.createElement('canvas');
-        }
-
-        const tmp = tmpCanvasRef.current;
-        const { dx, dy, dw, dh } = getDestRect(srcW, srcH);
+        const { dx, dy, dw, dh, sx, sy, sw, sh } = getRects(srcW, srcH);
 
         // Avoid work when dimensions are not ready
-        if (dw <= 0 || dh <= 0) {
+        if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             return;
         }
 
-        // Draw the source scaled into the temp canvas (exactly the area we’ll show)
+        const tmp = tmpCanvasRef.current!;
         tmp.width = Math.max(1, Math.round(dw));
         tmp.height = Math.max(1, Math.round(dh));
         const tctx = tmp.getContext('2d');
         if (!tctx) return;
 
         tctx.clearRect(0, 0, tmp.width, tmp.height);
-        // Draw full source into the scaled dest frame
-        tctx.drawImage(srcEl, 0, 0, srcW, srcH, 0, 0, dw, dh);
+
+        // Draw with source crop matching the top/bottom display trims
+        tctx.drawImage(srcEl, sx, sy, sw, sh, 0, 0, dw, dh);
 
         // Pull pixels, convert near-white to transparent with soft edges
         const img = tctx.getImageData(0, 0, tmp.width, tmp.height);
@@ -172,7 +183,6 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
         }
 
         const tick = () => {
-            // For video we do it each frame, for image we can still refresh in case size changes
             processFrame();
             if (kind === 'video') {
                 rafRef.current = requestAnimationFrame(tick);
@@ -189,31 +199,26 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [show, paused, kind, width, height, clipTopBottomPx, whiteLow, whiteHigh, sourceRef]);
+    }, [show, paused, kind, width, height, clipTopPx, clipBottomPx, whiteLow, whiteHigh, sourceRef]);
 
     // Also redraw when the image loads or the video metadata becomes ready
     useEffect(() => {
         const el = sourceRef.current;
         if (!el) return;
 
-        const handleReady = () => {
-            if (kind === 'image') processFrame();
-        };
+        const handleReady = () => { processFrame(); };
 
         if (kind === 'image') {
-            if ((el as HTMLImageElement).complete) {
-                handleReady();
-            } else {
-                el.addEventListener('load', handleReady);
-            }
-            return () => el.removeEventListener('load', handleReady);
+            const img = el as HTMLImageElement;
+            if (img.complete) handleReady();
+            else img.addEventListener('load', handleReady);
+            return () => img.removeEventListener('load', handleReady);
         }
 
         if (kind === 'video') {
             const v = el as HTMLVideoElement;
-            const onMeta = () => processFrame();
-            v.addEventListener('loadedmetadata', onMeta);
-            return () => v.removeEventListener('loadedmetadata', onMeta);
+            v.addEventListener('loadedmetadata', handleReady);
+            return () => v.removeEventListener('loadedmetadata', handleReady);
         }
     }, [kind, sourceRef]); // eslint-disable-line react-hooks/exhaustive-deps
 

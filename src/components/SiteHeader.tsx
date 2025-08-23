@@ -156,15 +156,14 @@ const SiteHeader: React.FC = () => {
       .set(ddRef.current, { pointerEvents: 'auto' }, 0)
       .fromTo(
         ddRef.current,
-        { autoAlpha: 0, y: -8, rotateX: 6, filter: 'blur(8px)' },
-        { autoAlpha: 1, y: 0, rotateX: 0, filter: 'blur(0px)', duration: 0.24 }
+        { autoAlpha: 0, y: -8, rotateX: 6,  },
+        { autoAlpha: 1, y: 0, rotateX: 0, duration: 0.24 }
       );
 
     gsap.set(ddRef.current, {
       autoAlpha: 0,
       y: -8,
       rotateX: 6,
-      filter: 'blur(8px)',
       transformOrigin: 'top center',
       pointerEvents: 'none',
     });
@@ -198,7 +197,6 @@ const SiteHeader: React.FC = () => {
         autoAlpha: 0,
         y: -8,
         rotateX: 6,
-        filter: 'blur(8px)',
         pointerEvents: 'none',
       });
     }
@@ -331,7 +329,7 @@ const SiteHeader: React.FC = () => {
           onMouseEnter={suppressDropdown}
           onFocus={suppressDropdown}
         >
-          <a href="/" className={styles.brandText}>ttkremer</a>
+          <a href="/" className={styles.brandText}>ttkremer.com</a>
         </div>
 
         {/* Center nav (desktop only) */}

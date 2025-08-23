@@ -1,0 +1,201 @@
+/* src/pages/landing/styles/WorkExperience.css */
+
+/* ===========================================================
+   Work Experience Section
+   =========================================================== */
+.work-section {
+    width: 100%;
+    text-align: left;
+    margin-top: clamp(16px, 4vh, 56px);
+    scroll-margin-top: calc(var(--header-height) + 12px);
+}
+
+.work-header {
+    display: grid;
+    grid-template-columns: 58px auto;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding-inline: clamp(16px, 6vw, 48px);
+}
+
+.work-title {
+    margin: 0;
+    font-size: clamp(28px, 3.2vw, 36px);
+    line-height: 1.15;
+    color: #0f172a;
+}
+
+.work-subtitle {
+    margin: 4px 0;
+    color: #475569;
+    font-size: 16px;
+}
+
+.work-meta {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+/* Horizontal scroller with snap */
+.work-cards-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: clamp(16px, 6vw, 48px);
+    padding-inline: clamp(16px, 6vw, 48px);
+    padding-bottom: 8px;
+}
+
+.work-cards-rail {
+    display: flex;
+    flex-direction: row;
+    gap: 18px;
+    min-height: 1px;
+}
+
+/* Individual card */
+.experience-card {
+    scroll-snap-align: start;
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.03);
+    width: 560px;
+    padding: 16px 16px 12px;
+    flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+    .experience-card {
+        width: 85vw;
+    }
+}
+
+/* Card top row */
+.experience-card__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.experience-card__ident {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.experience-card__titles {
+    display: grid;
+    gap: 2px;
+}
+
+.experience-card__role {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.2;
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.experience-card__team {
+    margin: 0;
+    font-size: 14px;
+    color: #64748b;
+}
+
+/* Expand button (text-like) */
+.experience-card__expand {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: #2563eb;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.experience-card__expand:hover {
+    text-decoration: underline;
+}
+
+.experience-card__expand:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+/* Body */
+.experience-card__body {
+    margin-top: 12px;
+}
+
+.experience-card__desc {
+    margin: 0 0 10px;
+    padding-left: 18px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.experience-card__desc li+li {
+    margin-top: 6px;
+}
+
+.experience-card__extra {
+    color: #0f172a;
+}
+
+/* Tech chips row */
+.experience-card__tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tech-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: #f8fafc;
+}
+
+/* Dark mode tolerances */
+@media (prefers-color-scheme: dark) {
+    .experience-card {
+        background: #0b1020;
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    .work-title {
+        color: #e5e7eb;
+    }
+
+    .work-subtitle {
+        color: #94a3b8;
+    }
+
+    .work-meta {
+        color: #94a3b8;
+    }
+
+    .experience-card__role {
+        color: #e2e8f0;
+    }
+
+    .experience-card__team {
+        color: #94a3b8;
+    }
+
+    .experience-card__desc {
+        color: #cbd5e1;
+    }
+}

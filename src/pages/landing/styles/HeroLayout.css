@@ -1,0 +1,244 @@
+/* src/pages/landing/styles/HeroLayout.css */
+
+/* =========================
+   Full-screen hero wrapper
+   ========================= */
+.hero {
+    /* Occupy ~95–100vh *below* the fixed header. Use dvh where available. */
+    /* Lower bound (95vh) */
+    min-height: calc(95vh - var(--header-height));
+    min-height: calc(95svh - var(--header-height));
+    min-height: calc(95dvh - var(--header-height));
+    /* Target (100vh) with sensible fallbacks → last supported wins */
+    height: calc(100vh - var(--header-height));
+    height: calc(100svh - var(--header-height));
+    height: calc(100dvh - var(--header-height));
+
+    /* Center the split layout within this frame */
+    display: flex;
+    align-items: center;      /* vertical */
+    justify-content: center;  /* horizontal */
+
+    /* Breathing room (no header-height here; .page-frame offsets the header) */
+    padding: clamp(12px, 3vh, 28px) clamp(16px, 4vw, 40px);
+    box-sizing: border-box;
+    position: relative;
+    isolation: isolate; /* contain z-index layering for overlays */
+}
+
+/* ===== Split hero (left / right) ===== */
+.split-layout {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+    width: 100%;
+    align-items: center;
+    /* center both columns vertically within the hero */
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* ===== Left / Right columns inside the hero ===== */
+.left-column {
+    flex: 0 0 40%;
+    min-width: 40%;
+    max-width: 40%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    position: relative;
+    z-index: 2;
+}
+
+.right-column {
+    flex: 0 0 60%;
+    min-width: 60%;
+    max-width: 60%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    /* not sticky in hero so vertical centering works */
+    z-index: 2;
+}
+
+/* Respect your card width and keep it responsive */
+.media-column {
+    width: min(650px, 100%);
+    padding: 15px 15px 0 15px;
+    margin: 0;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.media-container {
+    position: relative;
+    display: block;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    background: transparent;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+/* Keep sources invisible; canvases render the visible content */
+.media-container img,
+.media-container video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    object-fit: contain;
+    opacity: 0;
+    /* hidden but still usable as canvas source */
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.screenshot-underlay {
+    position: absolute;
+    inset: 0;
+    object-fit: contain;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.media-container video {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+
+/* OCR output blocks */
+.ocr-output-container,
+.ocr-output-container--below {
+    width: 100%;
+    padding: 10px 15px;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left;
+}
+
+.ocr-output-container--below {
+    margin-top: 12px;
+}
+
+.ocr-output-body {
+    display: block;
+    width: 100%;
+    font-size: 1.1em;
+    transform-origin: left center;
+}
+
+.ocr-output-container h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 0.9em;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ocr-output-text {
+    display: block;
+    width: 100%;
+    white-space: pre-wrap;
+    min-height: 1.5em;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: inherit;
+    color: #333;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+.blinking-cursor {
+    font-weight: bold;
+    animation: blink 1s step-start 0s infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Title */
+h1 {
+    font-size: 3.2em;
+    line-height: 1.1;
+    margin: 0;
+}
+
+.portfolio-title {
+    text-align: left;
+    margin: 0;
+    font-size: 5em;
+    margin-left: 30px;
+}
+
+/* Right column container remains chrome-free */
+.steps-extra-info-container {
+    border: none;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+/* Media collapse effect */
+.shrink-vertical {
+    transform-origin: top center;
+    animation: shrinkVertical 0.45s ease-in forwards;
+}
+
+@keyframes shrinkVertical {
+    to {
+        transform: scaleY(0);
+        opacity: 0;
+    }
+}
+
+.character-overlay {
+    position: absolute;   /* was: fixed */
+    inset: 0;             /* fill the hero block */
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;           /* below the columns (z=2), above page bg */
+    overflow: visible;
+}
+
+.character-stream-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* =========================
+   Responsive adjustments
+   ========================= */
+@media (max-width: 1024px) {
+    .split-layout {
+        flex-direction: column;
+        gap: 1.5rem;
+        align-items: stretch;
+    }
+
+    .left-column,
+    .right-column {
+        min-width: 100%;
+        max-width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .portfolio-title {
+        margin-left: 0;
+        font-size: clamp(2.2rem, 6.5vw, 3.2rem);
+    }
+}

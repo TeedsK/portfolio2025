@@ -1,5 +1,5 @@
-// src/utils/canvasDrawing.ts
-import { PathManager, Point } from './path'; // Assuming Point is exported from path.ts
+// src/pages/landing/utils/canvasDrawing.ts
+import { PathManager, Point } from './path';
 
 /**
  * Draws a segment of a path (either curved via PathManager or straight) on a canvas context.
@@ -33,8 +33,11 @@ export function drawPathSegment(
     if (clampedStartDist >= clampedEndDist) return;
 
     ctx.beginPath();
-    const segments = 20; // Number of samples for this segment, can be adjusted
+
+    // Dynamic sampling: more points for longer visible segments → smoother curves
     const segmentActualLength = clampedEndDist - clampedStartDist;
+    const segments = Math.max(24, Math.min(64, Math.ceil(segmentActualLength / 12)));
+
     const step = segmentActualLength / segments;
 
     let firstPoint = true;
@@ -51,7 +54,7 @@ export function drawPathSegment(
                 y: pathOrPoints.p0.y + (pathOrPoints.p1.y - pathOrPoints.p0.y) * progress,
             };
         }
-        
+
         if (firstPoint) {
             ctx.moveTo(point.x, point.y);
             firstPoint = false;
@@ -65,3 +68,4 @@ export function drawPathSegment(
     ctx.lineJoin = 'round';
     ctx.stroke();
 }
+

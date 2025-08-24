@@ -22,11 +22,17 @@ interface AnimatedScanBoxProps {
     borderWidth?: number;
     /** Animation duration in seconds. Default: 0.18 */
     durationSec?: number;
+
+    /** Called every frame with the viewport rect of the box, or null when hidden. */
+    onBoxRectChange?: (rect: DOMRect | null) => void;
+    /** NEW: Fired once when the box has fully reached its target for the current character. */
+    onSettled?: () => void;
 }
 
 /**
  * Absolutely-positioned outline that smoothly animates its x/y/width/height
- * between OCR characters using GSAP.
+ * between OCR characters using GSAP. We also surface the *live* viewport
+ * rectangle every frame so external visualizations can lock onto it precisely.
  */
 const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
     target,
@@ -35,9 +41,12 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
     zIndex = 4,
     borderWidth = 2,
     durationSec = 0.18,
+    onBoxRectChange,
+    onSettled,
 }) => {
     const boxRef = useRef<HTMLDivElement>(null);
     const initializedRef = useRef(false);
+    const rafRef = useRef<number | null>(null);
 
     // Animate geometry + visibility whenever target/visible changes.
     useEffect(() => {
@@ -45,13 +54,15 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
         if (!el) return;
 
         if (!visible || !target) {
-            // Smooth fade out when no active character is present.
             gsap.to(el, { opacity: 0, duration: 0.15, ease: 'power1.inOut' });
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+            onBoxRectChange?.(null);
             return;
         }
 
-        // Ensure the element exists with basic style and is measurable.
         if (!initializedRef.current) {
+            // First appearance: snap to position and mark as settled on next frame
             gsap.set(el, {
                 left: target.left,
                 top: target.top,
@@ -60,8 +71,9 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
                 opacity: 1,
             });
             initializedRef.current = true;
+            requestAnimationFrame(() => onSettled?.());
         } else {
-            // Animate between sizes/positions for a seamless morph.
+            // Animate to the new target; when complete, declare "settled"
             gsap.to(el, {
                 left: target.left,
                 top: target.top,
@@ -70,11 +82,28 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
                 opacity: 1,
                 duration: durationSec,
                 ease: 'power2.out',
+                onComplete: () => onSettled?.(),
             });
         }
-    }, [target, visible, durationSec]);
 
-    // Visual style (kept static; geometry is animated).
+        // Sample the *live* box rect every frame while visible
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        const tick = () => {
+            if (boxRef.current) {
+                onBoxRectChange?.(boxRef.current.getBoundingClientRect());
+                rafRef.current = requestAnimationFrame(tick);
+            }
+        };
+        rafRef.current = requestAnimationFrame(tick);
+
+        return () => {
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+        };
+    }, [target, visible, durationSec, onBoxRectChange, onSettled]);
+
     return (
         <div
             ref={boxRef}
@@ -88,12 +117,9 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
                 border: `${borderWidth}px solid ${accentColor}`,
                 boxSizing: 'border-box',
                 borderRadius: 3,
-                // Subtle glow; a bit softer than the original for clarity when resizing.
                 boxShadow: `0 0 8px ${accentColor}66, 0 0 2px ${accentColor}80 inset`,
                 zIndex,
-                // Keep your existing pulsing feel from CSS keyframes if desired:
                 animation: 'scanPulse 1s ease-in-out infinite',
-                // Hint the browser what we animate frequently:
                 willChange: 'left, top, width, height, opacity',
             }}
             aria-label="ocr-scan-box"
@@ -102,3 +128,4 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
 };
 
 export default AnimatedScanBox;
+

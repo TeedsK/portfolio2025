@@ -4,41 +4,33 @@
    Full-screen hero wrapper
    ========================= */
 .hero {
-    /* Occupy ~95–100vh *below* the fixed header. Use dvh where available. */
-    /* Lower bound (95vh) */
     min-height: calc(95vh - var(--header-height));
     min-height: calc(95svh - var(--header-height));
     min-height: calc(95dvh - var(--header-height));
-    /* Target (100vh) with sensible fallbacks → last supported wins */
     height: calc(100vh - var(--header-height));
     height: calc(100svh - var(--header-height));
     height: calc(100dvh - var(--header-height));
 
-    /* Center the split layout within this frame */
     display: flex;
-    align-items: center;      /* vertical */
-    justify-content: center;  /* horizontal */
+    align-items: center;
+    justify-content: center;
 
-    /* Breathing room (no header-height here; .page-frame offsets the header) */
     padding: clamp(12px, 3vh, 28px) clamp(16px, 4vw, 40px);
     box-sizing: border-box;
     position: relative;
-    isolation: isolate; /* contain z-index layering for overlays */
+    isolation: isolate;
 }
 
-/* ===== Split hero (left / right) ===== */
 .split-layout {
     display: flex;
     flex-direction: row;
     gap: 2rem;
     width: 100%;
     align-items: center;
-    /* center both columns vertically within the hero */
     max-width: 1400px;
     margin: 0 auto;
 }
 
-/* ===== Left / Right columns inside the hero ===== */
 .left-column {
     flex: 0 0 40%;
     min-width: 40%;
@@ -57,11 +49,9 @@
     display: flex;
     flex-direction: column;
     position: relative;
-    /* not sticky in hero so vertical centering works */
     z-index: 2;
 }
 
-/* Respect your card width and keep it responsive */
 .media-column {
     width: min(650px, 100%);
     padding: 15px 15px 0 15px;
@@ -83,7 +73,6 @@
     border-radius: 4px;
 }
 
-/* Keep sources invisible; canvases render the visible content */
 .media-container img,
 .media-container video {
     display: block;
@@ -92,7 +81,6 @@
     box-sizing: border-box;
     object-fit: contain;
     opacity: 0;
-    /* hidden but still usable as canvas source */
     visibility: hidden;
     pointer-events: none;
 }
@@ -111,7 +99,6 @@
     z-index: 0;
 }
 
-/* OCR output blocks */
 .ocr-output-container,
 .ocr-output-container--below {
     width: 100%;
@@ -204,21 +191,27 @@ h1 {
     }
 }
 
+/* ...keep the rest of your file unchanged... */
+
 .character-overlay {
-    position: absolute;   /* was: fixed */
-    inset: 0;             /* fill the hero block */
-    width: 100%;
-    height: 100%;
+    /* FIXED to the viewport so coordinates match getBoundingClientRect(),
+       and scroll never misaligns the canvas and DOM targets */
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
     pointer-events: none;
-    z-index: 1;           /* below the columns (z=2), above page bg */
+    z-index: 1;           /* below the columns (z=2), above page background */
     overflow: visible;
 }
 
+/* The canvas inside is absolutely positioned to the overlay box */
 .character-stream-canvas {
     position: absolute;
     top: 0;
     left: 0;
 }
+
 
 /* =========================
    Responsive adjustments

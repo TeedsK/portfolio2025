@@ -7,50 +7,21 @@ export interface Point {
     y: number;
 }
 
-/**
- * Type for activation data extracted from tensors.
- * Allows for scalars (number) and nested arrays up to 4 dimensions.
- */
 export type ActivationDataValue = number | number[] | number[][] | number[][][] | number[][][][];
-
-/**
- * Structure for storing activation data, keyed by layer name.
- */
 export type ActivationData = Record<string, ActivationDataValue>;
 
-/**
- * Structure for storing extracted weights (example for Conv2D).
- */
 export interface Conv2DWeights {
     kernel: number[][][][]; // [h, w, in_channels, out_channels]
     bias: number[];         // [out_channels]
 }
 
-/**
- * Represents the bounding box data for a detected character.
- */
 export type BoundingBoxData = [number, number, number, number]; // x, y, w, h
-
-/**
- * Represents an item detected by segmentation - either a character box or a space (null).
- */
 export type ProcessableBox = BoundingBoxData | null;
-
-/**
- * Represents a single line of detected items (characters and spaces).
- */
 export type ProcessableLine = ProcessableBox[];
 
-/**
- * Structure for storing all extracted model weights, keyed by layer name.
- */
 export type ModelWeights = Record<string, Conv2DWeights>;
 
-// --- New Types for Typo Correction Backend ---
-export interface TagProbabilities {
-    [tag: string]: number;
-}
-
+export interface TagProbabilities { [tag: string]: number; }
 export interface TokenTypoDetail {
     token: string;
     pred_tag: string;
@@ -91,24 +62,20 @@ export interface OcrDisplayLine {
     y: number;
 }
 
-/**
- * Represents a character being animated in the stream visualization.
- */
+/** Legacy stream character (not used in new flow, kept for compatibility) */
 export interface StreamCharacter {
     id: string;
     charImage: ImageData;
     startX: number;
     startY: number;
-    path: PathManager; 
+    path: PathManager;
     animationState: 'appearing' | 'traveling' | 'fading' | 'finished';
     alpha: number;
     scale: number;
-    gradientSet: string[]; 
-    
-    headProgress: number; 
-    tailProgress: number; 
-    
-    isRetractingColorOverride: boolean; 
+    gradientSet: string[];
+    headProgress: number;
+    tailProgress: number;
+    isRetractingColorOverride: boolean;
     onFinished: () => void;
 }
 
@@ -119,11 +86,30 @@ export interface AnimationWave {
     gradientSet: string[];
 }
 
-/**
- * NEW: A recognized character (for placing under the scanned bounding box).
- */
+/** Beam used by ScanBeamViz in viewport pixels */
+// ...
+export interface ScanBeam {
+    id: string;
+    path: PathManager;
+    gradientSet: string[];
+    headProgress: number;
+    tailProgress: number;
+    alpha: number;
+    onFinished?: () => void;
+
+    /** NEW: document-anchored points so we can rebuild a scroll-safe path each frame */
+    docOrigin?: Point;
+    docElbow?: Point;
+    docTarget?: Point;
+    /** NEW: rounded corner radius for this path */
+    arcRadius?: number;
+}
+
+
+/** A recognized character (for placing under the scanned bounding box). */
 export interface RecognizedCharResult {
     id: string;
     box: BoundingBoxData;   // original image coords
     char: string;           // predicted letter
 }
+

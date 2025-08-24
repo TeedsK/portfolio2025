@@ -42,6 +42,9 @@ interface UseOcrProcessingOptions {
   visModel: tf.LayersModel | null;
   tfReady: boolean;
   isLoadingModel: boolean;
+
+  /** NEW: resolve only after the scan box fully covers the (line,item) */
+  waitForFocus?: (lineIndex: number, itemIndex: number) => Promise<void>;
 }
 
 interface UseOcrProcessingResult {
@@ -63,6 +66,7 @@ export default function useOcrProcessing({
   visModel,
   tfReady,
   isLoadingModel,
+  waitForFocus,
 }: UseOcrProcessingOptions): UseOcrProcessingResult {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [processableLines, setProcessableLines] = useState<ProcessableLine[]>([]);
@@ -91,6 +95,15 @@ export default function useOcrProcessing({
     const { box, lineIndex, itemIndex } = queueItem;
     setActiveItemIndex({ line: lineIndex, item: itemIndex });
 
+    // ⬇️ Gate: wait until the scan outline has fully settled on this character
+    try {
+      if (waitForFocus) {
+        await waitForFocus(lineIndex, itemIndex);
+      }
+    } catch {
+      // If something cancels the wait, proceed to keep UI responsive
+    }
+
     const paddedImageData = (() => {
       const [x, y, w, h] = box;
       const PADDING_FACTOR = 1.4;
@@ -105,7 +118,7 @@ export default function useOcrProcessing({
       padCtx.fillRect(0, 0, paddedSize, paddedSize);
       const drawX = (paddedSize - w) / 2;
       const drawY = (paddedSize - h) / 2;
-      padCtx.drawImage(imageCanvasRef.current, x, y, w, h, drawX, drawY, w, h);
+      padCtx.drawImage(imageCanvasRef.current!, x, y, w, h, drawX, drawY, w, h);
       return padCtx.getImageData(0, 0, paddedSize, paddedSize);
     })();
 
@@ -157,7 +170,7 @@ export default function useOcrProcessing({
         char: predictedLetter,
       },
     ]);
-  }, [visModel]);
+  }, [visModel, waitForFocus]);
 
   const runProcessingLoop = useCallback(async (queue: QueueItem[]) => {
     for (const item of queue) {
@@ -186,7 +199,6 @@ export default function useOcrProcessing({
     }
   }, [setNetworkWaves]);
 
-  // NOTE: The parameter is not currently used, but is kept to preserve type-safety at call sites.
   const startOcr = (_imageDimensions: { width: number; height: number }): Promise<string> => {
     return new Promise<string>((resolve) => {
       if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !model) {
@@ -209,7 +221,6 @@ export default function useOcrProcessing({
       const natW = img.naturalWidth;
       const natH = img.naturalHeight;
 
-      // ⬇️ Crop 5px top & bottom so black lines never reach the OCR pixels
       const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
       const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
       const srcW = natW;
@@ -217,14 +228,13 @@ export default function useOcrProcessing({
 
       const canvas = document.createElement('canvas');
       canvas.width = srcW;
-      canvas.height = srcH > 0 ? srcH : natH; // fallback to full height if something odd happens
+      canvas.height = srcH > 0 ? srcH : natH;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) { resolve(''); return; }
 
       if (srcH > 0) {
         ctx.drawImage(img, 0, cropTop, srcW, srcH, 0, 0, srcW, srcH);
       } else {
-        // fallback (shouldn't happen, but safe)
         ctx.drawImage(img, 0, 0, natW, natH);
       }
 
@@ -272,3 +282,4 @@ export default function useOcrProcessing({
     recognizedChars,
   };
 }
+

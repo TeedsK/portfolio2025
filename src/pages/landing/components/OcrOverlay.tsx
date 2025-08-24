@@ -15,21 +15,20 @@ export interface ActiveBoxInfo {
 
 export interface OcrOverlayProps {
     activeBoxInfo: ActiveBoxInfo;
-    /** Accent color for the active scan box + labels */
     accentColor?: string;
-    /** Already recognized characters (to render under their boxes) */
     recognizedChars?: RecognizedCharResult[];
+    /** Viewport rect of the live scan box every frame, or null when hidden */
+    onScanBoxAnchorChange?: (rect: DOMRect | null) => void;
+    /** NEW: fired once when the scan box fully settles on the current character */
+    onFocusSettled?: (line: number, item: number) => void;
 }
 
-/**
- * Overlay layered over the media container, mapping natural image coordinates
- * to displayed coordinates. Delegates the scanning rectangle animation to
- * <AnimatedScanBox />, and uses ephemeral, animated labels for characters.
- */
 const OcrOverlay: React.FC<OcrOverlayProps> = ({
     activeBoxInfo,
     accentColor = 'rgba(255,0,0,0.8)',
     recognizedChars = [],
+    onScanBoxAnchorChange,
+    onFocusSettled,
 }) => {
     const {
         activeItemIndex,
@@ -48,7 +47,6 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         return null;
     }
 
-    // Container for overlay (exactly the size of the media box, respecting letterbox).
     const containerStyle: React.CSSProperties = {
         position: 'absolute',
         top: '0',
@@ -60,7 +58,7 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         zIndex: 3,
     };
 
-    // Compute how the natural image maps to the displayed region.
+    // Mapping from natural image → displayed region (letterbox aware)
     const naturalImgWidth = imageRef.current.naturalWidth;
     const naturalImgHeight = imageRef.current.naturalHeight;
 
@@ -74,11 +72,9 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         const naturalAspectRatio = naturalImgWidth / naturalImgHeight;
 
         if (naturalAspectRatio > containerAspectRatio) {
-            // Image spans full width, letterbox vertically.
             displayedImgHeight = imageDimensions.width / naturalAspectRatio;
             offsetY = (imageDimensions.height - displayedImgHeight) / 2;
         } else {
-            // Image spans full height, letterbox horizontally.
             displayedImgWidth = imageDimensions.height * naturalAspectRatio;
             offsetX = (imageDimensions.width - displayedImgWidth) / 2;
         }
@@ -87,23 +83,13 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
     const scaleX = displayedImgWidth / naturalImgWidth;
     const scaleY = displayedImgHeight / naturalImgHeight;
 
-    // Respect the **visual** crop applied to the media (top & bottom by 5px)
     const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
     const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
 
-    // The visible content band inside the media element (in overlay px)
     const contentTopInOverlay = offsetY + cropTop * scaleY;
     const contentBottomInOverlay = offsetY + displayedImgHeight - cropBottom * scaleY;
 
-    /**
-     * Compute the rectangle in *overlay pixel coordinates* for the current active character.
-     * Add a small padding so the outline fully encapsulates the glyph even with minor
-     * segmentation or antialiasing variances.
-     *
-     * NOTE: The segmentation pipeline consumes a *cropped* image (top/bottom removed),
-     * so all y-coordinates from segmentation are relative to the cropped origin. To align
-     * with the visually cropped media, we add cropTop * scaleY to the overlay mapping.
-     */
+    /** Active scan rectangle in *overlay* pixels (for drawing) */
     const activeRect: RectPx | null = useMemo(() => {
         if (
             !showMediaElement ||
@@ -119,29 +105,23 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
 
         const [charX, charY, charW, charH] = item as BoundingBoxData;
 
-        // Padding in on-screen pixels — small but ensures “fully encapsulate”.
-        const PAD = 2; // px
-
+        const PAD = 2; // visual pad for the outline
         const left = offsetX + charX * scaleX - PAD;
-        // y from segmentation is relative to cropped top → add cropTop * scaleY
         const topRaw = contentTopInOverlay + charY * scaleY - PAD;
         const widthRaw = charW * scaleX + PAD * 2;
         const heightRaw = charH * scaleY + PAD * 2;
 
-        // Clamp within the **visible content band** to avoid spill due to rounding.
         const leftClamped = Math.max(0, Math.min(left, imageDimensions.width - 1));
         const topClamped = Math.max(contentTopInOverlay, Math.min(topRaw, contentBottomInOverlay - 1));
         const maxHeight = Math.max(1, contentBottomInOverlay - topClamped);
         const heightClamped = Math.max(1, Math.min(heightRaw, maxHeight));
 
-        const clamped: RectPx = {
+        return {
             left: leftClamped,
             top: topClamped,
             width: Math.max(1, Math.min(widthRaw, imageDimensions.width - leftClamped)),
             height: heightClamped,
         };
-
-        return clamped;
     }, [
         activeItemIndex,
         processableLines,
@@ -157,12 +137,10 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
         contentBottomInOverlay,
     ]);
 
-    // --- Ephemeral, animated labels for recognized characters ---
-    // Only show *new* recognized items briefly; they auto-remove after their out-animation.
+    // --- (Optional) ephemeral labels ---
     const [visibleLabels, setVisibleLabels] = useState<RecognizedCharResult[]>([]);
     const seenIdsRef = useRef<Set<string>>(new Set());
 
-    // Add only unseen items to the visible list
     useEffect(() => {
         if (!recognizedChars || recognizedChars.length === 0) return;
         const newlyAdded: RecognizedCharResult[] = [];
@@ -172,37 +150,47 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
                 newlyAdded.push(rc);
             }
         }
-        if (newlyAdded.length) {
-            setVisibleLabels(prev => [...prev, ...newlyAdded]);
-        }
+        if (newlyAdded.length) setVisibleLabels(prev => [...prev, ...newlyAdded]);
     }, [recognizedChars]);
 
-    // Stable callback so child effects do NOT restart on each render
     const handleLabelDone = useCallback((id: string) => {
         setVisibleLabels(prev => prev.filter(rc => rc.id !== id));
     }, []);
 
-    // Precompute positioned labels (in overlay pixel coordinates), anchored beneath each box
+    // Convert the live box rect (viewport coords) → notify parent each frame
+    const handleBoxRectChange = useCallback(
+        (rect: DOMRect | null) => {
+            onScanBoxAnchorChange?.(rect);
+        },
+        [onScanBoxAnchorChange],
+    );
+
+    // Fired once when the box has fully animated onto the current character
+    const handleBoxSettled = useCallback(() => {
+        if (activeItemIndex) {
+            onFocusSettled?.(activeItemIndex.line, activeItemIndex.item);
+        }
+    }, [activeItemIndex, onFocusSettled]);
+
     const positionedLabels = useMemo(() => {
         return visibleLabels.map(rc => {
             const [x, y, w, h] = rc.box;
             const left = offsetX + x * scaleX + (w * scaleX) / 2;
-            // y from segmentation relative to cropped origin → add cropTop * scaleY
-            const top = contentTopInOverlay + (y + h) * scaleY + 4; // 4px below the box
+            const top = contentTopInOverlay + (y + h) * scaleY + 4;
             return { id: rc.id, char: rc.char, left, top };
         });
     }, [visibleLabels, offsetX, scaleX, scaleY, contentTopInOverlay]);
 
     return (
         <div className="overlay-container" style={containerStyle}>
-            {/* Smoothly-animated scan outline that morphs between target rectangles */}
             <AnimatedScanBox
                 target={activeRect}
                 accentColor={accentColor}
                 visible={Boolean(activeRect)}
+                onBoxRectChange={handleBoxRectChange}
+                onSettled={handleBoxSettled}
             />
 
-            {/* Ephemeral animated labels for recently recognized characters */}
             {/* {positionedLabels.map(lbl => (
                 <RecognizedCharLabel
                     key={lbl.id}
@@ -222,3 +210,4 @@ const OcrOverlay: React.FC<OcrOverlayProps> = ({
 };
 
 export default OcrOverlay;
+

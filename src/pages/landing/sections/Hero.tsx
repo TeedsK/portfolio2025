@@ -1,12 +1,11 @@
 // src/pages/landing/sections/Hero.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Alert, Spin } from 'antd';
 import '../styles/HeroLayout.css';
 import gsap from 'gsap';
 import OcrOverlay from "../components/OcrOverlay";
-import CharacterStreamViz from '../components/CharacterStreamViz';
 import useOcrProcessing from '../hooks/useOcrProcessing';
-import { StreamCharacter, AnimationWave } from '../../../types';
+import { StreamCharacter, AnimationWave, ScanBeam, Point } from '../../../types';
 import { processOcrText, CorrectedTextPart } from '../utils/correctionData';
 import { NetworkGraphViz } from '../components/NetworkGraphViz';
 import AnimatedTypoText from '../components/AnimatedTypoText';
@@ -22,13 +21,9 @@ import {
     MEDIA_CROP_BOTTOM_PX
 } from '../utils/constants';
 import { useTfModel } from '../../../utils/useTfModel';
-import {
-    CHAR_BOX_CONTENT_WIDTH,
-    CHAR_BOX_CONTENT_HEIGHT,
-    CHAR_BOX_PADDING
-} from '../utils/animation';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
+import ScanBeamViz from '../components/ScanBeamViz';
 
 const GRAPH_CANVAS_HEIGHT = 340; // compact footprint
 
@@ -36,7 +31,6 @@ type OcrSourceIndex = 0 | 1;
 
 const Hero: React.FC = () => {
     const [errorState, setErrorState] = useState<string | null>(null);
-    const [streamCharacters, setStreamCharacters] = useState<StreamCharacter[]>([]);
     const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
 
     const gradientIndex1Ref = useRef(0);
@@ -45,7 +39,7 @@ const Hero: React.FC = () => {
     const [hasCollapsedMedia1, setHasCollapsedMedia1] = useState<boolean>(false);
     const [hasCollapsedMedia2, setHasCollapsedMedia2] = useState<boolean>(false);
 
-    // --- Section 1 state (Screenshot) ---
+    // --- Section 1 state (Screenshot / bottom) ---
     const [imageDimensions1, setImageDimensions1] = useState<{ width: number; height: number } | null>(null);
     const [isVideoPlaying1, setIsVideoPlaying1] = useState<boolean>(true);
     const [shouldStartOcr1, setShouldStartOcr1] = useState<boolean>(false);
@@ -60,7 +54,7 @@ const Hero: React.FC = () => {
     const ocrOutputRef1 = useRef<HTMLDivElement>(null);
     const hasAnimatedOutput1 = useRef(false);
 
-    // --- Section 2 state (Handwriting) ---
+    // --- Section 2 state (Handwriting / top) ---
     const [imageDimensions2, setImageDimensions2] = useState<{ width: number; height: number } | null>(null);
     const [isVideoPlaying2, setIsVideoPlaying2] = useState<boolean>(true);
     const [shouldStartOcr2, setShouldStartOcr2] = useState<boolean>(false);
@@ -151,146 +145,125 @@ const Hero: React.FC = () => {
         }
     }, [shouldStartOcr2, imageDimensions2, ocrProcess2, tfReady, isLoadingModel, handleOcrFinished]);
 
-    /* ====== NETWORK ENTRY (local → viewport coords) ====== */
-    const getCentralConnectionPoint = useCallback(() => {
-        const width = networkContainerRef.current?.clientWidth ?? 800;
-        // Match NetworkGraphViz's internal default exactly to prevent 1–3px drift.
-        const x = Math.max(20, Math.floor(width * 0.15));
-        return { x, y: Math.floor(GRAPH_CANVAS_HEIGHT / 2) };
+    /** ===== Network entry point (single source of truth) =====
+     * Keep the very same point for both the beam path and the graph.
+     */
+    const calcCentralPoint = useCallback((w: number, h: number): Point => {
+        return { x: Math.max(20, Math.floor(w * 0.15)), y: Math.floor(h / 2) };
     }, []);
+    const networkCanvasSize = useMemo(() => ({
+        width: networkContainerRef.current?.clientWidth ?? 800,
+        height: GRAPH_CANVAS_HEIGHT
+    }), [networkContainerRef.current?.clientWidth]);
 
-    /* ====== NEW: overlay size = hero size (not viewport) ====== */
-    const heroRef = useRef<HTMLElement>(null);
-    const [overlaySize, setOverlaySize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
-
+    // keep viewport (fixed) overlay size in sync
+    const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
+        width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+        height: typeof window !== 'undefined' ? window.innerHeight : 800
+    });
     useEffect(() => {
-        const update = () => {
-            if (!heroRef.current) return;
-            const rect = heroRef.current.getBoundingClientRect();
-            setOverlaySize({ width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) });
-        };
-        update(); // initial
-
-        let ro: ResizeObserver | null = null;
-        if (heroRef.current && typeof ResizeObserver !== 'undefined') {
-            ro = new ResizeObserver(update);
-            ro.observe(heroRef.current);
-        }
-        window.addEventListener('resize', update);
-        return () => {
-            window.removeEventListener('resize', update);
-            ro?.disconnect();
-        };
+        const onResize = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
     }, []);
 
-    const characterOverlayRef = useRef<HTMLDivElement>(null);
+    // Global, fixed overlay for beams (viewport coords)
+    const beamOverlayRef = useRef<HTMLDivElement>(null);
 
-    /* ====== Spawn ONLY to the LEFT of the neural graph, in HERO-LOCAL coords ====== */
-    const addCharacterToStream = useCallback((
-        char: string | null,
-        imageData: ImageData | null,
-        onAnimFinishedCallback: (processedCharString: string, gradientSetForWave: string[]) => void,
-        _sourceName: "Scan 1 (Video)" | "Scan 2 (Static)",
-        chosenGradientSet: string[]
+    // Live scan box anchors (viewport px) — maintain one per source
+    const scanAnchorViewportRef1 = useRef<Point | null>(null); // bottom image/video (source 0)
+    const scanAnchorViewportRef2 = useRef<Point | null>(null); // top handwriting (source 1)
+    const handleScanBoxAnchorChange1 = useCallback((pt: Point | null) => { scanAnchorViewportRef1.current = pt; }, []);
+    const handleScanBoxAnchorChange2 = useCallback((pt: Point | null) => { scanAnchorViewportRef2.current = pt; }, []);
+
+    // ===== Beams state =====
+    const [beams, setBeams] = useState<ScanBeam[]>([]);
+    const onBeamFinished = useCallback((id: string) => {
+        setBeams(prev => prev.filter(b => b.id !== id));
+    }, []);
+
+    // Helper: spawn a beam using a given origin (viewport px)
+    const addBeamFromScanner = useCallback((
+        originViewport: Point | null,
+        gradientSet: string[],
+        onAnimFinishedCallback: (processedCharString: string, gradientSet: string[]) => void,
+        processedChar: string
     ) => {
-        if (!char || !imageData) return;
+        if (!originViewport || !networkContainerRef.current) return;
 
-        const overlayRect = characterOverlayRef.current?.getBoundingClientRect();
-        const heroRect = heroRef.current?.getBoundingClientRect();
-        const netRect = networkContainerRef.current?.getBoundingClientRect();
+        const netRect = networkContainerRef.current.getBoundingClientRect();
+        const netW = networkContainerRef.current.clientWidth || 800;
+        const localCentral = calcCentralPoint(netW, GRAPH_CANVAS_HEIGHT);
 
-        // Dimensions for the overlay canvas (hero-local)
-        const overlayW = overlayRect?.width ?? overlaySize.width;
-        const overlayH = overlayRect?.height ?? overlaySize.height;
+        // Compute *viewport* entry point for the graph, then convert to document space
+        const netEntryViewport = { x: Math.round(netRect.left + localCentral.x), y: Math.round(netRect.top + localCentral.y) };
 
-        // Network entry in HERO-LOCAL coords
-        const centralLocal = getCentralConnectionPoint();
-        const centerInOverlay = (netRect && heroRect)
-            ? {
-                x: Math.round((netRect.left - heroRect.left) + centralLocal.x),
-                y: Math.round((netRect.top - heroRect.top) + centralLocal.y),
-            }
-            : { x: Math.round(overlayW * 0.75), y: Math.round(overlayH / 2) };
+        // Convert origin + entry to *document* space so the path stays stable while scrolling
+        const sx = window.scrollX || 0;
+        const sy = window.scrollY || 0;
+        const originDoc = { x: originViewport.x + sx, y: originViewport.y + sy };
+        const targetDoc = { x: netEntryViewport.x + sx, y: netEntryViewport.y + sy };
 
-        // Character box dims
-        const totalBoxW = CHAR_BOX_CONTENT_WIDTH + CHAR_BOX_PADDING * 2;
-        const totalBoxH = CHAR_BOX_CONTENT_HEIGHT + CHAR_BOX_PADDING * 2;
-        const halfW = totalBoxW / 2;
-        const halfH = totalBoxH / 2;
+        // Force the line to leave the OCR box either from above or below, with a bit of randomness
+        const verticalKick = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120); // 80..200px up/down
+        const lateralJitter = (Math.random() - 0.5) * 60;                                   // -30..+30px sideways
+        const elbowDoc = { x: originDoc.x + lateralJitter, y: originDoc.y + verticalKick };
 
-        // Constrain spawn X to the left of the neural graph (still hero-local)
-        const margin = 25;
-        const graphLeftLocal = (netRect && heroRect) ? (netRect.left - heroRect.left) : Math.round(overlayW * 0.6);
-        const maxXLeftOfGraph = Math.max(halfW + margin, Math.min(graphLeftLocal - margin - halfW, overlayW - halfW - margin));
+        // Rounded corner amount
+        const arcRadius = 48 + Math.random() * 24; // 48..72px for smoother bends
 
-        const minXCenter = halfW + margin;
-        const maxXCenter = Math.max(minXCenter, maxXLeftOfGraph);
-        const minYCenter = halfH + margin;
-        const maxYCenter = overlayH - halfH - margin;
+        // Build current *viewport* path to start animating immediately
+        const p0 = { x: originDoc.x - sx, y: originDoc.y - sy };
+        const p1 = { x: elbowDoc.x - sx, y: elbowDoc.y - sy };
+        const p2 = { x: targetDoc.x - sx, y: targetDoc.y - sy };
+        const path = new PathManager(p0, p1, p2, arcRadius);
 
-        const cx = Math.min(maxXCenter, Math.max(minXCenter, Math.random() * (maxXCenter - minXCenter) + minXCenter));
-        const cy = Math.min(maxYCenter, Math.max(minYCenter, Math.random() * (maxYCenter - minYCenter) + minYCenter));
-
-        // Path: char box center -> gentle “L” -> network entry (all hero-local)
-        const p0Center = { x: cx, y: cy };
-        const p2 = centerInOverlay;
-        const p1 = Math.random() > 0.5 ? { x: p0Center.x, y: p2.y } : { x: p2.x, y: p0Center.y };
-
-        const topLeftX = p0Center.x - halfW;
-        const topLeftY = p0Center.y - halfH;
-
-        setStreamCharacters(prev => ([
+        setBeams(prev => ([
             ...prev,
             {
-                id: `char-${Date.now()}-${Math.random()}`,
-                charImage: imageData,
-                startX: topLeftX,
-                startY: topLeftY,
-                path: new PathManager(p0Center, p1, p2, 15),
-                animationState: 'appearing',
-                alpha: 0,
-                scale: 0.5,
-                gradientSet: chosenGradientSet,
+                id: `beam-${Date.now()}-${Math.random()}`,
+                path,
+                gradientSet,
                 headProgress: 0,
                 tailProgress: 0,
-                isRetractingColorOverride: false,
-                onFinished: () => onAnimFinishedCallback(char, chosenGradientSet),
+                alpha: 1,
+                onFinished: () => onAnimFinishedCallback(processedChar, gradientSet),
+                // NEW: scroll-safe anchors so the renderer can rebuild the path every frame
+                docOrigin: originDoc,
+                docElbow: elbowDoc,
+                docTarget: targetDoc,
+                arcRadius,
             }
         ]));
-    }, [overlaySize.width, overlaySize.height, getCentralConnectionPoint]);
+    }, [calcCentralPoint]);
 
-    // Feed characters
+    /** When OCR produces a character, launch a beam for that source. */
     useEffect(() => {
-        if (ocrProcess1.currentChar && ocrProcess1.currentCharImageData) {
+        if (ocrProcess1.currentChar) {
             const idx = gradientIndex1Ref.current % TEXT_SCREENSHOT_GRADIENTS.length;
-            addCharacterToStream(
-                ocrProcess1.currentChar,
-                ocrProcess1.currentCharImageData,
+            addBeamFromScanner(
+                scanAnchorViewportRef1.current,
+                TEXT_SCREENSHOT_GRADIENTS[idx],
                 ocrProcess1.onCharAnimationFinished,
-                "Scan 1 (Static)",
-                TEXT_SCREENSHOT_GRADIENTS[idx]
+                ocrProcess1.currentChar
             );
             gradientIndex1Ref.current++;
         }
-    }, [ocrProcess1.currentChar, ocrProcess1.currentCharImageData, ocrProcess1.onCharAnimationFinished, addCharacterToStream]);
+    }, [ocrProcess1.currentChar, ocrProcess1.onCharAnimationFinished, addBeamFromScanner]);
 
     useEffect(() => {
-        if (ocrProcess2.currentChar && ocrProcess2.currentCharImageData) {
+        if (ocrProcess2.currentChar) {
             const idx = gradientIndex2Ref.current % HELLO_WELCOME_GRADIENTS.length;
-            addCharacterToStream(
-                ocrProcess2.currentChar,
-                ocrProcess2.currentCharImageData,
+            addBeamFromScanner(
+                scanAnchorViewportRef2.current,
+                HELLO_WELCOME_GRADIENTS[idx],
                 ocrProcess2.onCharAnimationFinished,
-                "Scan 2 (Static)",
-                HELLO_WELCOME_GRADIENTS[idx]
+                ocrProcess2.currentChar
             );
             gradientIndex2Ref.current++;
         }
-    }, [ocrProcess2.currentChar, ocrProcess2.currentCharImageData, ocrProcess2.onCharAnimationFinished, addCharacterToStream]);
+    }, [ocrProcess2.currentChar, ocrProcess2.onCharAnimationFinished, addBeamFromScanner]);
 
-    const onCharacterFinishedStreamViz = useCallback((id: string) => {
-        setStreamCharacters(prev => prev.filter(c => c.id !== id));
-    }, []);
     const onNetworkWaveFinishedApp = useCallback((waveId: string) => {
         setNetworkWaves(prev => prev.filter(w => w.id !== waveId));
     }, []);
@@ -306,7 +279,7 @@ const Hero: React.FC = () => {
         }
     };
 
-    /* collapse / enlarge routines */
+    /* collapse / enlarge routines (unchanged) */
     const collapseMediaContainer = useCallback((sourceIndex: OcrSourceIndex) => {
         const containerRef = sourceIndex === 0 ? mediaContainerRef1 : mediaContainerRef2;
         const outputRef = sourceIndex === 0 ? ocrOutputRef1 : ocrOutputRef2;
@@ -333,10 +306,8 @@ const Hero: React.FC = () => {
             }
         });
 
-        // 1) Collapse media container
         tl.to(containerEl, { height: 0, opacity: 0, duration: 0.55 });
 
-        // 2) Remove chrome
         if (columnEl) {
             tl.to(columnEl, {
                 boxShadow: '0px 0px 0px 0px rgba(0,0,0,0)',
@@ -347,7 +318,6 @@ const Hero: React.FC = () => {
             }, 0);
         }
 
-        // 3) Enlarge OCR text
         if (outputEl) {
             const heading = outputEl.querySelector('h3') as HTMLElement | null;
             if (heading) {
@@ -372,7 +342,7 @@ const Hero: React.FC = () => {
         collapseMediaContainer(sourceIndex);
     };
 
-    // first appearance of OCR blocks
+    // first appearance of OCR blocks (unchanged)
     useEffect(() => {
         const shouldAnimate1 = (ocrProcess1.liveOcrText.length > 0 || correctedTextParts1.length > 0) && !hasAnimatedOutput1.current;
         if (shouldAnimate1 && ocrOutputRef1.current) {
@@ -392,10 +362,16 @@ const Hero: React.FC = () => {
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
 
+    // Central point for the graph (shared with beam end)
+    const centralPointForGraph = useMemo(
+        () => calcCentralPoint(networkCanvasSize.width, networkCanvasSize.height),
+        [calcCentralPoint, networkCanvasSize.width, networkCanvasSize.height]
+    );
+
     return (
         <>
             {/* ======= Full-screen hero ======= */}
-            <section ref={heroRef} className="hero" style={{ ['--title-left-offset' as any]: '30px' }}>
+            <section className="hero" style={{ ['--title-left-offset' as any]: '30px' }}>
                 <div className="split-layout">
                     <div className="left-column">
                         {/* ------ Section 2: Handwriting (TOP) ------ */}
@@ -462,6 +438,7 @@ const Hero: React.FC = () => {
                                             imageRef: imageRef2,
                                             showMediaElement: !hasCollapsedMedia2
                                         }}
+                                        onScanBoxAnchorChange={handleScanBoxAnchorChange2}
                                     />
                                 )}
                             </div>
@@ -551,6 +528,7 @@ const Hero: React.FC = () => {
                                             imageRef: imageRef1,
                                             showMediaElement: !hasCollapsedMedia1
                                         }}
+                                        onScanBoxAnchorChange={handleScanBoxAnchorChange1}
                                     />
                                 )}
                             </div>
@@ -592,7 +570,7 @@ const Hero: React.FC = () => {
                                         outputLayerName={FINAL_LAYER_NAME}
                                         width={networkContainerRef.current.clientWidth}
                                         height={GRAPH_CANVAS_HEIGHT}
-                                        centralConnectionPoint={getCentralConnectionPoint()}
+                                        centralConnectionPoint={centralPointForGraph}
                                     />
                                 )}
                             </div>
@@ -606,12 +584,12 @@ const Hero: React.FC = () => {
                     </div>
                 </div>
 
-                {/* UNDER content overlay (now local to hero) */}
-                <div ref={characterOverlayRef} className="character-overlay" aria-hidden>
-                    <CharacterStreamViz
-                        characters={streamCharacters}
-                        containerSize={overlaySize}
-                        onCharacterFinished={onCharacterFinishedStreamViz}
+                {/* UNDER content overlay (fixed to viewport) */}
+                <div ref={beamOverlayRef} className="character-overlay" aria-hidden>
+                    <ScanBeamViz
+                        beams={beams}
+                        containerSize={viewportSize}
+                        onBeamFinished={onBeamFinished}
                     />
                 </div>
             </section>

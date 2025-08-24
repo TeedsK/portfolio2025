@@ -71,7 +71,8 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
     const animationFrameId = useRef<number>();
     const initiatedAnimations = useRef(new Set<string>());
 
-    const GRAY_COLOR = '#AAAAAA'; 
+    const GRAY_COLOR = '#D0D5DD';
+    const HEAD_COLOR_RATIO = 0.10;
 
     useEffect(() => {
         characters.forEach((character) => {
@@ -83,10 +84,10 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             log(`[CharacterStreamViz] Initiating animation for character ID: ${character.id}`);
             
             character.animationState = 'traveling';
-            character.isRetractingColorOverride = false; 
-            
-            const characterShrinkScale = 0.28; 
-            const characterMaxScale = 0.85;
+            character.isRetractingColorOverride = false;
+
+            gsap.set(character, { alpha: 0, scale: 0 });
+
 
             const tl = gsap.timeline({
                 onComplete: () => {
@@ -98,9 +99,10 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
             tl.to(character, {
                 alpha: 1,
-                scale: characterMaxScale,
+                scale: 1,
                 duration: CHAR_FADE_IN_DURATION,
-                ease: 'power1.out',
+                ease: 'power2.out',
+                overwrite: 'auto',
             });
             
             tl.to(character, {
@@ -110,35 +112,29 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 onComplete: () => {
                      character.onFinished(); 
                 }
-            }, CHAR_FADE_IN_DURATION); 
+            }, CHAR_FADE_IN_DURATION);
 
-            const lineShrinkTl = gsap.timeline();
-            lineShrinkTl.to(character, {
+            // Retract the line (no scale changes here; keep at 1 until the end)
+            tl.to(character, {
                 tailProgress: 1,
                 duration: CHAR_LINE_DRAW_DURATION,
                 ease: 'linear',
                 onStart: () => {
-                    character.isRetractingColorOverride = true; 
+                    character.isRetractingColorOverride = true;
                 },
-            });
-            lineShrinkTl.to(character, {
-                scale: characterShrinkScale,
-                duration: CHAR_LINE_DRAW_DURATION, 
-                ease: 'power1.inOut'
-            }, 0); 
-
-            tl.add(lineShrinkTl, CHAR_FADE_IN_DURATION + CHAR_LINE_DRAW_DURATION); 
+            }, CHAR_FADE_IN_DURATION + CHAR_LINE_DRAW_DURATION);
 
             tl.to(character, {
                 alpha: 0,
-                scale: 0, 
+                scale: 0,
                 duration: CHAR_FADE_OUT_DURATION,
                 ease: 'power1.in',
-                delay: CHAR_FADE_OUT_DELAY, 
+                delay: CHAR_FADE_OUT_DELAY,
                 onStart: () => {
                     character.animationState = 'fading';
-                    character.isRetractingColorOverride = true; 
+                    character.isRetractingColorOverride = true;
                 },
+                overwrite: 'auto',
             });
 
         });
@@ -161,14 +157,24 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 const snakeVisibleStartDist = char.tailProgress * path.totalLength;
                 const snakeVisibleEndDist = char.headProgress * path.totalLength;
                 
-                let lineStrokeStyle: string | CanvasGradient = char.gradientSet[0];
+                let lineStrokeStyle: string | CanvasGradient = GRAY_COLOR;
                 if (path.totalLength > 0) {
+                    // Grey for the first 90%, then blend into the letter color(s) for the final 10%.
                     const p0 = path.getPointAt(0);
                     const p2 = path.getPointAt(path.totalLength);
                     const gradient = ctx.createLinearGradient(p0.x, p0.y, p2.x, p2.y);
-                    char.gradientSet.forEach((color, index) => {
-                        gradient.addColorStop(Math.min(1, index / (char.gradientSet.length -1 || 1)), color);
-                    });
+                    const split = 1 - HEAD_COLOR_RATIO; // 0.90
+                    gradient.addColorStop(0, GRAY_COLOR);
+                    gradient.addColorStop(split, GRAY_COLOR);
+                    // Spread char.gradientSet over the last 10%
+                    const n = Math.max(2, char.gradientSet.length);
+                    for (let i = 0; i < n; i++) {
+                        const t = i / (n - 1);
+                        gradient.addColorStop(
+                            split + t * HEAD_COLOR_RATIO,
+                            char.gradientSet[Math.min(i, char.gradientSet.length - 1)]
+                        );
+                    }
                     lineStrokeStyle = gradient;
                 }
 

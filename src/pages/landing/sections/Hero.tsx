@@ -154,7 +154,8 @@ const Hero: React.FC = () => {
     /* ====== NETWORK ENTRY (local → viewport coords) ====== */
     const getCentralConnectionPoint = useCallback(() => {
         const width = networkContainerRef.current?.clientWidth ?? 800;
-        const x = Math.max(24, Math.round(width * 0.12));   // slightly tighter to the left
+        // Match NetworkGraphViz's internal default exactly to prevent 1–3px drift.
+        const x = Math.max(20, Math.floor(width * 0.15));
         return { x, y: Math.floor(GRAPH_CANVAS_HEIGHT / 2) };
     }, []);
 
@@ -591,6 +592,7 @@ const Hero: React.FC = () => {
                                         outputLayerName={FINAL_LAYER_NAME}
                                         width={networkContainerRef.current.clientWidth}
                                         height={GRAPH_CANVAS_HEIGHT}
+                                        centralConnectionPoint={getCentralConnectionPoint()}
                                     />
                                 )}
                             </div>

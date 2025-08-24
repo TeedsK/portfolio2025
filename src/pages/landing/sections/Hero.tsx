@@ -5,7 +5,7 @@ import '../styles/HeroLayout.css';
 import gsap from 'gsap';
 import OcrOverlay from "../components/OcrOverlay";
 import useOcrProcessing from '../hooks/useOcrProcessing';
-import { StreamCharacter, AnimationWave, ScanBeam, Point } from '../../../types';
+import { AnimationWave, ScanBeam, Point } from '../../../types';
 import { processOcrText, CorrectedTextPart } from '../utils/correctionData';
 import { NetworkGraphViz } from '../components/NetworkGraphViz';
 import AnimatedTypoText from '../components/AnimatedTypoText';
@@ -25,7 +25,8 @@ import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
 
-const GRAPH_CANVAS_HEIGHT = 340; // compact footprint
+const GRAPH_CANVAS_HEIGHT = 340;
+const BOTTOM_Y_LIFT_PX = 30;
 
 type OcrSourceIndex = 0 | 1;
 
@@ -52,7 +53,9 @@ const Hero: React.FC = () => {
     const mediaContainerRef1 = useRef<HTMLDivElement>(null);
     const mediaColumnRef1 = useRef<HTMLDivElement>(null);
     const ocrOutputRef1 = useRef<HTMLDivElement>(null);
-    const hasAnimatedOutput1 = useRef(false);
+    const scaleShellRef1 = useRef<HTMLDivElement>(null);
+    const hasMountedOutput1 = useRef(false);
+    const [readyForTypos1, setReadyForTypos1] = useState<boolean>(false);
 
     // --- Section 2 state (Handwriting / top) ---
     const [imageDimensions2, setImageDimensions2] = useState<{ width: number; height: number } | null>(null);
@@ -67,7 +70,9 @@ const Hero: React.FC = () => {
     const mediaContainerRef2 = useRef<HTMLDivElement>(null);
     const mediaColumnRef2 = useRef<HTMLDivElement>(null);
     const ocrOutputRef2 = useRef<HTMLDivElement>(null);
-    const hasAnimatedOutput2 = useRef(false);
+    const scaleShellRef2 = useRef<HTMLDivElement>(null);
+    const hasMountedOutput2 = useRef(false);
+    const [readyForTypos2, setReadyForTypos2] = useState<boolean>(false);
 
     const {
         model,
@@ -83,6 +88,36 @@ const Hero: React.FC = () => {
 
     const ocrProcess1 = useOcrProcessing({ imageRef: imageRef1, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
     const ocrProcess2 = useOcrProcessing({ imageRef: imageRef2, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
+
+    const lockAndSwapToTypos = useCallback((sourceIndex: OcrSourceIndex) => {
+        const outRef = sourceIndex === 0 ? ocrOutputRef1 : ocrOutputRef2;
+        const bodyEl = outRef.current?.querySelector('.ocr-output-body') as HTMLDivElement | null;
+        if (!bodyEl) {
+            if (sourceIndex === 0) setReadyForTypos1(true);
+            else setReadyForTypos2(true);
+            return;
+        }
+
+        const prevH = bodyEl.getBoundingClientRect().height;
+        gsap.set(bodyEl, { height: prevH, overflow: 'hidden' });
+
+        // Mount typo component
+        if (sourceIndex === 0) setReadyForTypos1(true);
+        else setReadyForTypos2(true);
+
+        // On the next frame, measure the new content height and animate to it smoothly, then release.
+        requestAnimationFrame(() => {
+            const targetH = bodyEl.scrollHeight; // auto height of new content
+            gsap.to(bodyEl, {
+                height: targetH,
+                duration: 0.2,
+                ease: 'power1.out',
+                onComplete: () => {
+                    gsap.set(bodyEl, { height: 'auto', overflow: 'visible' });
+                }
+            });
+        });
+    }, []);
 
     const networkContainerRef = useRef<HTMLDivElement>(null);
     useEffect(() => { if (modelLoadError) setErrorState(modelLoadError); }, [modelLoadError]);
@@ -145,9 +180,7 @@ const Hero: React.FC = () => {
         }
     }, [shouldStartOcr2, imageDimensions2, ocrProcess2, tfReady, isLoadingModel, handleOcrFinished]);
 
-    /** ===== Network entry point (single source of truth) =====
-     * Keep the very same point for both the beam path and the graph.
-     */
+    /** ===== Network entry point (single source of truth) ===== */
     const calcCentralPoint = useCallback((w: number, h: number): Point => {
         return { x: Math.max(20, Math.floor(w * 0.15)), y: Math.floor(h / 2) };
     }, []);
@@ -204,15 +237,12 @@ const Hero: React.FC = () => {
         const originDoc = { x: originViewport.x + sx, y: originViewport.y + sy };
         const targetDoc = { x: netEntryViewport.x + sx, y: netEntryViewport.y + sy };
 
-        // Force the line to leave the OCR box either from above or below, with a bit of randomness
-        const verticalKick = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120); // 80..200px up/down
-        const lateralJitter = (Math.random() - 0.5) * 60;                                   // -30..+30px sideways
+        // Curved path geometry
+        const verticalKick = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120);
+        const lateralJitter = (Math.random() - 0.5) * 60;
         const elbowDoc = { x: originDoc.x + lateralJitter, y: originDoc.y + verticalKick };
+        const arcRadius = 48 + Math.random() * 24;
 
-        // Rounded corner amount
-        const arcRadius = 48 + Math.random() * 24; // 48..72px for smoother bends
-
-        // Build current *viewport* path to start animating immediately
         const p0 = { x: originDoc.x - sx, y: originDoc.y - sy };
         const p1 = { x: elbowDoc.x - sx, y: elbowDoc.y - sy };
         const p2 = { x: targetDoc.x - sx, y: targetDoc.y - sy };
@@ -228,7 +258,6 @@ const Hero: React.FC = () => {
                 tailProgress: 0,
                 alpha: 1,
                 onFinished: () => onAnimFinishedCallback(processedChar, gradientSet),
-                // NEW: scroll-safe anchors so the renderer can rebuild the path every frame
                 docOrigin: originDoc,
                 docElbow: elbowDoc,
                 docTarget: targetDoc,
@@ -237,7 +266,6 @@ const Hero: React.FC = () => {
         ]));
     }, [calcCentralPoint]);
 
-    /** When OCR produces a character, launch a beam for that source. */
     useEffect(() => {
         if (ocrProcess1.currentChar) {
             const idx = gradientIndex1Ref.current % TEXT_SCREENSHOT_GRADIENTS.length;
@@ -279,90 +307,112 @@ const Hero: React.FC = () => {
         }
     };
 
-    /* collapse / enlarge routines (unchanged) */
-    const collapseMediaContainer = useCallback((sourceIndex: OcrSourceIndex) => {
-        const containerRef = sourceIndex === 0 ? mediaContainerRef1 : mediaContainerRef2;
-        const outputRef = sourceIndex === 0 ? ocrOutputRef1 : ocrOutputRef2;
-        const columnRef = sourceIndex === 0 ? mediaColumnRef1 : mediaColumnRef2;
+    /** Collapse / fade media, but don't remove from DOM to avoid a late layout snap. */
+    const collapseMediaContainer = useCallback((sourceIndex: OcrSourceIndex): Promise<void> => {
+        return new Promise<void>((resolve) => {
+            const containerRef = sourceIndex === 0 ? mediaContainerRef1 : mediaContainerRef2;
+            const columnRef = sourceIndex === 0 ? mediaColumnRef1 : mediaColumnRef2;
 
-        const alreadyCollapsed = sourceIndex === 0 ? hasCollapsedMedia1 : hasCollapsedMedia2;
-        if (alreadyCollapsed) return;
+            const alreadyCollapsed = sourceIndex === 0 ? hasCollapsedMedia1 : hasCollapsedMedia2;
+            if (alreadyCollapsed) { resolve(); return; }
 
-        const containerEl = containerRef.current;
-        const outputEl = outputRef.current;
-        const columnEl = columnRef.current;
-        if (!containerEl) return;
+            const containerEl = containerRef.current;
+            const columnEl = columnRef.current;
+            if (!containerEl) { resolve(); return; }
 
-        const currentHeight = containerEl.getBoundingClientRect().height;
-        containerEl.style.height = `${currentHeight}px`;
-        containerEl.style.overflow = 'hidden';
+            const currentHeight = containerEl.getBoundingClientRect().height;
+            containerEl.style.height = `${currentHeight}px`;
+            containerEl.style.overflow = 'hidden';
 
-        const tl = gsap.timeline({
-            defaults: { ease: 'power2.inOut' },
-            onComplete: () => {
-                containerEl.style.display = 'none';
-                if (sourceIndex === 0) setHasCollapsedMedia1(true);
-                else setHasCollapsedMedia2(true);
+            const tl = gsap.timeline({
+                defaults: { ease: 'power2.inOut' },
+                onComplete: () => {
+                    containerEl.style.height = '0px';
+                    containerEl.style.opacity = '0';
+                    containerEl.style.visibility = 'hidden';
+                    if (sourceIndex === 0) setHasCollapsedMedia1(true);
+                    else setHasCollapsedMedia2(true);
+                    resolve();
+                }
+            });
+
+            tl.to(containerEl, { height: 0, opacity: 0, duration: 0.55 });
+
+            if (columnEl) {
+                tl.to(columnEl, {
+                    boxShadow: '0px 0px 0px 0px rgba(0,0,0,0)',
+                    backgroundColor: 'rgba(255,255,255,0)',
+                    borderColor: 'rgba(0,0,0,0)',
+                    borderWidth: 0,
+                    duration: 0.4
+                }, 0);
             }
         });
-
-        tl.to(containerEl, { height: 0, opacity: 0, duration: 0.55 });
-
-        if (columnEl) {
-            tl.to(columnEl, {
-                boxShadow: '0px 0px 0px 0px rgba(0,0,0,0)',
-                backgroundColor: 'rgba(255,255,255,0)',
-                borderColor: 'rgba(0,0,0,0)',
-                borderWidth: 0,
-                duration: 0.4
-            }, 0);
-        }
-
-        if (outputEl) {
-            const heading = outputEl.querySelector('h3') as HTMLElement | null;
-            if (heading) {
-                tl.to(heading, { opacity: 0, height: 0, marginTop: 0, marginBottom: 0, duration: 0.3 }, 0.1)
-                    .set(heading, { display: 'none' });
-            }
-            const bodyEl = outputEl.querySelector('.ocr-output-body') as HTMLElement | null;
-            const textEl = outputEl.querySelector('.ocr-output-text') as HTMLElement | null;
-            const targetFontSize = sourceIndex === 1 ? '1.5em' : '1.3em';
-            if (textEl) tl.to(textEl, { fontSize: targetFontSize, duration: 0.35 }, 0.15);
-            else if (bodyEl) tl.to(bodyEl, { fontSize: targetFontSize, duration: 0.35 }, 0.15);
-            if (bodyEl) {
-                tl.fromTo(bodyEl, { scale: 1 }, { scale: 1.06, duration: 0.2 }, 0.15)
-                    .to(bodyEl, { scale: 1, duration: 0.18 }, '>-0.06');
-            }
-        }
     }, [hasCollapsedMedia1, hasCollapsedMedia2]);
 
-    const onTypoAnimationComplete = (sourceIndex: OcrSourceIndex) => {
-        if (sourceIndex === 0) { if (isOcrDone1) setCollapseImage1(true); }
-        else { if (isOcrDone2) setCollapseImage2(true); }
-        collapseMediaContainer(sourceIndex);
-    };
-
-    // first appearance of OCR blocks (unchanged)
+    /** First appearance of OCR blocks: fade in and set scale shell to 0.5. */
     useEffect(() => {
-        const shouldAnimate1 = (ocrProcess1.liveOcrText.length > 0 || correctedTextParts1.length > 0) && !hasAnimatedOutput1.current;
-        if (shouldAnimate1 && ocrOutputRef1.current) {
-            hasAnimatedOutput1.current = true;
+        const shouldMount1 = (ocrProcess1.liveOcrText.length > 0 || correctedTextParts1.length > 0) && !hasMountedOutput1.current;
+        if (shouldMount1 && ocrOutputRef1.current && scaleShellRef1.current) {
+            hasMountedOutput1.current = true;
             gsap.fromTo(ocrOutputRef1.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' });
+            gsap.set(scaleShellRef1.current, { scale: 0.5, transformOrigin: 'left top' });
         }
     }, [ocrProcess1.liveOcrText, correctedTextParts1.length]);
 
     useEffect(() => {
-        const shouldAnimate2 = (ocrProcess2.liveOcrText.length > 0 || correctedTextParts2.length > 0) && !hasAnimatedOutput2.current;
-        if (shouldAnimate2 && ocrOutputRef2.current) {
-            hasAnimatedOutput2.current = true;
+        const shouldMount2 = (ocrProcess2.liveOcrText.length > 0 || correctedTextParts2.length > 0) && !hasMountedOutput2.current;
+        if (shouldMount2 && ocrOutputRef2.current && scaleShellRef2.current) {
+            hasMountedOutput2.current = true;
             gsap.fromTo(ocrOutputRef2.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' });
+            gsap.set(scaleShellRef2.current, { scale: 0.5, transformOrigin: 'left top' });
         }
     }, [ocrProcess2.liveOcrText, correctedTextParts2.length]);
+
+    /**
+   * Order:
+   * 1) collapse media
+   * 2) scale 0.5 -> 1.0
+   * 3) (bottom only) lift the OCR output up by 30px
+   * 4) swap to typo component with height-lock
+   */
+    const runReplacementThenTypos = useCallback(async (sourceIndex: OcrSourceIndex) => {
+        if (sourceIndex === 0) setCollapseImage1(true);
+        else setCollapseImage2(true);
+
+        await collapseMediaContainer(sourceIndex);
+
+        // Scale up first
+        const shell = sourceIndex === 0 ? scaleShellRef1.current : scaleShellRef2.current;
+        if (shell) {
+            await new Promise<void>((resolve) => {
+                gsap.to(shell, { scale: 1, duration: 0.45, ease: 'power2.out', onComplete: resolve });
+            });
+        }
+
+        // Bottom OCR result: lift it closer to the "Theo Kremer" title (smooth transform)
+        if (sourceIndex === 0 && ocrOutputRef1.current) {
+            gsap.to(ocrOutputRef1.current, { y: -BOTTOM_Y_LIFT_PX, duration: 0.35, ease: 'power2.out' });
+        }
+
+        // Now perform the swap to the typo component without layout jumping
+        lockAndSwapToTypos(sourceIndex);
+    }, [collapseMediaContainer, lockAndSwapToTypos]);
+
+    useEffect(() => {
+        if (isOcrDone1 && !readyForTypos1) runReplacementThenTypos(0);
+    }, [isOcrDone1, readyForTypos1, runReplacementThenTypos]);
+
+    useEffect(() => {
+        if (isOcrDone2 && !readyForTypos2) runReplacementThenTypos(1);
+    }, [isOcrDone2, readyForTypos2, runReplacementThenTypos]);
+
+    // No-op now; we scale BEFORE typo animation.
+    const onTypoAnimationComplete = (_sourceIndex: OcrSourceIndex) => { /* intentionally empty */ };
 
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
 
-    // Central point for the graph (shared with beam end)
     const centralPointForGraph = useMemo(
         () => calcCentralPoint(networkCanvasSize.width, networkCanvasSize.height),
         [calcCentralPoint, networkCanvasSize.width, networkCanvasSize.height]
@@ -443,20 +493,22 @@ const Hero: React.FC = () => {
                                 )}
                             </div>
 
-                            <div ref={ocrOutputRef2} className="ocr-output-container ocr-output-container--below">
-                                <div className="ocr-output-body">
-                                    {ocrProcess2.isProcessingOCR ? (
-                                        <p className="ocr-output-text">
-                                            {ocrProcess2.liveOcrText}
-                                            <span className="blinking-cursor">|</span>
-                                        </p>
-                                    ) : (
-                                        correctedTextParts2.length > 0 ? (
-                                            <AnimatedTypoText parts={correctedTextParts2} onComplete={() => onTypoAnimationComplete(1)} />
+                            <div ref={ocrOutputRef2} className="ocr-output-container ocr-output-container--below ocr-typography">
+                                <div ref={scaleShellRef2} className="ocr-output-scale-shell">
+                                    <div className="ocr-output-body">
+                                        {ocrProcess2.isProcessingOCR ? (
+                                            <p className="ocr-output-text">
+                                                {ocrProcess2.liveOcrText}
+                                                <span className="blinking-cursor">|</span>
+                                            </p>
                                         ) : (
-                                            <p className="ocr-output-text">Awaiting OCR...</p>
-                                        )
-                                    )}
+                                            readyForTypos2 && correctedTextParts2.length > 0 ? (
+                                                <AnimatedTypoText parts={correctedTextParts2} onComplete={() => onTypoAnimationComplete(1)} />
+                                            ) : (
+                                                <p className="ocr-output-text">{ocrProcess2.liveOcrText}</p>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -533,20 +585,28 @@ const Hero: React.FC = () => {
                                 )}
                             </div>
 
-                            <div ref={ocrOutputRef1} className="ocr-output-container ocr-output-container--below">
-                                <div className="ocr-output-body">
-                                    {ocrProcess1.isProcessingOCR ? (
-                                        <p className="ocr-output-text">
-                                            {ocrProcess1.liveOcrText}
-                                            <span className="blinking-cursor">|</span>
-                                        </p>
-                                    ) : (
-                                        correctedTextParts1.length > 0 ? (
-                                            <AnimatedTypoText parts={correctedTextParts1} onComplete={() => onTypoAnimationComplete(0)} />
+                            <div ref={ocrOutputRef1} className="ocr-output-container ocr-output-container--below ocr-typography">
+                                <div className="ocr-output-scale-shell" ref={scaleShellRef1}>
+                                    <div className="ocr-output-body">
+                                        {ocrProcess1.isProcessingOCR ? (
+                                            <p className="ocr-output-text">
+                                                {ocrProcess1.liveOcrText}
+                                                <span className="blinking-cursor">|</span>
+                                            </p>
                                         ) : (
-                                            <p className="ocr-output-text">Awaiting OCR...</p>
-                                        )
-                                    )}
+                                            readyForTypos1 && correctedTextParts1.length > 0 ? (
+                                                <AnimatedTypoText
+                                                    parts={correctedTextParts1}
+                                                    onComplete={() => onTypoAnimationComplete(0)}
+                                                    as="p"
+                                                    className="ocr-output-text"
+                                                    startDelayMs={120}
+                                                />
+                                            ) : (
+                                                <p className="ocr-output-text">{ocrProcess1.liveOcrText}</p>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

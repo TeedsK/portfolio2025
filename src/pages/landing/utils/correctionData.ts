@@ -28,17 +28,37 @@ const correctionsSource2: Record<string, string> = {
     amm: "am,",
 };
 
+/**
+ * Tokenize while preserving both spaces and explicit newlines, so pre- and post-typo
+ * line breaks remain identical in the UI.
+ */
+function tokenizePreservingNewlines(rawText: string): string[] {
+    const out: string[] = [];
+    const lines = rawText.split('\n');
+    lines.forEach((line, idx) => {
+        // Split spaces but keep them as separate tokens
+        const pieces = line.split(/(\s+)/).filter(p => p.length > 0);
+        out.push(...pieces);
+        if (idx < lines.length - 1) out.push('\n'); // explicit newline token
+    });
+    return out;
+}
+
 export const processOcrText = (
     rawText: string,
     sourceIndex: 0 | 1
 ): CorrectedTextPart[] => {
     const correctionMap = sourceIndex === 0 ? correctionsSource1 : correctionsSource2;
-    const wordsAndSpaces = rawText.replace(/\n/g, ' ').split(/(\s+)/);
+
+    // Keep spaces and newlines as tokens so layout stays consistent across phases
+    const tokens = tokenizePreservingNewlines(rawText);
     let idCounter = 0;
 
-    const parts: CorrectedTextPart[] = wordsAndSpaces.map((segment) => {
+    const parts: CorrectedTextPart[] = tokens.map((segment) => {
         const id = `part-${sourceIndex}-${idCounter++}`;
-        if (segment.match(/^\s+$/)) {
+
+        // treat any whitespace (including '\n') as whitespace tokens
+        if (segment.match(/^\s+$/) || segment === '\n') {
             return {
                 id,
                 original: segment,
@@ -49,7 +69,7 @@ export const processOcrText = (
         }
 
         const lowerSegment = segment.toLowerCase();
-        const isCorrect = !correctionMap.hasOwnProperty(lowerSegment);
+        const isCorrect = !Object.prototype.hasOwnProperty.call(correctionMap, lowerSegment);
 
         return {
             id,
@@ -60,12 +80,21 @@ export const processOcrText = (
         };
     });
 
-    // Special handling for "m chine" -> "machine" etc.
+    // Special handling for "m chine" -> "machine" and "ful stak" -> "full-stack"
     if (sourceIndex === 0) {
         const newParts: CorrectedTextPart[] = [];
         for (let i = 0; i < parts.length; i++) {
             const currentPart = parts[i];
-            if (currentPart.original === 'm' && parts[i + 2]?.original === 'chine') {
+
+            // Helper: is a pure SPACE (not newline) whitespace token
+            const isSpaceOnly = (p?: CorrectedTextPart) =>
+                !!p && p.isWhitespace && p.original.trim() === '' && !p.original.includes('\n');
+
+            if (
+                currentPart.original === 'm' &&
+                isSpaceOnly(parts[i + 1]) &&
+                parts[i + 2]?.original === 'chine'
+            ) {
                 newParts.push({
                     id: currentPart.id,
                     original: "m chine",
@@ -74,7 +103,11 @@ export const processOcrText = (
                     isWhitespace: false,
                 });
                 i += 2; // Skip the space and "chine"
-            } else if (currentPart.original === 'ful' && parts[i + 2]?.original === 'stak') {
+            } else if (
+                currentPart.original === 'ful' &&
+                isSpaceOnly(parts[i + 1]) &&
+                parts[i + 2]?.original === 'stak'
+            ) {
                 newParts.push({
                     id: currentPart.id,
                     original: "ful stak",
@@ -82,15 +115,14 @@ export const processOcrText = (
                     isCorrect: false,
                     isWhitespace: false,
                 });
-                i += 2;
-            }
-            else {
+                i += 2; // Skip the space and "stak"
+            } else {
                 newParts.push(currentPart);
             }
         }
         return newParts;
     }
 
-
-    return parts.filter(p => p.original);
+    return parts;
 };
+

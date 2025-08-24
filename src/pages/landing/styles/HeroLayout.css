@@ -113,40 +113,59 @@
     margin-top: 12px;
 }
 
+/* Unified OCR typography */
+:root {
+  --ocr-font-family: "Inter", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+  --ocr-font-size: 18px;
+  --ocr-line-height: 1.35;
+  --ocr-letter-spacing: 0;
+}
+
+.ocr-typography {
+  font-family: var(--ocr-font-family);
+  font-size: var(--ocr-font-size);
+  line-height: var(--ocr-line-height);
+  letter-spacing: var(--ocr-letter-spacing);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "liga" 0, "kern" 1; /* keep metrics stable */
+  font-variant-ligatures: none;
+}
+
+.ocr-output-scale-shell {
+  transform-origin: left top;
+  will-change: transform;
+}
+
 .ocr-output-body {
-    display: block;
-    width: 100%;
-    font-size: 1.1em;
-    transform-origin: left center;
+  position: relative;   /* helps the height-lock + smooth release */
+  display: block;
+  width: 100%;
 }
 
-.ocr-output-container h3 {
-    margin-top: 0;
-    margin-bottom: 8px;
-    font-size: 0.9em;
-    color: #888;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
+/* EXACTLY the same wrapper is used for both typed and animated states */
 .ocr-output-text {
-    display: block;
-    width: 100%;
-    white-space: pre-wrap;
-    min-height: 1.5em;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: inherit;
-    color: #333;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    hyphens: auto;
+  display: block;
+  width: 100%;
+  margin: 0;                /* avoid <p> default margins causing a nudge */
+  white-space: pre-wrap;
+  min-height: 1.5em;
+  font-size: inherit;
+  color: #333;
+  line-height: inherit;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 
+/* Cursor no longer affects layout width */
 .blinking-cursor {
-    font-weight: bold;
-    animation: blink 1s step-start 0s infinite;
+  display: inline-block;
+  width: 0;                 /* don't push text to a new line */
+  height: 0.95em;
+  vertical-align: -0.1em;
+  border-left: 2px solid currentColor;
+  animation: blink 1s step-start 0s infinite;
 }
 
 @keyframes blink {
@@ -191,27 +210,23 @@ h1 {
     }
 }
 
-/* ...keep the rest of your file unchanged... */
-
+/* Character beams overlay (fixed to viewport) */
 .character-overlay {
-    /* FIXED to the viewport so coordinates match getBoundingClientRect(),
-       and scroll never misaligns the canvas and DOM targets */
     position: fixed;
     inset: 0;
     width: 100vw;
     height: 100vh;
     pointer-events: none;
-    z-index: 1;           /* below the columns (z=2), above page background */
+    z-index: 1;
+    /* below the columns (z=2), above page background */
     overflow: visible;
 }
 
-/* The canvas inside is absolutely positioned to the overlay box */
 .character-stream-canvas {
     position: absolute;
     top: 0;
     left: 0;
 }
-
 
 /* =========================
    Responsive adjustments

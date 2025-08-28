@@ -1,0 +1,72 @@
+/* src/pages/landing/styles/AStarCreativity.css */
+
+.astar-section {
+    width: 100%;
+    position: relative;
+    margin-top: 120px;
+    /* ≥ 100px spacing below WorkExperience as requested */
+    min-height: var(--astar-height, 560px);
+    isolation: isolate;
+    /* ensure overlay stacks cleanly */
+    overflow: clip;
+}
+
+/* Canvas sits fully behind the content */
+.astar-canvas-wrap {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    /* behind copy */
+}
+
+/* Foreground text floats left */
+.astar-copy {
+    position: relative;
+    z-index: 1;
+    /* display: flex; */
+    /* align-items: flex-start;
+    justify-content: flex-start; */
+    height: 100%;
+    padding: clamp(16px, 6vw, 64px);
+    box-sizing: border-box;
+    pointer-events: none;
+    /* keep canvas interactions free if you add them later */
+    max-width: 700px;
+}
+
+/* Left aligned content block with a comfortable max width */
+.astar-copy>* {
+    pointer-events: auto;
+}
+
+.astar-title {
+    margin: 0;
+    font-weight: 800;
+    /* bold per spec */
+    font-size: clamp(28px, 3.6vw, 44px);
+    line-height: 1.15;
+    color: #0f172a;
+    /* dark ink on light maze */
+    text-wrap: balance;
+}
+
+.astar-subtitle {
+    margin: 12px 0 0;
+    font-weight: 600;
+    font-size: clamp(16px, 2.2vw, 22px);
+    line-height: 1.35;
+    color: #334155;
+}
+
+/* If user is in dark mode, invert text for readability while keeping maze colors unchanged */
+@media (prefers-color-scheme: dark) {
+    .astar-title {
+        color: #e5e7eb;
+    }
+
+    .astar-subtitle {
+        color: #cbd5e1;
+    }
+}

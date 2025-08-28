@@ -1,0 +1,212 @@
+/* src/pages/landing/styles/Projects.css */
+
+.projects-section {
+    position: relative;
+    width: 100%;
+    padding-block: clamp(40px, 6vh, 80px);
+    background: transparent;
+}
+
+.projects-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    /* 50 / 50 split */
+    gap: clamp(24px, 4vw, 48px);
+    align-items: start;
+    width: min(1200px, 92vw);
+    margin-inline: auto;
+}
+
+/* ---------- Left column ---------- */
+
+.projects-left {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(16px, 2vh, 24px);
+}
+
+.projects-header {
+    position: relative;
+    padding-bottom: clamp(8px, 1.2vh, 12px);
+    border-bottom: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
+}
+
+.projects-eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, CanvasText 55%, transparent);
+}
+
+.projects-title {
+    margin: 6px 0 8px 0;
+    font-size: clamp(26px, 3.2vw, 40px);
+    line-height: 1.15;
+}
+
+.projects-subtitle {
+    margin: 0;
+    color: color-mix(in oklab, CanvasText 60%, transparent);
+}
+
+.project-list {
+    margin-top: clamp(16px, 2vh, 24px);
+}
+
+/* A big, comfortable block for each project. Plenty of vertical spacing
+   so the text "owns" the center as it passes through. */
+.project-block {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: clamp(16px, 2vw, 24px);
+    align-items: center;
+    min-height: clamp(520px, 70vh, 780px);
+    margin-block: 18vh;
+    /* sizeable gap between projects */
+    scroll-margin-top: 18vh;
+    /* for anchor jumps */
+}
+
+/* When there is no hero image we preserve grid area */
+.project-hero img {
+    width: clamp(160px, 28vw, 260px);
+    height: auto;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px color-mix(in oklab, CanvasText 12%, transparent);
+}
+
+.project-copy {
+    max-width: 54ch;
+}
+
+.project-eyebrow {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: color-mix(in oklab, CanvasText 55%, transparent);
+    margin-bottom: 6px;
+}
+
+.project-title {
+    font-size: clamp(24px, 2.8vw, 34px);
+    line-height: 1.15;
+    margin: 0 0 8px 0;
+}
+
+.project-desc {
+    margin: 0 0 12px 0;
+    color: color-mix(in oklab, CanvasText 70%, transparent);
+}
+
+.project-bullets {
+    margin: 8px 0 12px 0;
+    padding-left: 18px;
+    color: color-mix(in oklab, CanvasText 85%, transparent);
+}
+
+.project-bullets li {
+    margin: 6px 0;
+}
+
+.project-ctas {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.project-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: color-mix(in oklab, CanvasText 8%, transparent);
+    color: inherit;
+    border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+    text-decoration: none;
+}
+
+.project-cta:hover {
+    border-color: color-mix(in oklab, CanvasText 24%, transparent);
+}
+
+/* ---------- Right column (sticky animation pane) ---------- */
+
+.projects-right {
+    position: sticky;
+    top: clamp(24px, 10vh, 96px);
+    align-self: start;
+    height: 84vh;
+    /* a touch taller so squares can spawn comfortably */
+    min-height: 560px;
+    padding: 0;
+    /* more space for the stage */
+
+    /* USER REQUEST: remove gray box/backdrop completely */
+    background: transparent;
+    outline: none;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+    /* allow SmartLinked to spill slightly if needed */
+}
+
+.code-panel-switcher {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    /* squares can originate just beyond edges */
+    border-radius: 0;
+}
+
+/* Each panel is absolutely layered; only .is-active is visible */
+.code-panel {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 360ms ease, transform 420ms cubic-bezier(.22, 1, .36, 1);
+    display: grid;
+    place-items: stretch;
+    padding: clamp(12px, 2vw, 16px);
+    background: color-mix(in oklab, CanvasText 4%, transparent);
+}
+
+.code-panel.is-active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 980px) {
+    .projects-inner {
+        grid-template-columns: 1fr;
+    }
+
+    .projects-right {
+        position: relative;
+        top: 0;
+        height: auto;
+        min-height: 420px;
+    }
+
+    .project-block {
+        grid-template-columns: 1fr;
+    }
+
+    .project-hero {
+        order: -1;
+    }
+}
+
+/* --- SmartLinked panel needs a transparent background and visible overflow --- */
+.code-panel[data-panel="smartlinked"] {
+    background: transparent;
+    overflow: visible;
+    padding: clamp(8px, 1vw, 12px);
+}

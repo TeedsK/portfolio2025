@@ -30,7 +30,6 @@ export const useTfModel = (
 
     useEffect(() => {
         let isMounted = true; // Flag to prevent state updates on unmounted component
-        log('Initializing TFJS and loading model...');
         setErrorState(null);
         setIsLoading(true);
         
@@ -52,18 +51,14 @@ export const useTfModel = (
             try {
                 await tf.ready();
                 if (!isMounted) return;
-                log(`TFJS Ready. Using backend: ${tf.getBackend()}`);
                 setTfReady(true);
 
-                log(`Loading model from: ${modelUrl}`);
                 const loaded = await tf.loadLayersModel(modelUrl);
                 if (!isMounted) { loaded.dispose(); return; }
                 
                 loadedModelRef.current = loaded; 
                 setModel(loaded);
-                log('Model loaded successfully.');
 
-                log('Creating visualization model...');
                 const outputLayers = activationLayerNames
                     .map(name => {
                         try {
@@ -84,7 +79,6 @@ export const useTfModel = (
 
                 visualizationModelRef.current = visualization; 
                 setVisModel(visualization);
-                log('Visualization model created.');
 
                 // Weight extraction (sync, so less risk with unmounting during it)
                 const weightsData: ModelWeights = {};
@@ -108,7 +102,6 @@ export const useTfModel = (
                     }
                 }
                 if (isMounted) setWeights(weightsData);
-                log('Model weights extracted.');
 
             } catch (err) {
                 error('Failed during TFJS init or model setup', err);
@@ -127,12 +120,10 @@ export const useTfModel = (
 
         return () => {
             isMounted = false; // Set flag on unmount
-            log('Disposing models from useTfModel hook cleanup.');
             // Dispose using refs which hold the most recent instances
             if (visualizationModelRef.current) {
                 try {
                     visualizationModelRef.current.dispose();
-                    log('Visualization model disposed.');
                 } catch (e) {
                     error('Error disposing visualization model during cleanup:', e);
                 }
@@ -141,14 +132,12 @@ export const useTfModel = (
             if (loadedModelRef.current) {
                  try {
                     loadedModelRef.current.dispose(); // This should handle all layers it owns
-                    log('Main loaded model disposed.');
                 } catch (e) {
                     error('Error disposing main loaded model during cleanup:', e);
                 }
                 loadedModelRef.current = null;
             }
              // No need to call setModel(null) etc. here as component is unmounting
-            log('useTfModel cleanup finished.');
         };
     }, [modelUrl, JSON.stringify(activationLayerNames), JSON.stringify(weightLayerNames)]);
 

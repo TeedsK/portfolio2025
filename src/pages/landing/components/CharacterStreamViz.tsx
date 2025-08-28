@@ -81,7 +81,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
             }
 
             initiatedAnimations.current.add(character.id);
-            log(`[CharacterStreamViz] Initiating animation for character ID: ${character.id}`);
             
             character.animationState = 'traveling';
             character.isRetractingColorOverride = false;
@@ -91,7 +90,6 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
             const tl = gsap.timeline({
                 onComplete: () => {
-                    log(`[CharacterStreamViz] GSAP Timeline complete for character ID: ${character.id}`);
                     initiatedAnimations.current.delete(character.id);
                     onCharacterFinished(character.id);
                 }

@@ -1,5 +1,5 @@
 // src/pages/landing/sections/Hero.tsx
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { Alert, Spin } from 'antd';
 import '../styles/HeroLayout.css';
 import gsap from 'gsap';
@@ -24,6 +24,7 @@ import { useTfModel } from '../../../utils/useTfModel';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
+import FallingProjectShowcase from '../components/FallingProjectShowcase';
 
 const GRAPH_CANVAS_HEIGHT = 340;
 const BOTTOM_Y_LIFT_PX = 30;
@@ -73,6 +74,93 @@ const Hero: React.FC = () => {
     const scaleShellRef2 = useRef<HTMLDivElement>(null);
     const hasMountedOutput2 = useRef(false);
     const [readyForTypos2, setReadyForTypos2] = useState<boolean>(false);
+
+    const [typoAnimationComplete1, setTypoAnimationComplete1] = useState(false);
+    const [typoAnimationComplete2, setTypoAnimationComplete2] = useState(false);
+
+    // === NEW: gate FallingProjectShowcase start until the neural viz has faded away ===
+    const [hasFadedNeuralNet, setHasFadedNeuralNet] = useState(false);
+    const neuralContainerRef = useRef<HTMLDivElement>(null);
+    const hasTriggeredFadeRef = useRef(false);
+
+    // --- Link + Icons (masking + reveal) ---
+    const aiImpactLinkRef = useRef<HTMLAnchorElement | null>(null);
+    const impactLinkRevealRef = useRef<HTMLDivElement | null>(null); // wrapper that we animate like labels
+    const impactIconsWrapRef = useRef<HTMLDivElement | null>(null);
+    const linkIconsTLRef = useRef<gsap.core.Timeline | null>(null);
+
+    // --- Non-white mask generation for icons (keeps whites visible) ---
+    const WHITE_THRESHOLD = 245;   // treat near-white as white
+    const ALPHA_THRESHOLD = 10;    // ignore near-transparent pixels
+
+    const generateNonWhiteMask = useCallback((src: string): Promise<string> => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                try {
+                    const w = img.naturalWidth || img.width;
+                    const h = img.naturalHeight || img.height;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    if (!ctx) { resolve(src); return; } // graceful fallback
+
+                    ctx.drawImage(img, 0, 0, w, h);
+                    const im = ctx.getImageData(0, 0, w, h);
+                    const data = im.data;
+
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+                        const isWhite = r >= WHITE_THRESHOLD && g >= WHITE_THRESHOLD && b >= WHITE_THRESHOLD;
+                        const visible = a > ALPHA_THRESHOLD && !isWhite;
+                        // Output: fully transparent where white; solid alpha elsewhere
+                        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = visible ? 255 : 0;
+                    }
+
+                    ctx.putImageData(im, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch {
+                    resolve(src); // fallback: use original alpha mask
+                }
+            };
+            img.onerror = () => resolve(src); // fallback
+            img.src = src;
+        });
+    }, []);
+
+    const [iconMasks, setIconMasks] = useState<{ linkedin: string; github: string; instagram: string }>({
+        linkedin: '/images/coding/linkedin_icon.png',
+        github: '/images/coding/github_icon.png',
+        instagram: '/images/coding/instagram_icon.png',
+    });
+
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const [li, gh, ig] = await Promise.all([
+                generateNonWhiteMask('/images/coding/linkedin_icon.png'),
+                generateNonWhiteMask('/images/coding/github_icon.png'),
+                generateNonWhiteMask('/images/coding/instagram_icon.png'),
+            ]);
+            if (!alive) return;
+            setIconMasks({ linkedin: li, github: gh, instagram: ig });
+        })();
+        return () => { alive = false; };
+    }, [generateNonWhiteMask]);
+
+    // Helper to build CSS mask style for a given (generated) mask image
+    const maskStyle = useCallback((maskUrl: string): React.CSSProperties => ({
+        WebkitMaskImage: `url(${maskUrl})`,
+        maskImage: `url(${maskUrl})`,
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+        backgroundColor: '#aeb0b4',
+    }), []);
 
     const {
         model,
@@ -179,6 +267,72 @@ const Hero: React.FC = () => {
             ocrProcess2.startOcr(imageDimensions2).then(raw => handleOcrFinished(raw as unknown as string, 1)).finally(() => setShouldStartOcr2(false));
         }
     }, [shouldStartOcr2, imageDimensions2, ocrProcess2, tfReady, isLoadingModel, handleOcrFinished]);
+
+    /**
+     * ENSURE: Link + social icons are never visible before the reveal animation.
+     * UseLayoutEffect guarantees GSAP sets initial state BEFORE first paint.
+     * Durations fixed to 1s and icon stagger at 0.25s as requested.
+     */
+    useLayoutEffect(() => {
+        if (!typoAnimationComplete1) return;
+
+        // Kill an existing TL if any (React StrictMode safety)
+        if (linkIconsTLRef.current) {
+            linkIconsTLRef.current.kill();
+            linkIconsTLRef.current = null;
+        }
+
+        const tl = gsap.timeline({ defaults: { ease: 'power2.out' } });
+        linkIconsTLRef.current = tl;
+
+        // LINK (like rt-labels): height reveal + fade + slight rise
+        if (impactLinkRevealRef.current) {
+            const el = impactLinkRevealRef.current;
+            const naturalH = el.scrollHeight || 24;
+            // Set initial hidden state BEFORE first paint
+            gsap.set(el, { overflow: 'hidden', maxHeight: 0, opacity: 0, y: -6 });
+            tl.to(el, {
+                maxHeight: naturalH,
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                onComplete: () => gsap.set(el, { clearProps: 'maxHeight,overflow,transform' }),
+            }, 0);
+        }
+
+        // ICON ROW: same container reveal
+        if (impactIconsWrapRef.current) {
+            const row = impactIconsWrapRef.current;
+            const rowH = row.scrollHeight || 34;
+            gsap.set(row, { overflow: 'hidden', maxHeight: 0, opacity: 0, y: -6 });
+            tl.to(row, {
+                maxHeight: rowH,
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                onComplete: () => gsap.set(row, { clearProps: 'maxHeight,overflow,transform' }),
+            }, 0.12);
+
+            // Child icons: opacity + y with 250ms stagger
+            const icons = Array.from(row.querySelectorAll<HTMLElement>('.impact-social'));
+            if (icons.length) {
+                gsap.set(icons, { opacity: 0, y: -6 });
+                tl.to(icons, {
+                    opacity: 1,
+                    y: 0,
+                    duration: 1,
+                    stagger: 0.25, // 250ms between each
+                }, 0.18);
+            }
+        }
+
+        return () => {
+            if (linkIconsTLRef.current) {
+                linkIconsTLRef.current.kill();
+                linkIconsTLRef.current = null;
+            }
+        };
+    }, [typoAnimationComplete1]);
 
     /** ===== Network entry point (single source of truth) ===== */
     const calcCentralPoint = useCallback((w: number, h: number): Point => {
@@ -370,12 +524,12 @@ const Hero: React.FC = () => {
     }, [ocrProcess2.liveOcrText, correctedTextParts2.length]);
 
     /**
-   * Order:
-   * 1) collapse media
-   * 2) scale 0.5 -> 1.0
-   * 3) (bottom only) lift the OCR output up by 30px
-   * 4) swap to typo component with height-lock
-   */
+     * Order:
+     * 1) collapse media
+     * 2) scale 0.5 -> 1.0
+     * 3) (bottom only) lift the OCR output up by 30px
+     * 4) swap to typo component with height-lock
+     */
     const runReplacementThenTypos = useCallback(async (sourceIndex: OcrSourceIndex) => {
         if (sourceIndex === 0) setCollapseImage1(true);
         else setCollapseImage2(true);
@@ -407,8 +561,46 @@ const Hero: React.FC = () => {
         if (isOcrDone2 && !readyForTypos2) runReplacementThenTypos(1);
     }, [isOcrDone2, readyForTypos2, runReplacementThenTypos]);
 
-    // No-op now; we scale BEFORE typo animation.
-    const onTypoAnimationComplete = (_sourceIndex: OcrSourceIndex) => { /* intentionally empty */ };
+    // Was a no-op; now we only use the granular flags below.
+    const typoAnimationsDone = typoAnimationComplete1 && typoAnimationComplete2;
+
+    // === NEW: when *everything* is finished (OCR, beams, network waves, typo animations),
+    // fade & scale the neural viz to 0, THEN allow the showcase to snap into its final layout.
+    const allOcrAndNetworkFinished = useMemo(() => {
+        const noBeams = beams.length === 0;
+        const noWaves = networkWaves.length === 0;
+        const ocrIdle = !ocrProcess1.isProcessingOCR && !ocrProcess2.isProcessingOCR;
+        return typoAnimationsDone && noBeams && noWaves && ocrIdle;
+    }, [typoAnimationsDone, beams.length, networkWaves.length, ocrProcess1.isProcessingOCR, ocrProcess2.isProcessingOCR]);
+
+    useEffect(() => {
+        if (!allOcrAndNetworkFinished) return;
+        if (hasFadedNeuralNet || hasTriggeredFadeRef.current) return;
+
+        hasTriggeredFadeRef.current = true;
+
+        const el = neuralContainerRef.current;
+        if (!el) {
+            // If for some reason the ref is missing, just allow the showcase to proceed.
+            setHasFadedNeuralNet(true);
+            return;
+        }
+
+        // Ensure transform origin centers for a clean shrink
+        gsap.set(el, { transformOrigin: 'center center' });
+        gsap.to(el, {
+            opacity: 0,
+            scale: 0,
+            duration: 0.6,
+            ease: 'power2.inOut',
+            onComplete: () => {
+                // Let the showcase know it can move into place now
+                setHasFadedNeuralNet(true);
+                // Optionally collapse pointer-events after fade
+                gsap.set(el, { pointerEvents: 'none', visibility: 'hidden' });
+            }
+        });
+    }, [allOcrAndNetworkFinished, hasFadedNeuralNet]);
 
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
@@ -503,7 +695,7 @@ const Hero: React.FC = () => {
                                             </p>
                                         ) : (
                                             readyForTypos2 && correctedTextParts2.length > 0 ? (
-                                                <AnimatedTypoText parts={correctedTextParts2} onComplete={() => onTypoAnimationComplete(1)} />
+                                                <AnimatedTypoText parts={correctedTextParts2} onComplete={() => setTypoAnimationComplete2(true)} />
                                             ) : (
                                                 <p className="ocr-output-text">{ocrProcess2.liveOcrText}</p>
                                             )
@@ -597,7 +789,7 @@ const Hero: React.FC = () => {
                                             readyForTypos1 && correctedTextParts1.length > 0 ? (
                                                 <AnimatedTypoText
                                                     parts={correctedTextParts1}
-                                                    onComplete={() => onTypoAnimationComplete(0)}
+                                                    onComplete={() => setTypoAnimationComplete1(true)}
                                                     as="p"
                                                     className="ocr-output-text"
                                                     startDelayMs={120}
@@ -606,6 +798,83 @@ const Hero: React.FC = () => {
                                                 <p className="ocr-output-text">{ocrProcess1.liveOcrText}</p>
                                             )
                                         )}
+                                        {typoAnimationComplete1 && (
+                                            <>
+                                                {/* Link reveal wrapper (animated like Role/Team labels) */}
+                                                <div ref={impactLinkRevealRef} className="impact-link-reveal">
+                                                    <a
+                                                        ref={aiImpactLinkRef}
+                                                        href="#smartlinked"
+                                                        className="impact-link"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            const target = document.getElementById('smartlinked');
+                                                            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                            else window.location.hash = '#smartlinked';
+                                                        }}
+                                                        aria-label="Jump to SmartLinked: How I used AI to help 18,000 people"
+                                                    >
+                                                        How I applied AI to help 18,000 people →
+                                                    </a>
+                                                </div>
+
+                                                {/* Icons row (container animates like labels; items stagger) */}
+                                                <div ref={impactIconsWrapRef} className="impact-socials" aria-label="Social links">
+                                                    {/* LinkedIn */}
+                                                    <a className="impact-social" href="#" aria-label="LinkedIn" title="LinkedIn" role="link">
+                                                        <img
+                                                            className="impact-social__img"
+                                                            src="/images/coding/linkedin_icon.png"
+                                                            alt=""
+                                                            decoding="async"
+                                                            loading="lazy"
+                                                            draggable={false}
+                                                        />
+                                                        {/* Tint only NON-WHITE areas via generated mask */}
+                                                        <span
+                                                            className="impact-social__tint"
+                                                            style={maskStyle(iconMasks.linkedin)}
+                                                            aria-hidden
+                                                        />
+                                                    </a>
+
+                                                    {/* GitHub */}
+                                                    <a className="impact-social" href="#" aria-label="GitHub" title="GitHub" role="link">
+                                                        <img
+                                                            className="impact-social__img"
+                                                            src="/images/coding/github_icon.png"
+                                                            alt=""
+                                                            decoding="async"
+                                                            loading="lazy"
+                                                            draggable={false}
+                                                        />
+                                                        <span
+                                                            className="impact-social__tint"
+                                                            style={maskStyle(iconMasks.github)}
+                                                            aria-hidden
+                                                        />
+                                                    </a>
+
+                                                    {/* Instagram */}
+                                                    <a className="impact-social" href="#" aria-label="Instagram" title="Instagram" role="link">
+                                                        <img
+                                                            className="impact-social__img"
+                                                            src="/images/coding/instagram_icon.png"
+                                                            alt=""
+                                                            decoding="async"
+                                                            loading="lazy"
+                                                            draggable={false}
+                                                        />
+                                                        <span
+                                                            className="impact-social__tint"
+                                                            style={maskStyle(iconMasks.instagram)}
+                                                            aria-hidden
+                                                        />
+                                                    </a>
+                                                </div>
+                                            </>
+                                        )}
+
                                     </div>
                                 </div>
                             </div>
@@ -614,12 +883,16 @@ const Hero: React.FC = () => {
 
                     {/* Right column — Neural Network */}
                     <div className="right-column">
-                        <div className="steps-extra-info-container" style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}>
-                            {(ocrProcess1.isProcessingOCR || ocrProcess2.isProcessingOCR) && (
+                        <div
+                            ref={neuralContainerRef}
+                            className="steps-extra-info-container"
+                            style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}
+                        >
+                            {/* {(ocrProcess1.isProcessingOCR || ocrProcess2.isProcessingOCR) && (
                                 <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
                                     <Spin tip="Processing OCR..." />
                                 </div>
-                            )}
+                            )} */}
                             <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
                                 {networkContainerRef.current && (
                                     <NetworkGraphViz
@@ -652,7 +925,21 @@ const Hero: React.FC = () => {
                         onBeamFinished={onBeamFinished}
                     />
                 </div>
+                <FallingProjectShowcase
+                    heroAnimationsDone={hasFadedNeuralNet}
+                    startDelayMs={1000}
+                    finalScales={{
+                        // tweak these to taste (1 = default)
+                        stackchan: 0.7,   // purple (top-left) a touch smaller
+                        smartlinked: 1.3, // red (top-right) slightly larger/taller
+                        kudo: 1.0,        // green (bottom-left) the largest tile
+                        holoclean: 0.95,  // yellow (bottom-right) modest
+                    }}
+                    // Optional: set a global base long side (before per-image scale)
+                    baseLongSidePx={340}
+                />
             </section>
+
         </>
     );
 };

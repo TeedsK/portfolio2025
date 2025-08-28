@@ -1,0 +1,90 @@
+/* Generic styles for the code-window look */
+.codewin {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.codewin-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: color-mix(in oklab, CanvasText 8%, transparent);
+    border-bottom: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
+}
+
+.codewin-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .45;
+}
+
+.codewin-title {
+    margin-left: 6px;
+    font-size: 12px;
+    letter-spacing: .02em;
+    color: color-mix(in oklab, CanvasText 70%, transparent);
+}
+
+.codewin-body {
+    padding: 14px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Syntax-ish colors */
+:root {
+    --c-fg: color-mix(in oklab, CanvasText 82%, transparent);
+    --c-sub: color-mix(in oklab, CanvasText 62%, transparent);
+    --c-accent: #4ade80;
+    /* greenish */
+    --c-purple: #a78bfa;
+    --c-blue: #60a5fa;
+    --c-orange: #fb923c;
+    --c-pink: #f472b6;
+}
+
+/* Typewriter line */
+.type-line {
+    white-space: pre;
+    color: var(--c-fg);
+    line-height: 1.55;
+    will-change: width;
+}
+
+.type-line.dim {
+    color: var(--c-sub);
+}
+
+/* caret */
+.caret {
+    display: inline-block;
+    width: 9px;
+    height: 1.1em;
+    translate: 0 .2em;
+    background: var(--c-fg);
+    animation: blink 1s steps(1) infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* subtle vertical flow */
+.scroll-fade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(to bottom, rgba(0, 0, 0, .0), rgba(0, 0, 0, .06) 14%),
+        linear-gradient(to top, rgba(0, 0, 0, .0), rgba(0, 0, 0, .06) 14%);
+}

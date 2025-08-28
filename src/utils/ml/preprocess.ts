@@ -14,7 +14,6 @@ const MODEL_INPUT_HEIGHT = 28;
  * @returns Preprocessed tensor [1, 28, 28, 1] or null on error.
  */
 export function preprocessCharacterTensor(charTensor: tf.Tensor): tf.Tensor | null {
-    log('Preprocessing character tensor (INVERTED white-on-black)...');
     if (!charTensor) {
         error('Preprocessing failed: Input tensor is null.');
         return null;
@@ -54,7 +53,6 @@ export function preprocessCharacterTensor(charTensor: tf.Tensor): tf.Tensor | nu
             // Add batch dimension: [H, W, C] -> [1, H, W, C]
             const batchedTensor = resizedTensor.expandDims(0);
 
-            log('Character preprocessing complete (Inverted). Output shape:', batchedTensor.shape);
             return batchedTensor;
         });
     } catch (err) {

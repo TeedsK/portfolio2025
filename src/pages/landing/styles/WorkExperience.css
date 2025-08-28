@@ -1,8 +1,6 @@
 /* src/pages/landing/styles/WorkExperience.css */
 
-/* ===========================================================
-   Work Experience Section
-   =========================================================== */
+/* ---------- Section ---------- */
 .work-section {
     width: 100%;
     text-align: left;
@@ -12,11 +10,19 @@
 
 .work-header {
     display: grid;
-    grid-template-columns: 58px auto;
+    grid-template-columns: auto 1fr;
     gap: 16px;
     align-items: center;
     margin-bottom: 0.5rem;
     padding-inline: clamp(16px, 6vw, 48px);
+}
+
+.work-header-art {
+    display: block;
+    border-radius: 12px;
+    object-fit: cover;
+    transform: scale(0.8);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
 }
 
 .work-title {
@@ -24,29 +30,31 @@
     font-size: clamp(28px, 3.2vw, 36px);
     line-height: 1.15;
     color: #0f172a;
+    font-weight: 700;
 }
 
 .work-subtitle {
-    margin: 4px 0;
+    margin: 0ch 0;
     color: #475569;
     font-size: 16px;
+    font-weight: 500;
 }
 
 .work-meta {
     margin: 0;
     color: #64748b;
-    font-size: 13px;
+    font-size: 16px;
+    font-weight: 500;
 }
 
-/* Horizontal scroller with snap */
+/* ---------- Horizontal rail (no snapping) ---------- */
 .work-cards-viewport {
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x mandatory;
-    scroll-padding-left: clamp(16px, 6vw, 48px);
     padding-inline: clamp(16px, 6vw, 48px);
     padding-bottom: 8px;
+    margin-top: clamp(30px, 1.8vh, 50px);
 }
 
 .work-cards-rail {
@@ -56,16 +64,21 @@
     min-height: 1px;
 }
 
-/* Individual card */
+/* ---------- Card ---------- */
 .experience-card {
-    scroll-snap-align: start;
-    background: #ffffff;
-    border: 1px solid rgba(15, 23, 42, 0.12);
+    --card-bg: #ffffff;
+    --desc-fade-height: 48px;
+    /* height of gradient overlay */
+    background: var(--card-bg);
+    border: none;
+    box-shadow: none;
+
     border-radius: 14px;
-    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.03);
     width: 560px;
     padding: 16px 16px 12px;
     flex: 0 0 auto;
+    position: relative;
+    transition: box-shadow 0.25s ease;
 }
 
 @media (max-width: 720px) {
@@ -74,7 +87,7 @@
     }
 }
 
-/* Card top row */
+/* Top row */
 .experience-card__top {
     display: flex;
     align-items: flex-start;
@@ -86,37 +99,92 @@
     display: flex;
     gap: 12px;
     align-items: center;
+    min-width: 0;
+}
+
+/* Logo auto-sizes via JS to match text column height (square). */
+.experience-card__logo {
+    width: 58px;
+    height: 58px;
+    border-radius: 10px;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .experience-card__titles {
     display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.experience-card__company {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+    color: #0f172a;
+    font-weight: 800;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+/* Role/Team grid */
+.rt-grid {
+    display: grid;
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
     gap: 2px;
 }
 
-.experience-card__role {
-    margin: 0;
-    font-size: 20px;
-    line-height: 1.2;
-    color: #0f172a;
-    font-weight: 700;
+.rt-pair {
+    display: grid;
+    grid-template-rows: auto auto;
+    align-items: start;
+    min-width: 0;
 }
 
-.experience-card__team {
-    margin: 0;
-    font-size: 14px;
+.rt-label {
+    font-size: 12px;
     color: #64748b;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    line-height: 1;
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-6px);
+    overflow: hidden;
 }
 
-/* Expand button (text-like) */
+.rt-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-top: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+}
+
+.experience-card--expanded .rt-grid {
+    grid-auto-flow: column;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(16px, 3vw, 28px);
+}
+
+/* Expand button */
 .experience-card__expand {
     appearance: none;
     background: transparent;
     border: none;
     color: #2563eb;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 6px 8px;
     border-radius: 6px;
+    white-space: nowrap;
 }
 
 .experience-card__expand:hover {
@@ -128,28 +196,72 @@
     outline-offset: 2px;
 }
 
-/* Body */
+/* Body layout */
 .experience-card__body {
     margin-top: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
 }
 
-.experience-card__desc {
-    margin: 0 0 10px;
+.experience-card__col--desc {
+    min-width: 0;
+    flex: 1 1 100%;
+}
+
+.experience-card__col--media {
+    display: none;
+    flex: 0 0 0%;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ---------- Description & Fade ---------- */
+.experience-card__desc-wrap {
+    position: relative;
+    overflow: hidden;
+    /* enables fade and clip */
+    margin: 0 0 12px;
+    /* moved margin here so fade sits inside */
+    max-height: calc(1.5em * 6);
+    /* collapsed height (≈6 lines) */
+}
+
+/* We removed the old harsh cut here; ul can size naturally */
+.experience-card__desc-wrap .experience-card__desc {
+    margin: 0;
+    /* reset margin from original rule */
     padding-left: 18px;
+    /* keep the list indent */
     color: #334155;
     font-size: 14px;
-    line-height: 1.45;
+    line-height: 1.5;
 }
 
 .experience-card__desc li+li {
     margin-top: 6px;
 }
 
-.experience-card__extra {
-    color: #0f172a;
+/* Gradient overlay (hidden by default; shown when wrapper has .has-overflow and card is collapsed) */
+.desc-fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--desc-fade-height);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    /* fade from transparent to card background */
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--card-bg) 80%);
 }
 
-/* Tech chips row */
+/* Show fade only when there is real overflow and card is NOT expanded */
+.experience-card:not(.experience-card--expanded) .experience-card__desc-wrap.has-overflow .desc-fade {
+    opacity: 1;
+}
+
+/* Tech chips */
 .experience-card__tech {
     display: flex;
     flex-wrap: wrap;
@@ -159,43 +271,91 @@
 .tech-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
     padding: 6px 10px;
     border-radius: 999px;
     border: 1px solid transparent;
     background: #f8fafc;
+    line-height: 1;
 }
 
-/* Dark mode tolerances */
+.tech-chip__icon {
+    width: 14px;
+    height: 14px;
+    display: block;
+    object-fit: contain;
+}
+
+/* Media (image) */
+.experience-card__media-wrapper {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #f1f5f9;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.experience-card__media {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.experience-card--expanded .experience-card__desc-wrap {
+  max-height: none; /* ensures full content is visible post-animation */
+}
+
+.experience-card--expanded .desc-fade {
+  display: none;
+}
+
+/* Hide horizontal scrollbar cross‑browser while keeping scrolling */
+.work-cards-viewport {
+  /* existing props ... */
+  scrollbar-width: none;           /* Firefox */
+}
+.work-cards-viewport::-webkit-scrollbar {
+  display: none;                   /* Chrome/Safari/Edge */
+}
+
+
+/* ---------- Dark mode ---------- */
 @media (prefers-color-scheme: dark) {
     .experience-card {
-        background: #0b1020;
-        border-color: rgba(255, 255, 255, 0.06);
+        --card-bg: #0b1020;
+        /* used by the fade overlay */
+        background: var(--card-bg);
+        border: none;
+        box-shadow: none;
     }
 
     .work-title {
         color: #e5e7eb;
     }
 
-    .work-subtitle {
-        color: #94a3b8;
-    }
-
+    .work-subtitle,
     .work-meta {
         color: #94a3b8;
     }
 
-    .experience-card__role {
+    .experience-card__company {
         color: #e2e8f0;
     }
 
-    .experience-card__team {
-        color: #94a3b8;
+    .rt-value {
+        color: #e2e8f0;
     }
 
-    .experience-card__desc {
+    .experience-card__desc-wrap .experience-card__desc {
         color: #cbd5e1;
     }
+
+    .experience-card__media-wrapper {
+        background: #0f172a;
+        border-color: rgba(255, 255, 255, 0.06);
+    }
 }
+

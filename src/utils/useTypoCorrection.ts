@@ -40,7 +40,6 @@ export const useTypoCorrection = ({
     const triggerTypoCorrection = async (textToCorrect: string, ocrDisplayLines: OcrDisplayLine[]) => {
         if (!textToCorrect.trim()) return;
 
-        log('Sending to typo correction API:', textToCorrect);
         setIsTypoCheckingAPILoading(true);
         setErrorState(null);
         setInteractiveOcrParts([]);
@@ -59,7 +58,6 @@ export const useTypoCorrection = ({
             }
 
             const result = (await response.json()) as TypoCorrectionResponse;
-            log('Typo API response:', result);
             setBackendCorrectedSentence(result.corrected_sentence);
 
             // Build parts for popovers

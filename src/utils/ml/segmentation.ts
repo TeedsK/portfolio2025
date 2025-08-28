@@ -108,7 +108,6 @@ function mergeDotComponents(components: BoundingBox[]): BoundingBox[] {
                     const hasXOverlap = xOverlap > 2;
 
                     if (isAbove && reasonableGap && centerAligned && hasXOverlap) {
-                        log(`Merging dot (id: ${dotCandidate.id}) and stem (id: ${stemCandidate.id})`);
                         const mergedX = Math.min(dotCandidate.x, stemCandidate.x);
                         const mergedY = dotCandidate.y;
                         const mergedRight = Math.max(dotCandidate.x + dotCandidate.width, stemCandidate.x + stemCandidate.width);
@@ -141,7 +140,6 @@ export function findCharacterBoxes(
     threshold: number = 128,
 ): ProcessableLine[] {
     const { data, width, height } = imageData;
-    log(`Starting multi-line character segmentation on ${width}x${height} image.`);
 
     const labels = new Array(width * height).fill(0);
     let currentLabel = 1;
@@ -167,10 +165,8 @@ export function findCharacterBoxes(
             }
         }
     }
-    log(`Found ${initialComponents.length} initial components.`);
 
     const mergedComponents = mergeDotComponents(initialComponents);
-    log(`Found ${mergedComponents.length} components after merging.`);
 
     if (mergedComponents.length === 0) return [];
 
@@ -200,7 +196,6 @@ export function findCharacterBoxes(
         }
         lines.push(currentLine);
     }
-    log(`Grouped components into ${lines.length} lines.`);
 
     const resultLines: ProcessableLine[] = [];
     for (const line of lines) {
@@ -235,11 +230,6 @@ export function findCharacterBoxes(
           spaceThreshold = averageCharWidth * 1.6;
         }
 
-        log(
-          `Line center-dist median: ${
-            medianIntraWordDist !== null ? medianIntraWordDist.toFixed(1) : 'n/a'
-          }, space threshold: ${spaceThreshold.toFixed(1)}`
-        );
         processedLine.push([line[0].x, line[0].y, line[0].width, line[0].height]);
         for (let i = 0; i < line.length - 1; i++) {
             const currentDist = line[i + 1].centerX - line[i].centerX;
@@ -253,6 +243,5 @@ export function findCharacterBoxes(
         resultLines.push(processedLine);
     }
 
-    log(`Processed ${resultLines.length} lines with spaces.`);
     return resultLines;
 }

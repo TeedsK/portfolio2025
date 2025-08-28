@@ -1,0 +1,50 @@
+/* src/pages/landing/styles/FallingProjectShowcase.css */
+
+.fps-overlay {
+    position: absolute;
+    /* INSIDE the hero: scrolls with it */
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+    /* above hero content (z=2), beams (z=1) */
+}
+
+/* GSAP controls x/y/width/height */
+.fps-item {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 120px;
+    /* overridden by GSAP */
+    height: 120px;
+    /* overridden by GSAP */
+    opacity: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    /* crop only when we WANT to (final keeps aspect so no crop) */
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    background: transparent;
+    will-change: transform, width, height, opacity;
+}
+
+/* WAIT PHASE: wrappers are ratio‑correct (via GSAP), image just fills them */
+.fps-overlay.is-wait .fps-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* no crop; we sized the wrapper to the ratio already */
+    object-position: center;
+}
+
+/* FINAL PHASE: wrappers match preserved aspect; show entire image (no crop) */
+.fps-overlay.is-final .fps-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+
+.fps-img {
+    display: block;
+    user-select: none;
+}

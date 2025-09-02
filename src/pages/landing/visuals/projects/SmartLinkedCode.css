@@ -1,289 +1,219 @@
-/* Root fills the sticky panel; no extra background */
-.slk2-root {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    display: grid;
-    place-items: start center;
-}
+/* SmartLinked showcase */
 
-/* Stage with strict sizing to avoid horizontal overflow */
-.slk2-stage {
-    position: relative;
-    width: min(var(--stage-maxw, 640px), 100%);
-    margin: 0 auto;
-    overflow: visible;
-
-    /* Geometry variables */
-    --banner-left: 96px;
-    --banner-top: 8px;
-    --banner-h: 76px;
-    --avatar-d: 84px;
-    --avatar-left: calc(var(--banner-left) + 18px);
-    --text-left: var(--banner-left);
-    --bubble-gap: 38px;
-}
-
-/* Layering: connectors behind everything */
-.slk2-svg {
-    z-index: 0;
-}
-
-.slk2-banner,
-.slk2-avatar,
-.slk2-name,
-.slk2-headline-slot,
-.slk2-bubble,
-.slk2-square,
-.slk2-skeleton {
-    position: relative;
-    z-index: 2;
-}
-
-.slk2-square,
-.slk2-skeleton {
-    z-index: 3;
-}
-
-/* squares & skeleton above base ui */
-.slk2-svg {
-    z-index: 1;
-}
-
-/* Banner (narrower, never exceed stage width) */
-.slk2-banner {
-    position: relative;
-    height: var(--banner-h);
-    width: min(520px, 100%);
-    border-radius: 16px;
-    margin: var(--banner-top) 0 0 var(--banner-left);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, .08) inset;
-}
-
-/* Avatar (smaller) */
-.slk2-avatar {
-    position: absolute;
-    top: calc(var(--banner-top) + var(--banner-h) - (var(--avatar-d) / 2));
-    left: var(--avatar-left);
-    width: var(--avatar-d);
-    height: var(--avatar-d);
-    border-radius: 50%;
+.sl-root {
+    inline-size: 100%;
+    block-size: 100%;
     display: grid;
     place-items: center;
-    user-select: none;
+}
+
+.sl-card {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+/* Profile stack = the white profile container */
+.sl-stack {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+    min-block-size: 420px;
+    border-radius: 12px;
     overflow: hidden;
-    background: radial-gradient(65% 60% at 50% 38%, #d1d5db, #9ca3af);
-}
-
-/* Messy vs clean: remove green outline/glow for clean version */
-.slk2-avatar.messy {
-    box-shadow: inset 0 0 0 3px #9ca3af;
-    filter: grayscale(.25) contrast(.95) brightness(.98);
-}
-
-.slk2-avatar.clean {
-    box-shadow: none;
-    /* ← removed green glow */
-    background: radial-gradient(65% 60% at 50% 38%, #f3f4f6, #e5e7eb);
-    filter: none;
-}
-
-/* Lotties stacked for crossfade */
-.slk2-lottie {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-}
-
-/* Name */
-.slk2-name {
-    margin-top: calc(var(--banner-top) + var(--banner-h));
-    margin-left: var(--text-left);
-    font-weight: 900;
-    font-size: clamp(22px, 2.6vw, 34px);
-    line-height: 1.08;
-    color: #0f172a;
-}
-
-/* Headline SLOT anchors both bad and good in the identical position */
-.slk2-headline-slot {
-    position: relative;
-    margin-top: 6px;
-    margin-left: var(--text-left);
-    width: min(520px, 100%);
-    /* keep the same width as banner for consistent skeleton target */
-    min-height: 1.2em;
-    /* reserve space */
-}
-
-/* Headline text layers (absolutely overlayed) */
-.slk2-headline {
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: 100%;
-    font-size: clamp(14px, 1.6vw, 19px);
-    line-height: 1.45;
-    color: color-mix(in oklab, CanvasText 76%, transparent);
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-
-.slk2-headline--good {
-    display: none;
-    /* removed green color; keep neutral text color */
-}
-
-/* Prompt bubble (smaller & minimal, slightly overlaps banner area) */
-.slk2-bubble {
-    position: relative;
-    margin-top: var(--bubble-gap);
-    margin-left: var(--text-left);
-    transform-origin: left center;
-
-    width: min(500px, 100%);
-    background: #ffffff;
-    color: #111827;
-    border: 1px solid rgba(0, 0, 0, .08);
-    border-radius: 12px;
-    padding: 8px 12px;
-    pointer-events: none;
-    overflow: visible;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .04);
-}
-
-.slk2-bubble.is-multiline {
-    border-radius: 12px;
-}
-
-.slk2-bubble-text {
-    display: inline;
-    max-width: 100%;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    vertical-align: bottom;
-    font-size: 0.85em;
-    line-height: 1.28;
-    transition: opacity .25s ease;
-}
-
-/* Minimal caret */
-.slk2-caret {
-    display: inline-block;
-    width: 7px;
-    height: 1.05em;
-    translate: 0 .18em;
-    background: currentColor;
-    margin-left: 4px;
-    animation: slk2-blink 1s steps(1) infinite;
-}
-
-@keyframes slk2-blink {
-    50% {
-        opacity: 0;
-    }
-}
-
-/* Blue squares fade+scale (no off-screen slide) */
-.slk2-square {
-    position: absolute;
-    width: 54px;
-    height: 54px;
-    border-radius: 12px;
-    background: #2563eb;
-    box-shadow: 0 12px 24px rgba(37, 99, 235, .34);
-    opacity: 0;
-    transform: scale(0.6);
+    background: #fff;
     transform-origin: 50% 50%;
 }
 
-/* SVG connectors (behind) */
-.slk2-svg {
+.sl-layer {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    overflow: visible;
-    z-index: 1;
-}
-
-.slk2-conn {
-    fill: none;
-    stroke: #60a5fa;
-    stroke-width: 3;
-    /* clean, visible but not heavy */
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 6px rgba(96, 165, 250, .35));
     opacity: 0;
 }
 
-/* --- Skeleton overlay (JS-positioned to match real elements; frozen during use) --- */
-.slk2-skeleton {
+/* Profile layout */
+.sl-profile {
+    position: relative;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 96px 1fr;
+}
+
+.sl-banner {
+    block-size: 96px;
+    inline-size: 100%;
+}
+
+.sl-avatar {
+    position: absolute;
+    top: 56px;
+    left: 24px;
+    inline-size: 96px;
+    block-size: 96px;
+}
+
+.sl-avatar-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: color-mix(in oklab, Canvas 98%, transparent);
+}
+
+.sl-avatar-inner {
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+}
+
+.sl-content {
+    padding: 56px 24px 18px 24px;
+}
+
+.sl-name {
+    margin: 0 0 6px 0;
+    font-size: clamp(18px, 2.2vw, 20px);
+    color: color-mix(in oklab, CanvasText 88%, transparent);
+}
+
+.sl-headline {
+    margin: 0 0 10px 0;
+    font-weight: 600;
+    font-size: clamp(14px, 1.8vw, 16px);
+    color: color-mix(in oklab, CanvasText 74%, transparent);
+}
+
+.sl-bio {
+    color: color-mix(in oklab, CanvasText 70%, transparent);
+}
+
+.sl-bio p {
+    margin: 8px 0;
+    line-height: 1.55;
+}
+
+/* Prompt stays above overlay */
+.sl-prompt-float {
+    position: absolute;
+    z-index: 7;
+    width: min(560px, 92%);
+}
+
+.sl-prompt-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, CanvasText 58%, transparent);
+}
+
+.sl-prompt-input .ant-input {
+    padding: 12px 14px;
+    border-radius: 10px;
+}
+
+/* Skeleton overlay
+   - FULL WHITE BACKDROP ensures nothing shows through (even if a block is off by 1px)
+   - Blocks are rendered on top by AntD Skeletons
+*/
+.sl-skeletons {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    transform-origin: center;
+    z-index: 8;
+    /* above profile, below prompt (7) was too low; keep prompt above via z-index on prompt */
+    opacity: 0;
+    /* GSAP fades in */
+    background: #fff;
+    /* ← full mask eliminating any show-through */
 }
 
-/* Precise absolute elements for banner/avatar/headline skeletons */
-.slk2-skel-banner,
-.slk2-skel-avatar,
-.slk2-skel-headlines {
+/* Individual skeleton blocks sit on the white canvas; let AntD render the gray shimmer */
+.sl-skel-rect {
     position: absolute;
+    background: transparent;
+    /* transparent here—white is already provided by .sl-skeletons */
 }
 
-/* Banner shimmer ensures visibility even on white backgrounds; fixed size via JS so no wobble */
-.slk2-skel-banner {
-    border-radius: 16px;
-    overflow: hidden;
+/* Make AntD skeleton fill exactly and respect our border radius */
+.sl-skel-rect .ant-skeleton-element,
+.sl-skel-rect .ant-skeleton-button {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: inherit !important;
+    background-clip: padding-box !important;
+    display: block !important;
 }
 
-.slk2-skel-banner-shimmer {
+/* Icon transfer overlay */
+.sl-xfer-layer {
     position: absolute;
     inset: 0;
-    border-radius: 16px;
-    background: linear-gradient(90deg, #f2f3f5 0%, #e9ebee 40%, #f2f3f5 80%);
-    animation: slk2-shimmer 1.2s linear infinite;
-    opacity: .65;
+    pointer-events: none;
+    z-index: 6;
 }
 
-@keyframes slk2-shimmer {
-    0% {
-        transform: translateX(-30%);
-    }
-
-    100% {
-        transform: translateX(30%);
-    }
+/* behind skeletons */
+.sl-xfer-svg {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
 }
 
-.slk2-skel-headlines {
+.sl-xfer-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.sl-xfer-squares {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+}
+
+.sl-xfer-square {
+    position: absolute;
     display: grid;
-    gap: 8px;
-    width: 100%;
-    /* match headline-slot width */
+    place-items: center;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+    box-shadow: 0 8px 24px color-mix(in oklab, CanvasText 10%, transparent);
+    transform-origin: 50% 50%;
+    transform: scale(0);
+    opacity: 0;
 }
 
-.slk2-skel-hline {
-    width: 100%;
+/* Icon base size */
+.sl-xfer-icon {
+    inline-size: 28px;
+    block-size: 28px;
 }
 
-/* Dark mode tweaks */
-@media (prefers-color-scheme: dark) {
-    .slk2-name {
-        color: #e5e7eb;
-    }
+/* Masked gradient icon for peripheral squares (NOT for smartLinked logo) */
+.sl-xfer-icon--masked {
+    inline-size: 28px;
+    block-size: 28px;
+    background: linear-gradient(90deg, #227de6, #d40b8a, #227de6);
+    background-size: 200% 100%;
+}
 
-    .slk2-headline {
-        color: color-mix(in oklab, CanvasText 84%, transparent);
-    }
+/* Centered labels */
+.sl-xfer-label {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 12px;
+    line-height: 1.1;
+    color: color-mix(in oklab, CanvasText 60%, transparent);
+    pointer-events: none;
+    white-space: nowrap;
+}
 
-    .slk2-bubble {
-        background: #ffffff;
-        color: #0b1220;
-    }
+/* Respect transparent panel background in the code panel wrapper */
+:where(.code-panel[data-panel="smartlinked"]) .sl-card {
+    background: transparent;
 }

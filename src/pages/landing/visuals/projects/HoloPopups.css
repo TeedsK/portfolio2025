@@ -1,0 +1,225 @@
+/* ====== BELT (below the terminal) ====== */
+.holo-belt {
+    --pop-w: 300px;
+    /* fixed width for placement math */
+    --belt-h: 200px;
+    /* height reserved below terminal */
+    height: var(--belt-h);
+    position: relative;
+    overflow: visible;
+}
+
+.holo-belt-track {
+    position: relative;
+    height: 100%;
+    width: 100%;
+}
+
+/* Each item is absolutely positioned and moved with translateX */
+.holo-belt-item {
+    position: absolute;
+    top: 8px;
+    left: 0;
+    transform: translateX(0);
+    transform-origin: 50% 50%;
+    will-change: transform, opacity;
+}
+
+/* ====== POPUP CARD (content) ====== */
+.holo-pop {
+    background: #0f1117;
+    border: 1px solid #1f2430;
+    color: #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, .45);
+    pointer-events: none;
+}
+
+.holo-pop-title {
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa2b1;
+    padding: 10px 12px 6px 12px;
+    border-bottom: 1px solid #1f2430;
+}
+
+.holo-pop-body {
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* Terminal-style header (DB popup) */
+.holo-pop--terminal .holo-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #050505;
+    border-bottom: 1px solid #161616;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+
+.holo-pop--terminal .title {
+    margin-left: 6px;
+    font-size: 12px;
+    color: #a3a3a3;
+}
+
+.holo-pop--terminal .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.holo-pop--terminal .dot.red {
+    background: #ff5f56;
+}
+
+.holo-pop--terminal .dot.yellow {
+    background: #ffbd2e;
+}
+
+.holo-pop--terminal .dot.green {
+    background: #27c93f;
+}
+
+.mini-line {
+    margin: 4px 0;
+}
+
+.mini-foot {
+    margin-top: 8px;
+    color: #9aa2b1;
+    font-size: 12px;
+}
+
+/* Tables */
+.pop-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.pop-table th,
+.pop-table td {
+    border-bottom: 1px solid #1f2430;
+    padding: 6px 8px;
+    vertical-align: middle;
+}
+
+.pop-table thead th {
+    color: #9aa2b1;
+    font-weight: 600;
+}
+
+.pop-table--plain td {
+    color: #cfd6e3;
+}
+
+.pop-table .key {
+    color: #22d3ee;
+}
+
+.pop-table .warn {
+    color: #fde68a;
+}
+
+.pop-table .error td {
+    background: rgba(244, 63, 94, .16);
+    border-left: 3px solid rgba(244, 63, 94, .75);
+}
+
+.ok {
+    color: #34d399;
+}
+
+.key {
+    color: #22d3ee;
+}
+
+.num {
+    color: #fde047;
+}
+
+.file {
+    color: #60a5fa;
+}
+
+.muted {
+    color: #9aa2b1;
+}
+
+/* Bars for ranking */
+.bar {
+    background: #1f2430;
+    height: 6px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar>span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #227de6, #d40b8a);
+}
+
+/* Sections & metrics */
+.section-title {
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa2b1;
+    margin: 4px 0 6px 0;
+}
+
+ul.plain {
+    margin: 0 0 8px 0;
+    padding-left: 16px;
+}
+
+ul.plain li {
+    margin: 2px 0;
+}
+
+ul.plain li.pruned {
+    color: #a8a8a8;
+    text-decoration: line-through;
+}
+
+.metric {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+}
+
+.metric-value {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .02em;
+}
+
+.metric-label {
+    font-size: 12px;
+    color: #9aa2b1;
+}
+
+/* Training KV lines */
+.kv {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.kv .k {
+    color: #9aa2b1;
+    margin-right: 6px;
+}
+
+.save-lines {
+    margin-top: 6px;
+    display: grid;
+    gap: 2px;
+}

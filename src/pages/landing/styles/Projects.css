@@ -4,7 +4,8 @@
     position: relative;
     width: 100%;
     padding-block: clamp(40px, 6vh, 80px);
-    background: transparent;
+    /* CHANGED: overall projects section bg */
+    background: #f9f8fc;
 }
 
 .projects-inner {
@@ -144,9 +145,7 @@
     /* a touch taller so squares can spawn comfortably */
     min-height: 560px;
     padding: 0;
-    /* more space for the stage */
-
-    /* USER REQUEST: remove gray box/backdrop completely */
+    /* keep stage clean */
     background: transparent;
     outline: none;
     box-shadow: none;

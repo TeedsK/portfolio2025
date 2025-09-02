@@ -1,3 +1,30 @@
+/* Root wrapper splits space into: terminal (top) + belt (bottom) */
+.holo-root {
+    --belt-h: 200px;
+    /* reserved space below the terminal for the popup belt at 1.0 scale */
+    height: 100%;
+    display: grid;
+    grid-template-rows: calc(100% - var(--belt-h) - 8px) var(--belt-h);
+    row-gap: 8px;
+}
+
+/* ===== Auto-fit scaling wrappers ===== */
+.holo-fitbox {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    /* fills the code panel */
+    overflow: hidden;
+    /* avoid any accidental overflow during scaling */
+}
+
+.holo-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* height is set inline; width is expanded to 100%/scale and then scaled down, so final width = 100% */
+}
+
 /* Generic styles for the code-window look */
 .codewin {
     display: grid;
@@ -5,6 +32,7 @@
     height: 100%;
     border-radius: 10px;
     overflow: hidden;
+    /* terminal is enclosed; belt is outside below */
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
@@ -33,9 +61,12 @@
 }
 
 .codewin-body {
-    padding: 14px;
-    overflow: hidden;
+    padding: 14px 14px 28px;
+    /* extra bottom pad for breathing room */
+    overflow-y: auto;
+    /* enable internal scrolling */
     position: relative;
+    scrollbar-gutter: stable both-edges;
 }
 
 /* Syntax-ish colors */
@@ -43,11 +74,12 @@
     --c-fg: color-mix(in oklab, CanvasText 82%, transparent);
     --c-sub: color-mix(in oklab, CanvasText 62%, transparent);
     --c-accent: #4ade80;
-    /* greenish */
     --c-purple: #a78bfa;
     --c-blue: #60a5fa;
     --c-orange: #fb923c;
     --c-pink: #f472b6;
+    --c-yellow: #fde047;
+    --c-cyan: #22d3ee;
 }
 
 /* Typewriter line */
@@ -55,7 +87,7 @@
     white-space: pre;
     color: var(--c-fg);
     line-height: 1.55;
-    will-change: width;
+    will-change: width, opacity, transform;
 }
 
 .type-line.dim {
@@ -87,4 +119,77 @@
     background:
         linear-gradient(to bottom, rgba(0, 0, 0, .0), rgba(0, 0, 0, .06) 14%),
         linear-gradient(to top, rgba(0, 0, 0, .0), rgba(0, 0, 0, .06) 14%);
+}
+
+/* ---------- Terminal variant (HoloClean) ---------- */
+.codewin--terminal {
+    border: 1px solid #111;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+}
+
+.codewin--terminal .codewin-head {
+    background: #050505;
+    border-bottom: 1px solid #111;
+}
+
+.codewin--terminal .codewin-body {
+    background: #0a0a0a;
+    color: #e5e7eb;
+}
+
+/* Traffic-light buttons */
+.codewin--terminal .codewin-dot {
+    opacity: 1;
+}
+
+.codewin--terminal .codewin-head .codewin-dot:nth-child(1) {
+    background: #ff5f56;
+}
+
+.codewin--terminal .codewin-head .codewin-dot:nth-child(2) {
+    background: #ffbd2e;
+}
+
+.codewin--terminal .codewin-head .codewin-dot:nth-child(3) {
+    background: #27c93f;
+}
+
+.codewin--terminal .codewin-title {
+    color: #a3a3a3;
+}
+
+/* Colors for terminal lines */
+.codewin--terminal .type-line {
+    color: #e5e7eb;
+}
+
+.codewin--terminal .type-line.cmd {
+    color: #86efac;
+}
+
+.codewin--terminal .type-line.cmd.cmd--sub {
+    color: #6ee7b7;
+}
+
+.codewin--terminal .type-line.dim {
+    color: #6b7280;
+}
+
+/* Fade-away animation for very old blocks */
+@keyframes vanish {
+    to {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+.vanish {
+    animation: vanish 0.35s ease forwards;
+}
+
+/* Adjust scroll fade so it blends with the dark terminal */
+.codewin--terminal .scroll-fade {
+    background:
+        linear-gradient(to bottom, rgba(10, 10, 10, 0), rgba(10, 10, 10, .35) 14%),
+        linear-gradient(to top, rgba(10, 10, 10, 0), rgba(10, 10, 10, .35) 14%);
 }

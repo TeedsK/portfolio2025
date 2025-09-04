@@ -208,23 +208,19 @@ const Projects: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Right: sticky, code animation that switches with the active project */}
-                {/* Right: sticky, code animation that switches with the active project */}
+                {/* Right: sticky, animation pane (NO code-panel wrapper; overflow allowed) */}
                 <div className="projects-right" aria-live="polite" aria-label="Project animation panel">
-                    <div className="code-panel-switcher">
-                        <div
-                            className={`code-panel ${activeKey === 'smartlinked' ? 'is-active' : ''}`}
-                            data-panel="smartlinked"                                                   // ← NEW
-                        >
+                    <div className="viz-switcher">
+                        <div className={`viz-layer ${activeKey === 'smartlinked' ? 'is-active' : ''}`} data-viz="smartlinked">
                             <SmartLinkedCode play={activeKey === 'smartlinked'} />
                         </div>
-                        <div className={`code-panel ${activeKey === 'kudotools' ? 'is-active' : ''}`}>
+                        <div className={`viz-layer ${activeKey === 'kudotools' ? 'is-active' : ''}`} data-viz="kudotools">
                             <KudoToolsCode play={activeKey === 'kudotools'} />
                         </div>
-                        <div className={`code-panel ${activeKey === 'holoclean' ? 'is-active' : ''}`}>
+                        <div className={`viz-layer ${activeKey === 'holoclean' ? 'is-active' : ''}`} data-viz="holoclean">
                             <HoloCleanCode play={activeKey === 'holoclean'} />
                         </div>
-                        <div className={`code-panel ${activeKey === 'stackchan' ? 'is-active' : ''}`}>
+                        <div className={`viz-layer ${activeKey === 'stackchan' ? 'is-active' : ''}`} data-viz="stackchan">
                             <StackchanCode play={activeKey === 'stackchan'} />
                         </div>
                     </div>

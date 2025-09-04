@@ -4,14 +4,13 @@
     position: relative;
     width: 100%;
     padding-block: clamp(40px, 6vh, 80px);
-    /* CHANGED: overall projects section bg */
     background: #f9f8fc;
 }
 
 .projects-inner {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    /* 50 / 50 split */
+    /* Give the right column more room for wider popovers */
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: clamp(24px, 4vw, 48px);
     align-items: start;
     width: min(1200px, 92vw);
@@ -56,8 +55,7 @@
     margin-top: clamp(16px, 2vh, 24px);
 }
 
-/* A big, comfortable block for each project. Plenty of vertical spacing
-   so the text "owns" the center as it passes through. */
+/* Spacious project blocks to drive the focus band logic */
 .project-block {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -65,9 +63,7 @@
     align-items: center;
     min-height: clamp(520px, 70vh, 780px);
     margin-block: 18vh;
-    /* sizeable gap between projects */
     scroll-margin-top: 18vh;
-    /* for anchor jumps */
 }
 
 /* When there is no hero image we preserve grid area */
@@ -142,29 +138,27 @@
     top: clamp(24px, 10vh, 96px);
     align-self: start;
     height: 84vh;
-    /* a touch taller so squares can spawn comfortably */
     min-height: 560px;
     padding: 0;
-    /* keep stage clean */
     background: transparent;
     outline: none;
     box-shadow: none;
     border-radius: 0;
     overflow: visible;
-    /* allow SmartLinked to spill slightly if needed */
+    z-index: 5;
+    /* ensure the viz (and popovers) can overlay the left column */
 }
 
-.code-panel-switcher {
+.viz-switcher {
     position: relative;
     width: 100%;
     height: 100%;
     overflow: visible;
-    /* squares can originate just beyond edges */
     border-radius: 0;
 }
 
-/* Each panel is absolutely layered; only .is-active is visible */
-.code-panel {
+/* Each viz is layered; only .is-active is visible. No background, no padding. */
+.viz-layer {
     position: absolute;
     inset: 0;
     opacity: 0;
@@ -172,13 +166,17 @@
     transition: opacity 360ms ease, transform 420ms cubic-bezier(.22, 1, .36, 1);
     display: grid;
     place-items: stretch;
-    padding: clamp(12px, 2vw, 16px);
-    background: color-mix(in oklab, CanvasText 4%, transparent);
+    padding: 0;
+    background: transparent;
+    overflow: visible;
+    pointer-events: none;
+    /* non-active layers won't block */
 }
 
-.code-panel.is-active {
+.viz-layer.is-active {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
 }
 
 /* ---------- Responsive ---------- */
@@ -194,6 +192,10 @@
         min-height: 420px;
     }
 
+    .viz-switcher {
+        min-height: 420px;
+    }
+
     .project-block {
         grid-template-columns: 1fr;
     }
@@ -201,11 +203,4 @@
     .project-hero {
         order: -1;
     }
-}
-
-/* --- SmartLinked panel needs a transparent background and visible overflow --- */
-.code-panel[data-panel="smartlinked"] {
-    background: transparent;
-    overflow: visible;
-    padding: clamp(8px, 1vw, 12px);
 }

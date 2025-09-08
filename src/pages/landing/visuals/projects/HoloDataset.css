@@ -38,7 +38,10 @@
 }
 
 .dataset-stats .stat .num {
+    display: inline-block;
+    /* allow transform animation w/o reflow quirks */
     color: #fde047;
+    will-change: transform, opacity;
 }
 
 .feature-badge {
@@ -50,13 +53,19 @@
     background: #111926;
     border: 1px solid #1f2a3a;
     color: #60a5fa;
+
+    /* Prevent any temporary wrapping while width animates in */
+    white-space: nowrap;
+    overflow: hidden;
+    will-change: width, transform, opacity;
 }
 
-/* Table wrap (scrollable) */
+/* Table wrap — now NON-scrollable as requested */
 .dataset-table-wrap {
     position: relative;
     padding: 10px 12px;
-    overflow: auto;
+    overflow: hidden;
+    /* disable scrolling */
 }
 
 /* Table */
@@ -135,29 +144,6 @@
     color: #fde047;
 }
 
-/* Evaluation panel */
-.dataset-eval {
-    position: sticky;
-    bottom: 10px;
-    margin-top: 12px;
-    width: fit-content;
-    background: #10131a;
-    border: 1px solid #1f2a3a;
-    border-radius: 10px;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, .24);
-    padding: 10px 12px;
-    color: #e5e7eb;
-}
-
-.dataset-eval .kv {
-    display: grid;
-    gap: 2px;
-}
-
-.dataset-eval .k {
-    color: #9aa2b1;
-}
-
 /* ===== Row Popovers (left/right anchored to row center) ===== */
 .row-popovers {
     position: absolute;
@@ -179,7 +165,13 @@
     --rp-bd: #1f2430;
     /* neutral border */
 
-    max-width: 340px;
+    /* Compact width (tuned to avoid horizontal scroll on narrow screens) */
+    --rp-min-w: 200px;
+    --rp-max-w: 200px;
+
+    min-width: min(var(--rp-min-w), calc(100vw - 48px));
+    max-width: min(var(--rp-max-w), calc(100vw - 48px));
+
     background: var(--rp-bg);
     color: #dbeafe;
     border: 1px solid var(--rp-bd);
@@ -191,11 +183,6 @@
     will-change: transform, opacity;
 }
 
-/* Slightly bigger on the right if needed */
-.rp-right {
-    max-width: 380px;
-}
-
 /* Side placement (left/right), then shift by gap */
 .rp-left {
     transform: translate(calc(-100% - var(--rp-gap)), -50%);
@@ -203,6 +190,12 @@
 
 .rp-right {
     transform: translate(var(--rp-gap), -50%);
+}
+
+/* Ensure right-anchored bubble inherits the same bounds (extra specificity) */
+.rp.rp-right {
+    min-width: min(var(--rp-min-w), calc(100vw - 48px));
+    max-width: min(var(--rp-max-w), calc(100vw - 48px));
 }
 
 /* Outside arrow (neutral outline + fill) */
@@ -295,4 +288,12 @@
     background: rgba(16, 185, 129, 0.12);
     border-color: rgba(16, 185, 129, 0.28);
     color: #a7f3d0;
+}
+
+/* Compact bounds on narrow screens (still guarded against overflow) */
+@media (max-width: 980px) {
+    .rp {
+        min-width: min(200px, calc(100vw - 24px));
+        max-width: min(200px, calc(100vw - 24px));
+    }
 }

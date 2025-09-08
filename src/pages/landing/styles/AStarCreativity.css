@@ -4,39 +4,33 @@
     width: 100%;
     position: relative;
     margin-top: 120px;
-    /* ≥ 100px spacing below WorkExperience as requested */
-    min-height: var(--astar-height, 560px);
+    height: var(--astar-height, 560px);
     isolation: isolate;
-    /* ensure overlay stacks cleanly */
     overflow: clip;
 }
 
-/* Canvas sits fully behind the content */
+/* Canvas behind content */
 .astar-canvas-wrap {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     z-index: 0;
-    /* behind copy */
+    /* canvas layer */
 }
 
-/* Foreground text floats left */
+/* Foreground copy */
 .astar-copy {
     position: relative;
     z-index: 1;
-    /* display: flex; */
-    /* align-items: flex-start;
-    justify-content: flex-start; */
+    /* copy above canvas */
     height: 100%;
     padding: clamp(16px, 6vw, 64px);
     box-sizing: border-box;
     pointer-events: none;
-    /* keep canvas interactions free if you add them later */
     max-width: 700px;
 }
 
-/* Left aligned content block with a comfortable max width */
 .astar-copy>* {
     pointer-events: auto;
 }
@@ -44,11 +38,9 @@
 .astar-title {
     margin: 0;
     font-weight: 800;
-    /* bold per spec */
     font-size: clamp(28px, 3.6vw, 44px);
     line-height: 1.15;
     color: #0f172a;
-    /* dark ink on light maze */
     text-wrap: balance;
 }
 
@@ -60,7 +52,218 @@
     color: #334155;
 }
 
-/* If user is in dark mode, invert text for readability while keeping maze colors unchanged */
+/* === Controls row (dropdowns + build button) === */
+.maze-controls-row {
+    margin-top: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Field wrapper positions label just above top-left of Select */
+.field {
+    position: relative;
+    padding-top: 18px;
+    /* space for the label above the Select */
+    width: var(--field-w, 80px);
+    /* compact */
+}
+
+.field.field--button {
+    width: auto;
+    /* button can size to content */
+    padding-top: 18px;
+    /* align with selects */
+}
+
+/* Label styling similar to your sample .rt-label */
+.rt-label {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    line-height: 1;
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-6px);
+    overflow: hidden;
+
+    position: absolute;
+    left: 2px;
+    top: 0;
+}
+
+/* Make it visible */
+.rt-label.show {
+    max-height: 18px;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* antd Select — compact width */
+.maze-select {
+    width: 80px;
+    /* per request */
+}
+
+/* "build your own" — toned down + inline with selects */
+.build-btn {
+    padding: 6px 10px;
+    border: none;
+    background: transparent;
+    color: #0958d9;
+    font-weight: 600;
+    /* less strong */
+    letter-spacing: 0.005em;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 160ms ease, transform 120ms ease, box-shadow 160ms ease;
+}
+
+.build-btn:hover {
+    background-color: #eaf2ff;
+    /* opaque light background */
+    transform: translateY(-1px);
+    box-shadow: 0 2px 10px rgba(9, 88, 217, 0.12);
+}
+
+.build-btn:active {
+    transform: translateY(0);
+}
+
+.build-btn:focus-visible {
+    outline: 3px solid rgba(9, 88, 217, 0.35);
+    outline-offset: 2px;
+}
+
+/* Custom-mode buttons */
+.maze-custom-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.maze-btn {
+    appearance: none;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #0f172a;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: box-shadow 120ms ease, transform 80ms ease, background 120ms ease, color 120ms ease, border-color 120ms ease;
+    user-select: none;
+}
+
+.maze-btn:hover {
+    border-color: #a5b4fc;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
+.maze-btn:active {
+    transform: translateY(1px);
+}
+
+.maze-btn.outline {
+    background: transparent;
+    color: #334155;
+}
+
+.maze-btn.danger {
+    border-color: #fda4af;
+    background: #fff1f2;
+    color: #991b1b;
+}
+
+.maze-btn.danger:hover {
+    border-color: #f87171;
+    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.18);
+}
+
+/* Popover legend (dropdown) */
+.maze-popover {
+    display: grid;
+    gap: 6px;
+}
+
+.legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.legend-box {
+    inline-size: 12px;
+    block-size: 12px;
+    border-radius: 2px;
+    display: inline-block;
+}
+
+.legend-box.start {
+    background: #69d885;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.legend-box.end {
+    background: #d95353;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.legend-note {
+    font-size: 11px;
+    opacity: 0.75;
+}
+
+/* === Canvas marker overlay for Start/End (only XL/XXL) === */
+.pf-overlay {
+    position: fixed;
+    /* float above the whole page */
+    inset: 0;
+    /* cover viewport for easy positioning */
+    z-index: 999;
+    /* above copy */
+    pointer-events: none;
+    /* markers will re-enable interaction */
+}
+
+.pf-marker {
+    position: absolute;
+    width: var(--pf-cell, 12px);
+    height: var(--pf-cell, 12px);
+    transform: translate(-50%, -50%);
+    border-radius: 3px;
+    pointer-events: auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+    transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, filter 160ms ease;
+    display: none;
+    /* toggled from JS */
+}
+
+.pf-marker:hover {
+    transform: translate(-50%, -50%) scale(1.06);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.pf-marker.start {
+    background: #69d885;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    filter: saturate(1.05);
+}
+
+.pf-marker.end {
+    background: #d95353;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    filter: saturate(1.05);
+}
+
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
     .astar-title {
         color: #e5e7eb;
@@ -68,5 +271,36 @@
 
     .astar-subtitle {
         color: #cbd5e1;
+    }
+
+    .rt-label {
+        color: #94a3b8;
+    }
+
+    .build-btn:hover {
+        background-color: rgba(9, 88, 217, 0.18);
+        box-shadow: 0 2px 10px rgba(9, 88, 217, 0.25);
+    }
+
+    .maze-btn {
+        background: #0b0b0b;
+        color: #e5e7eb;
+        border-color: #2c2c2c;
+    }
+
+    .maze-btn:hover {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.24);
+    }
+
+    .maze-btn.outline {
+        background: transparent;
+        color: #cbd5e1;
+    }
+
+    .maze-btn.danger {
+        border-color: #7f1d1d;
+        background: #1f0b0b;
+        color: #fecaca;
     }
 }

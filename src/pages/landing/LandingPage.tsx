@@ -10,7 +10,8 @@ function LandingPage() {
     <>
       <Hero />
       <WorkExperience />
-      <AStarCreativity heightPx={560} />
+      {/* Height now randomizes on mount & animates with GSAP */}
+      <AStarCreativity />
       <Projects /> {/* ← NEW: directly under AStarCreativity */}
     </>
   );

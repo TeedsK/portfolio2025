@@ -11,6 +11,15 @@ export type Phase =
     | 'inferred'
     | 'evaluated';
 
+export type RunStats = {
+    rowsTotal: number;
+    flaggedTotal: number;
+    precision: number; // 0..1
+    recall: number;    // 0..1
+    f1: number;        // 0..1
+    fixedTotal: number;
+};
+
 type Row = {
     id: number;
     name: string;
@@ -41,54 +50,172 @@ type Fix = Suggestion;
 type PopoverStage = 'hidden' | 'issues' | 'suggestions' | 'fixed';
 type Side = 'left' | 'right';
 
-const SAMPLE_ROWS: Row[] = [
-    { id: 101, name: 'Valley General', city: 'Salt Lake City', state: 'Utah', zipcode: '84010', beds: 220 },
-    { id: 102, name: 'St. Mary Medical', city: 'Denver', state: 'CO', zipcode: '80014', beds: 180 },
-    { id: 103, name: 'Boise Regional', city: 'Boise', state: 'ID', zipcode: '83702', beds: 140 },
-    // rows with issues
-    { id: 104, name: 'Wasatch Health', city: 'Salt Lake', state: 'Utha', zipcode: '84O10', beds: 200 }, // O vs 0; state typo
-    { id: 105, name: 'Canyon Clinic', city: '', state: 'UT', zipcode: '84101', beds: -12 }, // missing city; negative beds
+/** ---------- Randomized run generator ---------- */
+
+type RunData = {
+    rows: Row[];
+    flags: Flag[];
+    suggestions: Suggestion[];
+    signature: string;
+};
+
+const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const choice = <T,>(arr: T[]) => arr[rand(0, arr.length - 1)];
+
+const ROW_TEMPLATES: Omit<Row, 'id'>[] = [
+    { name: 'Valley General', city: 'Salt Lake City', state: 'Utah', zipcode: '84010', beds: 220 },
+    { name: 'St. Mary Medical', city: 'Denver', state: 'Colorado', zipcode: '80014', beds: 180 },
+    { name: 'Boise Regional', city: 'Boise', state: 'Idaho', zipcode: '83702', beds: 140 },
+    { name: 'Wasatch Health', city: 'Salt Lake', state: 'Utah', zipcode: '84105', beds: 200 },
+    { name: 'Canyon Clinic', city: 'Provo', state: 'Utah', zipcode: '84601', beds: 120 },
+    { name: 'Junction Care', city: 'Grand Junction', state: 'Colorado', zipcode: '81501', beds: 160 },
 ];
 
-const DETECTED_FLAGS: Flag[] = [
-    { rowId: 104, col: 'state', issue: 'state typo → Utah', severity: 'error' },
-    { rowId: 104, col: 'zipcode', issue: 'zipcode: letter “O” as 0', severity: 'warn' },
-    { rowId: 105, col: 'city', issue: 'city missing', severity: 'warn' },
-    { rowId: 105, col: 'beds', issue: 'beds negative', severity: 'error' },
-];
+function typoState(s: string) {
+    const map: Record<string, string> = {
+        utah: 'Utha',
+        colorado: 'Colarado',
+        idaho: 'Idaoh',
+    };
+    return map[s.toLowerCase()] ?? (s.slice(0, Math.max(1, s.length - 1)));
+}
 
-const PRUNED_SUGGESTIONS: readonly Suggestion[] = [
-    { rowId: 104, col: 'state', value: 'Utah', prob: 0.96 },
-    { rowId: 104, col: 'zipcode', value: '84010', prob: 0.92 },
-    { rowId: 105, col: 'city', value: 'Salt Lake City', prob: 0.78 },
-    { rowId: 105, col: 'beds', value: 120, prob: 0.88 },
-];
+function corruptZipO(z: string) {
+    const indices = [...z].map((ch, i) => ({ ch, i })).filter(e => e.ch === '0');
+    if (indices.length) {
+        const idx = choice(indices).i;
+        return z.slice(0, idx) + 'O' + z.slice(idx + 1);
+    }
+    const idx = rand(0, z.length - 1);
+    return z.slice(0, idx) + 'O' + z.slice(idx + 1);
+}
 
-const FEATURE_COUNT = 1237211;
-const EVAL_SUMMARY = { precision: 0.93, recall: 0.91, f1: 0.92 };
+function probApprox(lo = 0.78, hi = 0.97) {
+    return Math.round((lo + Math.random() * (hi - lo)) * 100) / 100;
+}
 
-const cellKey = (rowId: number, col: CellKey) => `${rowId}:${col}`;
+/** Generate a randomized 6-row sample, with issues limited to the first 4 rows. */
+function makeRunData(rowsTotal: number, prevSig?: string): RunData {
+    const idStart = Math.max(1, rand(1, Math.max(6, rowsTotal - 5)));
+    const rows: Row[] = ROW_TEMPLATES.map((tpl, i) => ({
+        id: idStart + i,
+        ...tpl
+    }));
+    const original: Row[] = ROW_TEMPLATES.map((tpl, i) => ({
+        id: idStart + i,
+        ...tpl
+    }));
 
-const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
+    type ErrType = 'stateTypo' | 'zipcodeO' | 'cityMissing' | 'bedsNegative';
+    const errorTypes: ErrType[] = ['stateTypo', 'zipcodeO', 'cityMissing', 'bedsNegative'];
+
+    // choose 2..3 errors within first 4 rows
+    const candidateIds = [idStart + 0, idStart + 1, idStart + 2, idStart + 3];
+    const targetErrorsCount = rand(2, 3);
+    const picks: { rowId: number; type: ErrType }[] = [];
+    const usedCells = new Set<string>();
+    const ckey = (rid: number, t: ErrType) => `${rid}:${t}`;
+
+    let guard = 0;
+    while (picks.length < targetErrorsCount && guard++ < 20) {
+        const rid = choice(candidateIds);
+        const t = choice(errorTypes);
+        const key = ckey(rid, t);
+        if (usedCells.has(key)) continue;
+        usedCells.add(key);
+        picks.push({ rowId: rid, type: t });
+    }
+
+    const flags: Flag[] = [];
+    const suggestions: Suggestion[] = [];
+
+    picks.forEach(({ rowId, type }) => {
+        const idx = rows.findIndex(r => r.id === rowId);
+        const base = original[idx];
+        const r = rows[idx];
+
+        if (type === 'stateTypo') {
+            const bad = typoState(base.state);
+            r.state = bad;
+            flags.push({ rowId, col: 'state', issue: `state typo → ${base.state}`, severity: 'error' });
+            suggestions.push({ rowId, col: 'state', value: base.state, prob: probApprox(0.92, 0.98) });
+        }
+        if (type === 'zipcodeO') {
+            const bad = corruptZipO(base.zipcode);
+            r.zipcode = bad;
+            flags.push({ rowId, col: 'zipcode', issue: 'zipcode: letter “O” as 0', severity: 'warn' });
+            suggestions.push({ rowId, col: 'zipcode', value: base.zipcode, prob: probApprox(0.88, 0.96) });
+        }
+        if (type === 'cityMissing') {
+            r.city = '';
+            flags.push({ rowId, col: 'city', issue: 'city missing', severity: 'warn' });
+            suggestions.push({ rowId, col: 'city', value: base.city, prob: probApprox(0.72, 0.9) });
+        }
+        if (type === 'bedsNegative') {
+            const val = typeof base.beds === 'number' ? base.beds : 100;
+            r.beds = -Math.max(10, Math.round(val * 0.6));
+            flags.push({ rowId, col: 'beds', issue: 'beds negative', severity: 'error' });
+            suggestions.push({ rowId, col: 'beds', value: Math.abs(Number(r.beds)) || val, prob: probApprox(0.85, 0.95) });
+        }
+    });
+
+    const signature = picks.map(p => `${p.rowId}:${p.type}`).sort().join('|');
+    if (prevSig && signature === prevSig) {
+        // try again for variety
+        return makeRunData(rowsTotal, undefined);
+    }
+
+    return { rows, flags, suggestions, signature };
+}
+
+/** Utility: animate stat swaps (fade/slide) */
+function animateStatSwap(el: HTMLElement | null, nextText: string) {
+    if (!el) return;
+    gsap.to(el, {
+        y: -6,
+        opacity: 0,
+        duration: 0.16,
+        ease: 'power1.in',
+        onComplete: () => {
+            el.textContent = nextText;
+            gsap.set(el, { y: 6, opacity: 0 });
+            gsap.to(el, { y: 0, opacity: 1, duration: 0.22, ease: 'power2.out' });
+        }
+    });
+}
+
+/* ---------- Component ---------- */
+
+const HoloDataset: React.FC<{ phase: Phase; stats: RunStats }> = ({ phase, stats }) => {
     const [rows, setRows] = useState<Row[]>([]);
     const [flags, setFlags] = useState<Flag[]>([]);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [fixes, setFixes] = useState<Fix[]>([]);
     const [showFeatures, setShowFeatures] = useState(false);
-    const [showEval, setShowEval] = useState(false);
 
-    // Popover stage for rows with problems
+    // Popover stage for rows with problems (cumulative sections)
     const [popoverStage, setPopoverStage] = useState<PopoverStage>('hidden');
 
     // layout refs
-    const wrapRef = useRef<HTMLDivElement>(null);          // scroll container
+    const wrapRef = useRef<HTMLDivElement>(null);          // scroll container (now non-scrollable)
     const tableRef = useRef<HTMLTableElement>(null);       // table
-    const panelRef = useRef<HTMLElement>(null);            // dataset panel
-    const overlayRef = useRef<HTMLDivElement>(null);       // popover overlay (sibling to wrap)
+    const panelRef = useRef<HTMLDivElement>(null);         // dataset panel
+    const overlayRef = useRef<HTMLDivElement>(null);       // row popover overlay (sibling to scroller)
 
-    // Which rows have problems
+    // Header stats number refs (we animate text swaps)
+    const rowsNumRef = useRef<HTMLSpanElement>(null);
+    const flaggedNumRef = useRef<HTMLSpanElement>(null);
+    const fixedNumRef = useRef<HTMLSpanElement>(null);
+    const featureBadgeRef = useRef<HTMLSpanElement>(null);
+
+    // Keep last run signature to avoid repetition
+    const lastSigRef = useRef<string | undefined>(undefined);
+    const runRef = useRef<RunData | null>(null);
+
+    // Which rows have problems (based on current flags)
     const problemRowIds = useMemo(
-        () => Array.from(new Set(DETECTED_FLAGS.map(f => f.rowId))),
-        []
+        () => Array.from(new Set(flags.map(f => f.rowId))),
+        [flags]
     );
 
     // Alternate sides for each problem row
@@ -110,17 +237,16 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
         const overlay = overlayRef.current;
         if (!overlay) return;
         const ov = overlay.getBoundingClientRect();
-
         const res: Record<number, { leftEdge: number; rightEdge: number; midY: number }> = {};
+
         problemRowIds.forEach((rid) => {
             const tr = tableRef.current?.querySelector(`tbody tr[data-rid="${rid}"]`) as HTMLTableRowElement | null;
             if (!tr) return;
 
-            // Use the *cell inner* boxes so we ignore vertical spacing added by border-spacing.
+            // Use inner cell boxes so we ignore row spacing from border-spacing
             const firstInner = tr.querySelector('td:first-child .cell-inner') as HTMLElement | null;
             const lastInner = tr.querySelector('td:last-child .cell-inner') as HTMLElement | null;
 
-            // Fallbacks: td rects, then tr rect (worst case)
             const firstTd = tr.querySelector('td:first-child') as HTMLTableCellElement | null;
             const lastTd = tr.querySelector('td:last-child') as HTMLTableCellElement | null;
 
@@ -135,30 +261,25 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
             res[rid] = {
                 leftEdge: baseRect.left - ov.left,
                 rightEdge: lastRect.right - ov.left,
-                midY: (baseRect.top + baseRect.height / 2) - ov.top, // vertical center of the *cell*, not the row gap
+                midY: (baseRect.top + baseRect.height / 2) - ov.top, // exact center of visible cell area
             };
         });
         setRowPositions(res);
     };
 
-    // Keep anchors in sync with scrolling, resizing, content morphs, and after initial layout
+    // Keep anchors in sync with resizing/content morphs and after initial layout
     useEffect(() => {
         measurePositions();
-        const sc = wrapRef.current;
-        const onScroll = () => measurePositions();
         const onResize = () => measurePositions();
-        sc?.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onResize, { passive: true });
 
         const ro = new ResizeObserver(() => measurePositions());
         if (panelRef.current) ro.observe(panelRef.current);
 
-        // font/layout settling pass
         const settle1 = window.setTimeout(measurePositions, 100);
         const settle2 = window.setTimeout(measurePositions, 250);
 
         return () => {
-            sc?.removeEventListener('scroll', onScroll);
             window.removeEventListener('resize', onResize);
             ro.disconnect();
             clearTimeout(settle1);
@@ -167,7 +288,7 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows, flags, fixes]);
 
-    // Also re-measure when popover content switches stage (Issues → Predictions → Fixed)
+    // Also re-measure when popover content grows across stages
     useEffect(() => {
         requestAnimationFrame(() => requestAnimationFrame(measurePositions));
     }, [popoverStage]);
@@ -175,31 +296,65 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
     // Derived lookups
     const flaggedMap = useMemo(() => {
         const m = new Map<string, Flag>();
-        flags.forEach((f) => m.set(cellKey(f.rowId, f.col), f));
+        flags.forEach((f) => m.set(`${f.rowId}:${f.col}`, f));
         return m;
     }, [flags]);
 
     const fixedMap = useMemo(() => {
         const m = new Map<string, Fix>();
-        fixes.forEach((f) => m.set(cellKey(f.rowId, f.col), f));
+        fixes.forEach((f) => m.set(`${f.rowId}:${f.col}`, f));
         return m;
     }, [fixes]);
 
-    // Phase logic
+    /* ---------- Phase logic ---------- */
     useEffect(() => {
         if (phase === 'idle') {
-            setRows([]);
-            setFlags([]);
-            setFixes([]);
-            setShowFeatures(false);
-            setShowEval(false);
-            setPopoverStage('hidden');
+            // Animate out existing rows + popovers (if any), then clear
+            const hasContent = rows.length > 0 || flags.length > 0 || fixes.length > 0;
+            if (hasContent) {
+                const tl = gsap.timeline();
+                const rowEls = tableRef.current?.querySelectorAll('tbody tr');
+                if (rowEls && rowEls.length) {
+                    tl.to(rowEls, { opacity: 0, y: 8, scale: 0.98, duration: 0.24, ease: 'power2.in', stagger: 0.04 }, 0);
+                }
+                if (overlayRef.current) {
+                    tl.to(overlayRef.current, { opacity: 0, duration: 0.18, ease: 'power1.in' }, 0);
+                }
+                tl.add(() => {
+                    setRows([]);
+                    setFlags([]);
+                    setSuggestions([]);
+                    setFixes([]);
+                    setShowFeatures(false);
+                    setPopoverStage('hidden');
+                    if (overlayRef.current) gsap.set(overlayRef.current, { clearProps: 'opacity' });
+                });
+            } else {
+                setRows([]);
+                setFlags([]);
+                setSuggestions([]);
+                setFixes([]);
+                setShowFeatures(false);
+                setPopoverStage('hidden');
+            }
+
+            // Reset header numbers visually
+            animateStatSwap(rowsNumRef.current, '—');
+            animateStatSwap(flaggedNumRef.current, '0');
+            animateStatSwap(fixedNumRef.current, '0');
             return;
         }
 
         if (phase === 'ingested') {
-            setRows(SAMPLE_ROWS);
+            // New randomized run (6 rows; issues only in first 4)
+            const run = makeRunData(stats.rowsTotal, lastSigRef.current);
+            lastSigRef.current = run.signature;
+            runRef.current = run;
+
+            setRows(run.rows);
             setPopoverStage('hidden');
+
+            // Animate table rows in
             requestAnimationFrame(() => {
                 const rowEls = tableRef.current?.querySelectorAll('tbody tr');
                 if (!rowEls) return;
@@ -209,15 +364,25 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
                     { opacity: 1, y: 0, scale: 1, duration: 0.35, ease: 'power2.out', stagger: 0.06 }
                 );
             });
+
+            // Header numbers → randomized rows (≥ 900)
+            animateStatSwap(rowsNumRef.current, String(stats.rowsTotal));
+            animateStatSwap(flaggedNumRef.current, '0');
+            animateStatSwap(fixedNumRef.current, '0');
             return;
         }
 
         if (phase === 'detected') {
-            setFlags(DETECTED_FLAGS);
+            if (overlayRef.current) gsap.set(overlayRef.current, { opacity: 1 });
+            const run = runRef.current;
+            if (!run) return;
+
+            setFlags(run.flags);
             setPopoverStage('issues');
 
+            // Subtle glow on flagged cells
             requestAnimationFrame(() => {
-                DETECTED_FLAGS.forEach((f, i) => {
+                run.flags.forEach((f, i) => {
                     const el = tableRef.current?.querySelector(
                         `[data-row="${f.rowId}"][data-col="${f.col}"] .cell-inner`
                     ) as HTMLElement | null;
@@ -230,35 +395,67 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
                     }
                 });
             });
+
+            // Update flagged count to this run's header count
+            animateStatSwap(flaggedNumRef.current, String(stats.flaggedTotal));
             return;
         }
 
         if (phase === 'pruned') {
+            const run = runRef.current;
+            if (!run) return;
+            setSuggestions(run.suggestions);
             setPopoverStage('suggestions');
             return;
         }
 
         if (phase === 'compiled') {
             setShowFeatures(true);
-            const badge = document.querySelector('.feature-badge');
-            if (badge) {
-                gsap.fromTo(badge, { opacity: 0, y: 4 }, { opacity: 1, y: 0, duration: 0.28, ease: 'power2.out' });
-            }
+
+            // Smooth badge reveal: width 0 -> target, with fade & slight slide, no wrapping
+            requestAnimationFrame(() => {
+                const badge = featureBadgeRef.current;
+                const statsRow = panelRef.current?.querySelector('.dataset-stats') as HTMLElement | null;
+                if (!badge || !statsRow) return;
+
+                const naturalWidth = Math.max(badge.scrollWidth, badge.getBoundingClientRect().width);
+
+                badge.style.overflow = 'hidden';
+                gsap.set(badge, { width: 0, opacity: 0, x: -8 });
+                gsap.to(badge, {
+                    width: naturalWidth,
+                    opacity: 1,
+                    x: 0,
+                    duration: 0.55,
+                    ease: 'power3.out',
+                    onComplete: () => {
+                        // allow it to flex naturally after animation
+                        badge.style.width = '';
+                        badge.style.overflow = '';
+                    }
+                });
+
+                // Gentle nudge on siblings so the row breathes while the badge arrives
+                const sibs = Array.from(statsRow.children).filter((el) => el !== badge) as HTMLElement[];
+                gsap.fromTo(sibs, { x: -6 }, { x: 0, duration: 0.45, ease: 'power3.out', stagger: 0.02 });
+            });
             return;
         }
 
         if (phase === 'inferred') {
-            PRUNED_SUGGESTIONS.forEach((s) => {
+            // Apply suggestions into rows; flip to "fixed" stage
+            suggestions.forEach((s) => {
                 setRows((prev) =>
                     prev.map((r) => (r.id === s.rowId ? { ...r, [s.col]: s.value as any } : r))
                 );
             });
-            setFixes(PRUNED_SUGGESTIONS as Fix[]);
+            setFixes(suggestions as Fix[]);
             setFlags([]);
             setPopoverStage('fixed');
 
+            // Animate corrected cells
             requestAnimationFrame(() => {
-                PRUNED_SUGGESTIONS.forEach((s, i) => {
+                suggestions.forEach((s, i) => {
                     const el = tableRef.current?.querySelector(
                         `[data-row="${s.rowId}"][data-col="${s.col}"] .cell-inner`
                     ) as HTMLElement | null;
@@ -271,19 +468,20 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
                     }
                 });
             });
+
+            // Update fixed count to precision × flagged (rounded) for THIS run
+            animateStatSwap(fixedNumRef.current, String(stats.fixedTotal));
             return;
         }
 
         if (phase === 'evaluated') {
-            setShowEval(true);
-            const panel = document.querySelector('.dataset-eval');
-            if (panel) {
-                gsap.fromTo(panel, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' });
-            }
+            // Terminal shows eval; dataset header/state already aligned above.
+            return;
         }
-    }, [phase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, stats]);
 
-    // Headers & stats
+    // Headers & stats (labels only; numbers are mutated via refs for clean swap animation)
     const colHeaders: { key: CellKey | 'id'; label: string }[] = useMemo(
         () => [
             { key: 'id', label: 'id' },
@@ -296,21 +494,16 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
         []
     );
 
-    const rowCount = rows.length;
-    const flaggedCount = flags.length;
-    const fixedCount = fixes.length;
-
-    const isFlagged = (r: Row, col: CellKey) => flaggedMap.has(cellKey(r.id, col));
-    const isFixed = (r: Row, col: CellKey) => fixedMap.has(cellKey(r.id, col));
+    const isFlagged = (r: Row, col: CellKey) => flaggedMap.has(`${r.id}:${col}`);
+    const isFixed = (r: Row, col: CellKey) => fixedMap.has(`${r.id}:${col}`);
     const sevClass = (r: Row, col: CellKey) => {
-        const f = flaggedMap.get(cellKey(r.id, col));
+        const f = flaggedMap.get(`${r.id}:${col}`);
         return f?.severity === 'error' ? 'sev-error' : f ? 'sev-warn' : '';
     };
 
-    /** Build the three potential sections (Issues → Predictions → Corrected) per row. */
     type RowSection = { title: string; variant: 'warn' | 'error' | 'info' | 'ok'; items: string[] };
     const sectionsForRow = (rid: number): RowSection[] => {
-        const rowFlags = DETECTED_FLAGS.filter(f => f.rowId === rid);
+        const rowFlags = flags.filter(f => f.rowId === rid);
         if (!rowFlags.length) return [];
 
         const issuesHasErr = rowFlags.some(f => f.severity === 'error');
@@ -320,14 +513,14 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
             items: rowFlags.map(f => `• ${f.issue}`),
         };
 
-        const predsData = PRUNED_SUGGESTIONS.filter(s => s.rowId === rid);
+        const predsData = suggestions.filter(s => s.rowId === rid);
         const preds: RowSection = {
             title: 'Predictions',
             variant: 'info',
             items: predsData.map(s => `• ${s.col} → ${s.value} (${Math.round(s.prob * 100)}%)`),
         };
 
-        const fixedData = PRUNED_SUGGESTIONS.filter(s => s.rowId === rid);
+        const fixedData = suggestions.filter(s => s.rowId === rid);
         const fixed: RowSection = {
             title: 'Corrected',
             variant: 'ok',
@@ -337,25 +530,26 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
         return [issues, preds, fixed];
     };
 
-    /** Visible section count by stage (1=Issues, 2=+Predictions, 3=+Corrected). */
     const visibleCountByStage = (st: PopoverStage) =>
         st === 'issues' ? 1 : st === 'suggestions' ? 2 : st === 'fixed' ? 3 : 0;
+
+    const visibleSections = visibleCountByStage(popoverStage);
 
     return (
         <section ref={panelRef} className="dataset-panel unbounded" aria-label="Dataset live view">
             <header className="dataset-head">
                 <div className="dataset-title">hospital records</div>
                 <div className="dataset-stats">
-                    <span className="stat">rows <span className="num">{rowCount || '—'}</span></span>
-                    <span className="stat">flagged <span className="num">{flaggedCount}</span></span>
-                    <span className="stat">fixed <span className="num">{fixedCount}</span></span>
+                    <span className="stat">rows <span ref={rowsNumRef} className="num">—</span></span>
+                    <span className="stat">flagged <span ref={flaggedNumRef} className="num">0</span></span>
+                    <span className="stat">fixed <span ref={fixedNumRef} className="num">0</span></span>
                     {showFeatures && (
-                        <span className="feature-badge">{FEATURE_COUNT.toLocaleString()} features</span>
+                        <span ref={featureBadgeRef} className="feature-badge">1,237,211 features</span>
                     )}
                 </div>
             </header>
 
-            {/* Scrollable table */}
+            {/* Non-scrollable table area */}
             <div ref={wrapRef} className="dataset-table-wrap">
                 <table ref={tableRef} className="dataset-table">
                     <thead>
@@ -398,22 +592,11 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
                         ))}
                     </tbody>
                 </table>
-
-                {showEval && (
-                    <div className="dataset-eval" role="note" aria-label="Evaluation summary">
-                        <div>evaluation</div>
-                        <div className="kv">
-                            <div><span className="k">precision</span> <span className="num">{EVAL_SUMMARY.precision.toFixed(2)}</span></div>
-                            <div><span className="k">recall</span> <span className="num">{EVAL_SUMMARY.recall.toFixed(2)}</span></div>
-                            <div><span className="k">f1</span> <span className="num">{EVAL_SUMMARY.f1.toFixed(2)}</span></div>
-                        </div>
-                    </div>
-                )}
             </div>
 
-            {/* Row popovers overlay — sibling to scroller so it never clips */}
+            {/* Row popovers overlay — sibling to table so it never clips */}
             <div ref={overlayRef} className="row-popovers" aria-hidden>
-                {problemRowIds.map((rid) => {
+                {visibleSections > 0 && problemRowIds.map((rid) => {
                     const pos = rowPositions[rid];
                     const side = rowSides[rid] ?? 'left';
                     const sections = sectionsForRow(rid);
@@ -428,7 +611,7 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
                             refRight={pos.rightEdge}
                             stage={popoverStage}
                             sections={sections}
-                            visibleCount={visibleCountByStage(popoverStage)}
+                            visibleCount={visibleSections}
                         />
                     );
                 })}
@@ -437,7 +620,7 @@ const HoloDataset: React.FC<{ phase: Phase }> = ({ phase }) => {
     );
 };
 
-// Keep this component isolated from parent re-renders (typing in terminal).
+// Keep this component isolated from parent re-renders.
 export default memo(HoloDataset);
 
 /** Row popover that anchors to a row (left or right), and expands cumulatively across stages. */
@@ -467,7 +650,7 @@ const RowPopover: React.FC<{
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Animate expansion when visibleCount increases (Issues → +Predictions → +Corrected)
+    // Animate expansion when visibleCount increases
     useLayoutEffect(() => {
         const cont = containerRef.current;
         if (!cont) return;
@@ -515,20 +698,20 @@ const RowPopover: React.FC<{
     return (
         <div
             ref={ref}
-            className={`rp rp-${side}`}  // neutral root; per-section colors inside
+            className={`rp rp-${side}`}
             style={style}
             role="status"
         >
             <div ref={containerRef} className="rp-content rp-content--anim">
-                {sections.map((sec, i) => (
+                {sections.map((c, i) => (
                     <div
-                        key={`${sec.title}-${i}`}
-                        className={`rp-sec rp-sec--${sec.variant}`}
+                        key={`${c.title}-${i}`}
+                        className={`rp-sec rp-sec--${c.variant}`}
                         data-idx={i}
                         style={{ display: i < visibleCount ? 'block' : 'none' }}
                     >
-                        <div className="rp-head">{sec.title}</div>
-                        {sec.items.map((t, j) => (<div key={j} className="rp-line">{t}</div>))}
+                        <div className="rp-head">{c.title}</div>
+                        {c.items.map((t, j) => (<div key={j} className="rp-line">{t}</div>))}
                     </div>
                 ))}
             </div>

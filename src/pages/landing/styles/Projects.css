@@ -1,15 +1,30 @@
 /* src/pages/landing/styles/Projects.css */
 
+/* ========== Global guide variables ========== */
+:root {
+    /* Slightly darker than #f2f0f9 as requested */
+    --guide-color: #e0dcf1;
+    --guide-width: 1px;
+    --guide-dash: 24px;
+    --projects-dash-offset: 0px;
+
+    --see-more-accent: #2563eb;
+}
+
+/* Section frame */
 .projects-section {
+    --section-pad: clamp(40px, 6vh, 80px);
     position: relative;
     width: 100%;
-    padding-block: clamp(40px, 6vh, 80px);
+    padding-block: var(--section-pad);
+    /* used also to extend guides to full height */
     background: #f9f8fc;
 }
 
 .projects-inner {
+    position: relative;
+    /* for the full-height right guide */
     display: grid;
-    /* Give the right column more room for wider popovers */
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: clamp(24px, 4vw, 48px);
     align-items: start;
@@ -17,46 +32,90 @@
     margin-inline: auto;
 }
 
-/* ---------- Left column ---------- */
+/* Full-height solid guide on the far right of the projects area (no gaps) */
+.projects-inner::after {
+    content: "";
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    /* extend into section padding */
+    bottom: calc(-1 * var(--section-pad));
+    right: 0;
+    width: var(--guide-width);
+    background: var(--guide-color);
+    pointer-events: none;
+    z-index: 1;
+}
 
+/* ---------- Left column ---------- */
 .projects-left {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: clamp(16px, 2vh, 24px);
+    z-index: 0;
+    padding-left: 10px;
+    /* 10px gap between the solid guide and text */
 }
 
-.projects-header {
-    position: relative;
-    padding-bottom: clamp(8px, 1.2vh, 12px);
-    border-bottom: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
+/* Solid guide at far left of text column — full section height with negative offsets */
+.projects-left::before {
+    content: "";
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    bottom: calc(-1 * var(--section-pad));
+    left: 0;
+    width: var(--guide-width);
+    background: var(--guide-color);
+    pointer-events: none;
+    z-index: 0;
 }
 
-.projects-eyebrow {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: color-mix(in oklab, CanvasText 55%, transparent);
+/* Dashed guides overlay — full section height (no gaps) */
+.column-guides {
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    bottom: calc(-1 * var(--section-pad));
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 0;
 }
 
-.projects-title {
-    margin: 6px 0 8px 0;
-    font-size: clamp(26px, 3.2vw, 40px);
-    line-height: 1.15;
+.column-guides .guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--guide-width);
 }
 
-.projects-subtitle {
-    margin: 0;
-    color: color-mix(in oklab, CanvasText 60%, transparent);
+.dash-line {
+    background-image: linear-gradient(to bottom,
+            var(--guide-color) 0,
+            var(--guide-color) calc(var(--guide-dash) / 2),
+            transparent calc(var(--guide-dash) / 2),
+            transparent var(--guide-dash));
+    background-size: var(--guide-width) var(--guide-dash);
+    background-repeat: repeat-y;
+    background-position: center calc(-1 * var(--projects-dash-offset));
 }
 
+.guide-center {
+    left: 50%;
+    transform: translateX(-0.5px);
+}
+
+.guide-right {
+    right: 0;
+}
+
+/* Content */
 .project-list {
     margin-top: clamp(16px, 2vh, 24px);
 }
 
 /* Spacious project blocks to drive the focus band logic */
 .project-block {
+    position: relative;
     display: grid;
     grid-template-columns: 1fr auto;
     gap: clamp(16px, 2vw, 24px);
@@ -64,6 +123,7 @@
     min-height: clamp(520px, 70vh, 780px);
     margin-block: 18vh;
     scroll-margin-top: 18vh;
+    z-index: 1;
 }
 
 /* When there is no hero image we preserve grid area */
@@ -78,6 +138,21 @@
     max-width: 54ch;
 }
 
+/* Logo + eyebrow row */
+.project-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.project-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    display: inline-block;
+}
+
 .project-eyebrow {
     display: inline-block;
     font-size: 11px;
@@ -85,54 +160,172 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: color-mix(in oklab, CanvasText 55%, transparent);
-    margin-bottom: 6px;
+    margin-bottom: 0;
 }
 
+/* Bold, compact title */
 .project-title {
     font-size: clamp(24px, 2.8vw, 34px);
     line-height: 1.15;
-    margin: 0 0 8px 0;
+    margin: 2px 0 8px 0;
+    font-weight: 800;
 }
 
+/* —— Larger, stronger body with uniform spacing —— */
+.spaced {
+    margin: 20px 0;
+}
+
+/* requested global spacing for key blocks */
+
+/* Bio text size */
 .project-desc {
-    margin: 0 0 12px 0;
-    color: color-mix(in oklab, CanvasText 70%, transparent);
+    color: color-mix(in oklab, CanvasText 78%, transparent);
+    font-weight: 600;
+    font-size: 25px;
+    /* requested 25px */
 }
 
+/* High‑level bullets; larger as requested */
 .project-bullets {
-    margin: 8px 0 12px 0;
     padding-left: 18px;
     color: color-mix(in oklab, CanvasText 85%, transparent);
+    font-size: 17px;
+    /* requested 17px */
 }
 
 .project-bullets li {
     margin: 6px 0;
 }
 
-.project-ctas {
+/* ---------- Actions ---------- */
+.project-actions {
     display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 14px;
 }
 
-.project-cta {
+.project-cta-button.ant-btn {
+    border-radius: 10px;
+    height: 42px;
+    padding-inline: 16px;
     display: inline-flex;
     align-items: center;
+    align-self: flex-start;
+    margin: 20px 0;
+    /* explicit spacing on the button too */
+}
+
+/* See more — plain text line; only label is highlighted/clickable */
+.see-more-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, CanvasText 55%, transparent);
+}
+
+/* spacing override for `spaced` on see-more -> 0px 0px */
+.see-more.spaced {
+    margin: 0 0;
+}
+
+.see-more-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
     gap: 6px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    background: color-mix(in oklab, CanvasText 8%, transparent);
-    color: inherit;
-    border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+}
+
+.see-more-line {
+    font-size: 14px;
+    color: color-mix(in oklab, CanvasText 80%, transparent);
+}
+
+.see-more-anchor {
+    color: var(--see-more-accent);
+    font-weight: 600;
+    /* ← weight 600 */
     text-decoration: none;
 }
 
-.project-cta:hover {
-    border-color: color-mix(in oklab, CanvasText 24%, transparent);
+.see-more-anchor:hover {
+    text-decoration: underline;
+}
+
+.see-more-desc {
+    color: #000;
+    /* ← black */
+    font-weight: 500;
+    /* ← weight 500 */
+}
+
+/* Tech chips — under see more. May be collapsed to a single row. */
+.project-tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* collapsed: show one row; also pull the "view all" button closer */
+.project-tech.is-collapsed {
+    max-height: var(--tech-collapsed-h, 32px);
+    /* one-row height measured in JS */
+    overflow: hidden;
+}
+
+.project-tech.is-collapsed.spaced {
+    margin-bottom: 0;
+}
+
+/* ← closer to the button */
+
+.project-tech.is-expanded {
+    max-height: none;
+}
+
+.tech-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: #f8fafc;
+    line-height: 1;
+}
+
+.tech-chip__icon {
+    width: 14px;
+    height: 14px;
+    display: block;
+    object-fit: contain;
+}
+
+.view-all-tech {
+    background: transparent;
+    border: none;
+    color: var(--see-more-accent);
+    font-weight: 600;
+    /* ← weight 600 */
+    font-size: 14px;
+    /* ← size 14px */
+    cursor: pointer;
+    padding: 0;
+    align-self: flex-start;
+    margin-top: 0;
+    /* ← top 0 */
+}
+
+/* keep bottom spacing from `.spaced`, but ensure top is 0 even with spaced */
+.view-all-tech.spaced {
+    margin-top: 0;
 }
 
 /* ---------- Right column (sticky animation pane) ---------- */
-
 .projects-right {
     position: sticky;
     top: clamp(24px, 10vh, 96px);
@@ -146,7 +339,6 @@
     border-radius: 0;
     overflow: visible;
     z-index: 5;
-    /* ensure the viz (and popovers) can overlay the left column */
 }
 
 .viz-switcher {
@@ -157,7 +349,7 @@
     border-radius: 0;
 }
 
-/* Each viz is layered; only .is-active is visible. No background, no padding. */
+/* Each viz is layered; only .is-active is visible */
 .viz-layer {
     position: absolute;
     inset: 0;
@@ -170,13 +362,17 @@
     background: transparent;
     overflow: visible;
     pointer-events: none;
-    /* non-active layers won't block */
 }
 
 .viz-layer.is-active {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
+}
+
+/* Give HoloClean room on the right for popovers */
+.viz-layer[data-viz="holoclean"] .holo-root-split {
+    margin-right: clamp(25px, 4vw, 50px);
 }
 
 /* ---------- Responsive ---------- */
@@ -202,5 +398,18 @@
 
     .project-hero {
         order: -1;
+    }
+
+    .viz-layer[data-viz="holoclean"] .holo-root-split {
+        margin-right: 12px;
+    }
+
+    /* Hide extra guides on narrow screens */
+    .column-guides {
+        display: none;
+    }
+
+    .projects-left::before {
+        opacity: 0.8;
     }
 }

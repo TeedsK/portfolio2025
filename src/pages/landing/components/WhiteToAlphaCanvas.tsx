@@ -1,5 +1,6 @@
 // src/pages/landing/components/WhiteToAlphaCanvas.tsx
 import React, { useEffect, useRef } from 'react';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 type WhiteToAlphaCanvasProps = {
     /** Ref to the source element we draw from */
@@ -106,6 +107,12 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
+        // Hard gate: do no work if we're not on the landing page (or not visible/paused)
+        if (!show || paused || !shouldRunLandingAnimations()) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
 
         const srcW = srcEl instanceof HTMLVideoElement ? srcEl.videoWidth : (srcEl as HTMLImageElement).naturalWidth;
         const srcH = srcEl instanceof HTMLVideoElement ? srcEl.videoHeight : (srcEl as HTMLImageElement).naturalHeight;
@@ -221,6 +228,44 @@ export const WhiteToAlphaCanvas: React.FC<WhiteToAlphaCanvasProps> = ({
             return () => v.removeEventListener('loadedmetadata', handleReady);
         }
     }, [kind, sourceRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // NEW: Watch for the first time the landing video actually plays, and broadcast it.
+    useEffect(() => {
+        if (kind !== 'video') return;
+        const el = sourceRef.current as HTMLVideoElement | null;
+        if (!el) return;
+
+        let fired = false;
+        const fireOnce = () => {
+            if (fired) return;
+            fired = true;
+            if (typeof window !== 'undefined') {
+                window.__LANDING_VIDEO_PLAYING__ = true;
+                window.dispatchEvent(new CustomEvent('landing:video-playing'));
+            }
+        };
+
+        const onPlaying = () => fireOnce();
+        const onTimeUpdate = () => {
+            if (!el) return;
+            if (!el.paused && !el.ended && el.currentTime > 0 && el.readyState >= 2) {
+                fireOnce();
+            }
+        };
+
+        // If it's already playing, fire immediately
+        if (!el.paused && el.currentTime > 0 && el.readyState >= 2) {
+            fireOnce();
+        }
+
+        el.addEventListener('playing', onPlaying);
+        el.addEventListener('timeupdate', onTimeUpdate);
+
+        return () => {
+            el.removeEventListener('playing', onPlaying);
+            el.removeEventListener('timeupdate', onTimeUpdate);
+        };
+    }, [kind, sourceRef]);
 
     return (
         <canvas

@@ -4,6 +4,7 @@ import { ScanBeam, Point } from '../../../types';
 import { PathManager } from '../utils/path';
 import { drawPathSegment } from '../utils/canvasDrawing';
 import { STREAM_LINE_WIDTH } from '../utils/constants';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 /**
  * Canvas renderer for OCR→Network beams.
@@ -80,6 +81,13 @@ const ScanBeamViz: React.FC<Props> = ({ beams, containerSize, onBeamFinished }) 
             const last = lastTsRef.current ?? ts;
             const dt = Math.min(64, ts - last);
             lastTsRef.current = ts;
+
+            // Gate: if inactive, just clear and keep scheduling without progressing time
+            if (!shouldRunLandingAnimations()) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                rafRef.current = requestAnimationFrame(loop);
+                return;
+            }
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 

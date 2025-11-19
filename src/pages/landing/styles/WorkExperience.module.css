@@ -1,4 +1,4 @@
-/* src/pages/landing/styles/WorkExperience.css */
+/* src/pages/landing/styles/WorkExperience.module.css */
 
 /* ---------- Section ---------- */
 .work-section {
@@ -16,6 +16,9 @@
     margin-bottom: 0.5rem;
     padding-inline: clamp(16px, 6vw, 48px);
 }
+
+/* presentational utility (referenced in TSX) */
+.work-titles {}
 
 .work-header-art {
     display: block;
@@ -68,7 +71,6 @@
 .experience-card {
     --card-bg: #ffffff;
     --desc-fade-height: 48px;
-    /* height of gradient overlay */
     background: var(--card-bg);
     border: none;
     box-shadow: none;
@@ -204,6 +206,9 @@
     align-items: stretch;
 }
 
+/* presentational utility (referenced in TSX) */
+.experience-card__col {}
+
 .experience-card__col--desc {
     min-width: 0;
     flex: 1 1 100%;
@@ -227,7 +232,6 @@
     /* collapsed height (≈6 lines) */
 }
 
-/* We removed the old harsh cut here; ul can size naturally */
 .experience-card__desc-wrap .experience-card__desc {
     margin: 0;
     /* reset margin from original rule */
@@ -252,7 +256,6 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s ease;
-    /* fade from transparent to card background */
     background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--card-bg) 80%);
 }
 
@@ -288,6 +291,9 @@
     object-fit: contain;
 }
 
+/* presentational utility (referenced in TSX) */
+.tech-chip__label {}
+
 /* Media (image) */
 .experience-card__media-wrapper {
     width: 100%;
@@ -305,28 +311,30 @@
 }
 
 .experience-card--expanded .experience-card__desc-wrap {
-  max-height: none; /* ensures full content is visible post-animation */
+    max-height: none;
+    /* ensures full content is visible post-animation */
 }
 
 .experience-card--expanded .desc-fade {
-  display: none;
+    display: none;
 }
 
 /* Hide horizontal scrollbar cross‑browser while keeping scrolling */
 .work-cards-viewport {
-  /* existing props ... */
-  scrollbar-width: none;           /* Firefox */
-}
-.work-cards-viewport::-webkit-scrollbar {
-  display: none;                   /* Chrome/Safari/Edge */
+    /* existing props ... */
+    scrollbar-width: none;
+    /* Firefox */
 }
 
+.work-cards-viewport::-webkit-scrollbar {
+    display: none;
+    /* Chrome/Safari/Edge */
+}
 
 /* ---------- Dark mode ---------- */
 @media (prefers-color-scheme: dark) {
     .experience-card {
         --card-bg: #0b1020;
-        /* used by the fade overlay */
         background: var(--card-bg);
         border: none;
         box-shadow: none;
@@ -358,4 +366,3 @@
         border-color: rgba(255, 255, 255, 0.06);
     }
 }
-

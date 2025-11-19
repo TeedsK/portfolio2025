@@ -1,6 +1,7 @@
 // src/pages/landing/components/AnimatedScanBox.tsx
 import React, { useEffect, useRef } from 'react';
 import gsap from 'gsap';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 export interface RectPx {
     left: number;
@@ -25,7 +26,7 @@ interface AnimatedScanBoxProps {
 
     /** Called every frame with the viewport rect of the box, or null when hidden. */
     onBoxRectChange?: (rect: DOMRect | null) => void;
-    /** NEW: Fired once when the box has fully reached its target for the current character. */
+    /** Fired once when the box has fully reached its target for the current character. */
     onSettled?: () => void;
 }
 
@@ -53,7 +54,8 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
         const el = boxRef.current;
         if (!el) return;
 
-        if (!visible || !target) {
+        // Gate: if we are not actively on the landing page, hide & stop.
+        if (!shouldRunLandingAnimations() || !visible || !target) {
             gsap.to(el, { opacity: 0, duration: 0.15, ease: 'power1.inOut' });
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
             rafRef.current = null;
@@ -128,4 +130,3 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
 };
 
 export default AnimatedScanBox;
-

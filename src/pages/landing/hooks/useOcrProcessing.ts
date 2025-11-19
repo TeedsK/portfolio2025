@@ -8,6 +8,7 @@ import {
   OCR_PROCESSING_DELAY_MS,
   MEDIA_CROP_TOP_PX,
   MEDIA_CROP_BOTTOM_PX,
+  OCR_START_DELAY_MS, // NEW
 } from '../utils/constants';
 import { findCharacterBoxes } from '../../../utils/ml/segmentation';
 import { preprocessCharacterTensor } from '../../../utils/ml/preprocess';
@@ -20,6 +21,7 @@ import {
   RecognizedCharResult,
 } from '../../../types';
 import { warn, error, log } from '../../../utils/logger';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 interface CharacterToProcess {
   box: BoundingBoxData;
@@ -45,6 +47,12 @@ interface UseOcrProcessingOptions {
 
   /** NEW: resolve only after the scan box fully covers the (line,item) */
   waitForFocus?: (lineIndex: number, itemIndex: number) => Promise<void>;
+
+  /** NEW: require an MP4/video to start playing before OCR starts (default: auto-detect). */
+  videoRef?: React.RefObject<HTMLVideoElement>;
+  requireVideoStart?: boolean;
+  /** NEW: extra delay after video is confirmed playing, before OCR begins. */
+  startDelayAfterVideoMs?: number;
 }
 
 interface UseOcrProcessingResult {
@@ -67,6 +75,9 @@ export default function useOcrProcessing({
   tfReady,
   isLoadingModel,
   waitForFocus,
+  videoRef,
+  requireVideoStart,
+  startDelayAfterVideoMs,
 }: UseOcrProcessingOptions): UseOcrProcessingResult {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [processableLines, setProcessableLines] = useState<ProcessableLine[]>([]);
@@ -81,6 +92,89 @@ export default function useOcrProcessing({
   const rawOutputText = useRef<string>('');
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pendingNetworkDataRef = useRef<Record<string, PendingNetworkAnimationData>>({});
+
+  const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, Math.max(0, ms || 0)));
+
+  const isVideoActuallyPlaying = (vid: HTMLVideoElement | null | undefined) => {
+    if (!vid) return false;
+    try {
+      return !vid.paused && !vid.ended && vid.currentTime > 0 && vid.readyState >= 2;
+    } catch {
+      return false;
+    }
+  };
+
+  const waitForVideoStart = async (): Promise<void> => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const extraDelay = startDelayAfterVideoMs ?? OCR_START_DELAY_MS;
+
+    // Decide if we *should* wait for a video. Default: wait if any <video> exists in DOM.
+    const shouldWait =
+      typeof requireVideoStart === 'boolean'
+        ? requireVideoStart
+        : !!document.querySelector('video');
+
+    if (!shouldWait) return;
+
+    const vid = videoRef?.current ?? (document.querySelector('video') as HTMLVideoElement | null);
+
+    // If already playing, just wait the extra delay and continue.
+    if (isVideoActuallyPlaying(vid)) {
+      await delay(extraDelay);
+      return;
+    }
+
+    // Otherwise, wait for the global "video playing" signal our WhiteToAlphaCanvas emits,
+    // or listen to events on the detected video element as a backup.
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const finish = () => {
+        if (resolved) return;
+        resolved = true;
+        delay(extraDelay).then(resolve);
+      };
+
+      const onGlobal = () => {
+        window.removeEventListener('landing:video-playing', onGlobal as EventListener);
+        finish();
+      };
+
+      window.addEventListener('landing:video-playing', onGlobal as EventListener, { once: true });
+
+      const onVidPlaying = () => {
+        cleanupVid();
+        finish();
+      };
+      const onVidTimeUpdate = () => {
+        if (isVideoActuallyPlaying(vid)) {
+          cleanupVid();
+          finish();
+        }
+      };
+      const cleanupVid = () => {
+        vid?.removeEventListener('playing', onVidPlaying);
+        vid?.removeEventListener('timeupdate', onVidTimeUpdate);
+      };
+
+      vid?.addEventListener('playing', onVidPlaying, { once: true });
+      vid?.addEventListener('timeupdate', onVidTimeUpdate);
+
+      // Failsafe in case nothing fires (e.g., no video at all). Don't hang forever.
+      setTimeout(() => {
+        window.removeEventListener('landing:video-playing', onGlobal as EventListener);
+        cleanupVid();
+        finish();
+      }, 6000);
+
+      // Try to play (autoplay best-effort)
+      try {
+        vid?.play?.();
+      } catch {
+        /* no-op */
+      }
+    });
+  };
 
   const processSingleItem = useCallback(async (queueItem: QueueItem) => {
     if (typeof queueItem === 'string') {
@@ -201,72 +295,89 @@ export default function useOcrProcessing({
 
   const startOcr = (_imageDimensions: { width: number; height: number }): Promise<string> => {
     return new Promise<string>((resolve) => {
+      // Hard gate: do not run OCR unless landing animations are allowed (i.e., we're on landing page)
+      if (!shouldRunLandingAnimations()) {
+        warn('Landing animation gate inactive; OCR will not start.');
+        return resolve('');
+      }
       if (isProcessingOCR || !tfReady || isLoadingModel || !imageRef.current?.complete || !model) {
         warn('Not ready for OCR processing.');
         return resolve('');
       }
 
-      setIsProcessingOCR(true);
-      setProcessableLines([]);
-      setLiveOcrText('');
-      setRecognizedChars([]);
-      setCurrentChar(null);
-      setCurrentCharImageData(null);
+      const start = async () => {
+        setIsProcessingOCR(true);
+        setProcessableLines([]);
+        setLiveOcrText('');
+        setRecognizedChars([]);
+        setCurrentChar(null);
+        setCurrentCharImageData(null);
 
-      rawOutputText.current = '';
-      pendingNetworkDataRef.current = {};
-      resolveOcrPromise.current = resolve;
+        rawOutputText.current = '';
+        pendingNetworkDataRef.current = {};
+        resolveOcrPromise.current = resolve;
 
-      const img = imageRef.current;
-      const natW = img.naturalWidth;
-      const natH = img.naturalHeight;
+        // NEW: ensure video has started before anything else proceeds.
+        try {
+          await waitForVideoStart();
+        } catch {
+          // If waiting fails, continue; there's a failsafe timeout inside waitForVideoStart
+        }
 
-      const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
-      const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
-      const srcW = natW;
-      const srcH = Math.max(0, natH - cropTop - cropBottom);
+        const img = imageRef.current!;
+        const natW = img.naturalWidth;
+        const natH = img.naturalHeight;
 
-      const canvas = document.createElement('canvas');
-      canvas.width = srcW;
-      canvas.height = srcH > 0 ? srcH : natH;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) { resolve(''); return; }
+        const cropTop = Math.max(0, MEDIA_CROP_TOP_PX);
+        const cropBottom = Math.max(0, MEDIA_CROP_BOTTOM_PX);
+        const srcW = natW;
+        const srcH = Math.max(0, natH - cropTop - cropBottom);
 
-      if (srcH > 0) {
-        ctx.drawImage(img, 0, cropTop, srcW, srcH, 0, 0, srcW, srcH);
-      } else {
-        ctx.drawImage(img, 0, 0, natW, natH);
-      }
+        const canvas = document.createElement('canvas');
+        canvas.width = srcW;
+        canvas.height = srcH > 0 ? srcH : natH;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) { setIsProcessingOCR(false); resolve(''); return; }
 
-      imageCanvasRef.current = canvas;
-
-      try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const linesToProcess = findCharacterBoxes(imageData);
-        setProcessableLines(linesToProcess);
-
-        const characterQueue: QueueItem[] = [];
-        linesToProcess.forEach((line, lineIndexGlobal) => {
-          line.forEach((item, itemIndex) => {
-            if (item) characterQueue.push({ box: item, lineIndex: lineIndexGlobal, itemIndex });
-            else characterQueue.push('SPACE');
-          });
-          if (lineIndexGlobal < linesToProcess.length - 1) {
-            characterQueue.push('NEWLINE');
-          }
-        });
-
-        if (characterQueue.length > 0) {
-          runProcessingLoop(characterQueue);
+        if (srcH > 0) {
+          ctx.drawImage(img, 0, cropTop, srcW, srcH, 0, 0, srcW, srcH);
         } else {
+          ctx.drawImage(img, 0, 0, natW, natH);
+        }
+
+        imageCanvasRef.current = canvas;
+
+        try {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const linesToProcess = findCharacterBoxes(imageData);
+          setProcessableLines(linesToProcess);
+
+          const characterQueue: QueueItem[] = [];
+          linesToProcess.forEach((line, lineIndexGlobal) => {
+            line.forEach((item, itemIndex) => {
+              if (item) characterQueue.push({ box: item, lineIndex: lineIndexGlobal, itemIndex });
+              else characterQueue.push('SPACE');
+            });
+            if (lineIndexGlobal < linesToProcess.length - 1) {
+              characterQueue.push('NEWLINE');
+            }
+          });
+
+          if (characterQueue.length > 0) {
+            runProcessingLoop(characterQueue);
+          } else {
+            setIsProcessingOCR(false);
+            resolve('');
+          }
+        } catch (errSeg) {
+          error('Segmentation failed', errSeg);
           setIsProcessingOCR(false);
           resolve('');
         }
-      } catch (errSeg) {
-        error('Segmentation failed', errSeg);
-        setIsProcessingOCR(false);
-        resolve('');
-      }
+      };
+
+      // Kick off the async start (the promise we return resolves when OCR completes)
+      start();
     });
   };
 
@@ -282,4 +393,3 @@ export default function useOcrProcessing({
     recognizedChars,
   };
 }
-

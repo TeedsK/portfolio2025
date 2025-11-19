@@ -20,6 +20,7 @@
     padding: 10px 12px;
     background: #0a0b0e;
     border-bottom: 1px solid #151820;
+    border-radius: 10px;
 }
 
 .dataset-title {

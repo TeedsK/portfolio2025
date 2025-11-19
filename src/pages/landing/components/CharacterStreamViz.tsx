@@ -1,4 +1,4 @@
-// src/components/visualizations/CharacterStreamViz.tsx
+// src/pages/landing/components/CharacterStreamViz.tsx
 import React, { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import {
@@ -13,9 +13,9 @@ import {
 
 import { STREAM_LINE_WIDTH } from '../utils/constants';
 
-import { PathManager } from '../utils/path'; 
+import { PathManager } from '../utils/path';
 import { StreamCharacter } from '../../../types';
-import { log } from '../../../utils/logger';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 interface CharacterStreamVizProps {
     characters: StreamCharacter[];
@@ -28,11 +28,11 @@ const offscreenCtx = offscreenCanvas.getContext('2d');
 
 // Helper function to draw a segment of the path
 function drawPathSegment(
-    ctx: CanvasRenderingContext2D, 
-    path: PathManager, 
-    startDist: number, 
-    endDist: number, 
-    strokeStyle: string | CanvasGradient, 
+    ctx: CanvasRenderingContext2D,
+    path: PathManager,
+    startDist: number,
+    endDist: number,
+    strokeStyle: string | CanvasGradient,
     lineWidth: number
 ) {
     if (startDist >= endDist || path.totalLength === 0) return;
@@ -43,10 +43,10 @@ function drawPathSegment(
     if (clampedStartDist >= clampedEndDist) return;
 
     ctx.beginPath();
-    const segments = 30; 
+    const segments = 30;
     const segmentActualLength = clampedEndDist - clampedStartDist;
     const step = segmentActualLength / segments;
-    
+
     let firstPoint = true;
     for (let i = 0; i <= segments; i++) {
         const dist = clampedStartDist + i * step;
@@ -58,13 +58,12 @@ function drawPathSegment(
             ctx.lineTo(point.x, point.y);
         }
     }
-    ctx.strokeStyle = strokeStyle; 
+    ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
-    ctx.lineJoin = 'round'; 
+    ctx.lineJoin = 'round';
     ctx.stroke();
 }
-
 
 const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, containerSize, onCharacterFinished }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,18 +74,22 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
     const HEAD_COLOR_RATIO = 0.10;
 
     useEffect(() => {
+        if (!shouldRunLandingAnimations()) {
+            // If we aren't active, don't start new animations for incoming characters.
+            return;
+        }
+
         characters.forEach((character) => {
             if (initiatedAnimations.current.has(character.id)) {
                 return;
             }
 
             initiatedAnimations.current.add(character.id);
-            
+
             character.animationState = 'traveling';
             character.isRetractingColorOverride = false;
 
             gsap.set(character, { alpha: 0, scale: 0 });
-
 
             const tl = gsap.timeline({
                 onComplete: () => {
@@ -102,13 +105,13 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 ease: 'power2.out',
                 overwrite: 'auto',
             });
-            
+
             tl.to(character, {
                 headProgress: 1,
                 duration: CHAR_LINE_DRAW_DURATION,
                 ease: 'linear',
                 onComplete: () => {
-                     character.onFinished(); 
+                    character.onFinished();
                 }
             }, CHAR_FADE_IN_DURATION);
 
@@ -146,6 +149,14 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
         const render = () => {
             if (!ctx || !offscreenCtx) return;
+
+            // Gate: if animations are not active, just clear and keep checking.
+            if (!shouldRunLandingAnimations()) {
+                ctx.clearRect(0, 0, containerSize.width, containerSize.height);
+                animationFrameId.current = requestAnimationFrame(render);
+                return;
+            }
+
             ctx.clearRect(0, 0, containerSize.width, containerSize.height);
 
             characters.forEach((char) => {
@@ -154,7 +165,7 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                 const path = char.path;
                 const snakeVisibleStartDist = char.tailProgress * path.totalLength;
                 const snakeVisibleEndDist = char.headProgress * path.totalLength;
-                
+
                 let lineStrokeStyle: string | CanvasGradient = GRAY_COLOR;
                 if (path.totalLength > 0) {
                     // Grey for the first 90%, then blend into the letter color(s) for the final 10%.
@@ -178,12 +189,12 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
 
                 if (char.alpha > 0) {
                     ctx.save();
-                    ctx.globalAlpha = char.alpha; 
+                    ctx.globalAlpha = char.alpha;
 
                     if (snakeVisibleStartDist < snakeVisibleEndDist) {
                         drawPathSegment(ctx, path, snakeVisibleStartDist, snakeVisibleEndDist, lineStrokeStyle, STREAM_LINE_WIDTH);
                     }
-                    ctx.restore(); 
+                    ctx.restore();
 
                     ctx.save();
                     ctx.globalAlpha = char.alpha;
@@ -191,23 +202,23 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     const totalBoxVisualHeight = CHAR_BOX_CONTENT_HEIGHT + CHAR_BOX_PADDING * 2;
                     const boxCenterX = char.startX + totalBoxVisualWidth / 2;
                     const boxCenterY = char.startY + totalBoxVisualHeight / 2;
-                    
+
                     ctx.translate(boxCenterX, boxCenterY);
-                    ctx.scale(char.scale, char.scale); 
+                    ctx.scale(char.scale, char.scale);
                     ctx.translate(-boxCenterX, -boxCenterY);
 
                     const borderRadius = 10;
-                    
+
                     ctx.fillStyle = '#FFFFFF';
                     ctx.beginPath();
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.fill();
-                    
+
                     let boxOutlineStyle: string | CanvasGradient = char.gradientSet[0];
                     const boxGradient = ctx.createLinearGradient(
-                        char.startX, 
-                        char.startY, 
-                        char.startX + totalBoxVisualWidth, 
+                        char.startX,
+                        char.startY,
+                        char.startX + totalBoxVisualWidth,
                         char.startY + totalBoxVisualHeight
                     );
                     char.gradientSet.forEach((color, index) => {
@@ -215,25 +226,25 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                     });
                     boxOutlineStyle = boxGradient;
 
-                    if(char.isRetractingColorOverride) {
+                    if (char.isRetractingColorOverride) {
                         boxOutlineStyle = GRAY_COLOR;
                     }
-                    
+
                     ctx.strokeStyle = boxOutlineStyle;
                     ctx.lineWidth = STREAM_LINE_WIDTH;
                     ctx.beginPath();
                     ctx.roundRect(char.startX, char.startY, totalBoxVisualWidth, totalBoxVisualHeight, borderRadius);
                     ctx.stroke();
-                    
+
                     const charImg = char.charImage;
                     if (charImg.width > 0 && charImg.height > 0 && offscreenCtx) {
                         offscreenCanvas.width = charImg.width;
                         offscreenCanvas.height = charImg.height;
                         offscreenCtx.putImageData(charImg, 0, 0);
-                        
+
                         let drawnImgWidth = charImg.width;
                         let drawnImgHeight = charImg.height;
-                        
+
                         if (charImg.width > CHAR_BOX_CONTENT_WIDTH || charImg.height > CHAR_BOX_CONTENT_HEIGHT) {
                             const widthScaleRatio = CHAR_BOX_CONTENT_WIDTH / charImg.width;
                             const heightScaleRatio = CHAR_BOX_CONTENT_HEIGHT / charImg.height;
@@ -241,16 +252,16 @@ const CharacterStreamViz: React.FC<CharacterStreamVizProps> = ({ characters, con
                             drawnImgWidth = charImg.width * fitScale;
                             drawnImgHeight = charImg.height * fitScale;
                         }
-                        
+
                         const imgDrawX = char.startX + CHAR_BOX_PADDING + (CHAR_BOX_CONTENT_WIDTH - drawnImgWidth) / 2;
                         const imgDrawY = char.startY + CHAR_BOX_PADDING + (CHAR_BOX_CONTENT_HEIGHT - drawnImgHeight) / 2;
-                        
+
                         ctx.drawImage(offscreenCanvas, 0, 0, charImg.width, charImg.height, imgDrawX, imgDrawY, drawnImgWidth, drawnImgHeight);
                     }
                     ctx.restore();
                 }
             });
-            
+
             animationFrameId.current = requestAnimationFrame(render);
         };
 

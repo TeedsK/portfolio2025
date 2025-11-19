@@ -2,9 +2,13 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { Flip } from 'gsap/Flip';
-import '../styles/WorkExperience.css';
+import styles from '../styles/WorkExperience.module.css';
 
 gsap.registerPlugin(Flip);
+
+/** Small helper to compose CSS Module classes */
+const cx = (...classes: Array<string | false | null | undefined>) =>
+    classes.filter(Boolean).join(' ');
 
 /** ---------- Helpers ---------- */
 const prefersReducedMotion = () =>
@@ -197,7 +201,7 @@ const HeaderArt: React.FC<{ textRef: React.RefObject<HTMLDivElement> }> = ({ tex
             src="/images/work-experience/header.png"
             alt=""
             aria-hidden
-            className="work-header-art"
+            className={styles['work-header-art']}
         />
     );
 };
@@ -271,7 +275,6 @@ const WorkCard: React.FC<WorkCardProps> = ({
         if (!wrap) return;
 
         const check = () => {
-            // Only show fade when not expanded AND actual overflow exists
             if (!wrap) return;
             if (isExpanded) {
                 setHasOverflow(false);
@@ -324,11 +327,9 @@ const WorkCard: React.FC<WorkCardProps> = ({
         const ul = descUlRef.current;
         if (!ul) return 120; // fallback
         const cs = getComputedStyle(ul);
-        // We use 6 * (line-height); line-height may be 'normal', so derive if needed
         let lineHeight = getNumberPx(cs.lineHeight);
         if (!lineHeight) {
             const fontSize = getNumberPx(cs.fontSize) || 14;
-            // Approx for 'normal' is ~1.2 * font-size; but our CSS sets 1.5, use that
             lineHeight = 1.5 * fontSize;
         }
         return Math.round(lineHeight * 6);
@@ -356,8 +357,14 @@ const WorkCard: React.FC<WorkCardProps> = ({
         const targetExpandedW = Math.floor(railW * 0.7);
         const finalExpandedW = Math.max(collapsedW, targetExpandedW);
 
-        const pairEls = Array.from(rtEl.querySelectorAll('.rt-pair')) as HTMLElement[];
-        const labelEls = Array.from(rtEl.querySelectorAll('.rt-label')) as HTMLElement[];
+        // IMPORTANT: use hashed module classes for DOM queries
+        const pairEls = Array.from(
+            rtEl.querySelectorAll('.' + styles['rt-pair'])
+        ) as HTMLElement[];
+        const labelEls = Array.from(
+            rtEl.querySelectorAll('.' + styles['rt-label'])
+        ) as HTMLElement[];
+
         const measureLabelHeights = () => labelEls.map((el) => el.scrollHeight);
 
         const tl = gsap.timeline({ defaults: { ease: 'power2.out' } });
@@ -372,7 +379,6 @@ const WorkCard: React.FC<WorkCardProps> = ({
         if (isExpanded) {
             // ---- EXPAND ----
 
-            // Ensure we start animating desc from its collapsed height (inline style wins over CSS)
             const collapsedPx = getCollapsedDescMaxPx();
             gsap.set(descWrapEl, { maxHeight: collapsedPx });
 
@@ -381,9 +387,9 @@ const WorkCard: React.FC<WorkCardProps> = ({
 
             gsap.set(labelEls, { maxHeight: 0, opacity: 0, y: -6 });
 
-            // capture flip state then add class for expanded layout
+            // capture flip state then add class for expanded layout (hashed)
             const flipState = Flip.getState(pairEls);
-            cardEl.classList.add('experience-card--expanded');
+            cardEl.classList.add(styles['experience-card--expanded']);
 
             const WIDTH_DUR = reduce ? 0 : 0.50;
 
@@ -405,54 +411,66 @@ const WorkCard: React.FC<WorkCardProps> = ({
                 0
             );
 
-            // Fade the gradient overlay out while expanding (if present)
             if (fadeEl) {
                 tl.to(fadeEl, { opacity: 0, duration: reduce ? 0 : 0.24 }, 0.14);
             }
 
-            // Labels reveal
             const heights = measureLabelHeights();
-            tl.to(labelEls, {
-                maxHeight: (i) => heights[i] || 18,
-                opacity: 1,
-                y: 0,
-                duration: reduce ? 0 : 0.24,
-                ease: 'power2.out',
-            }, 0.18);
-
-            
+            tl.to(
+                labelEls,
+                {
+                    maxHeight: (i) => heights[i] || 18,
+                    opacity: 1,
+                    y: 0,
+                    duration: reduce ? 0 : 0.24,
+                    ease: 'power2.out',
+                },
+                0.18
+            );
 
             // Body columns to 70/30
-            tl.to(descEl, { 
-              flexBasis: '70%', 
-              duration: reduce ? 0 : 0.40, 
-              ease: 'power2.inOut' 
-            }, 0.20);
-            tl.to(mediaEl, {
-              flexBasis: '30%',
-              opacity: 1,
-              duration: reduce ? 0 : 0.40,
-              ease: 'power2.inOut',
-              onComplete: () => gsap.set(mediaEl, { pointerEvents: 'auto' }),
-            }, 0.20);
+            tl.to(
+                descEl,
+                { flexBasis: '70%', duration: reduce ? 0 : 0.40, ease: 'power2.inOut' },
+                0.20
+            );
+            tl.to(
+                mediaEl,
+                {
+                    flexBasis: '30%',
+                    opacity: 1,
+                    duration: reduce ? 0 : 0.40,
+                    ease: 'power2.inOut',
+                    onComplete: () => gsap.set(mediaEl, { pointerEvents: 'auto' }),
+                },
+                0.20
+            );
 
-            // Animate description wrap to full height (pushes chips down)
-            tl.to(descWrapEl, {
-              maxHeight: () => descWrapEl.scrollHeight,   // <-- recomputed with final width
-              duration: reduce ? 0 : 0.40,
-              ease: 'power2.inOut',
-              onComplete: () => {
-                // Expanded CSS now takes over: .experience-card--expanded .experience-card__desc-wrap { max-height: none; }
-                gsap.set(descWrapEl, { clearProps: 'maxHeight' });
-              }
-            }, 0.26);
+            // Animate description wrap to full height
+            tl.to(
+                descWrapEl,
+                {
+                    maxHeight: () => descWrapEl.scrollHeight,
+                    duration: reduce ? 0 : 0.40,
+                    ease: 'power2.inOut',
+                    onComplete: () => {
+                        gsap.set(descWrapEl, { clearProps: 'maxHeight' });
+                    },
+                },
+                0.26
+            );
 
-            // Chip reveal
+            // Chip reveal (hashed selector)
             if (chipsRef.current) {
-                const chips = Array.from(chipsRef.current.querySelectorAll('.tech-chip'));
-                tl.fromTo(chips, { y: 6, opacity: 0 }, {
-                    y: 0, opacity: 1, stagger: reduce ? 0 : 0.03, duration: reduce ? 0 : 0.25
-                }, 0.28);
+                const chips = Array.from(
+                    chipsRef.current.querySelectorAll('.' + styles['tech-chip'])
+                );
+                tl.fromTo(
+                    chips,
+                    { y: 6, opacity: 0 },
+                    { y: 0, opacity: 1, stagger: reduce ? 0 : 0.03, duration: reduce ? 0 : 0.25 },
+                    0.28
+                );
             }
 
             // Re-sync logo
@@ -471,59 +489,82 @@ const WorkCard: React.FC<WorkCardProps> = ({
             // ---- COLLAPSE ----
             const flipState = Flip.getState(pairEls);
 
-            // Prepare descWrap to animate from full → collapsed
             const fullPx = descWrapEl.scrollHeight;
             const collapsedPx = getCollapsedDescMaxPx();
             gsap.set(descWrapEl, { maxHeight: fullPx });
 
-            // Hide labels to zero-height
-            tl.to(labelEls, {
-                maxHeight: 0,
-                opacity: 0,
-                y: -6,
-                duration: reduce ? 0 : 0.18,
-                ease: 'power2.in',
-            }, 0);
+            tl.to(
+                labelEls,
+                {
+                    maxHeight: 0,
+                    opacity: 0,
+                    y: -6,
+                    duration: reduce ? 0 : 0.18,
+                    ease: 'power2.in',
+                },
+                0
+            );
 
-            cardEl.classList.remove('experience-card--expanded');
+            // remove hashed expanded class
+            cardEl.classList.remove(styles['experience-card--expanded']);
 
-            tl.add(Flip.from(flipState, {
-                duration: reduce ? 0 : 0.32,
-                ease: 'power2.out',
-                absolute: false,
-                prune: true,
-                stagger: reduce ? 0 : 0.02,
-            }), 0.02);
+            tl.add(
+                Flip.from(flipState, {
+                    duration: reduce ? 0 : 0.32,
+                    ease: 'power2.out',
+                    absolute: false,
+                    prune: true,
+                    stagger: reduce ? 0 : 0.02,
+                }),
+                0.02
+            );
 
-            // Animate description wrap down to collapsed height
-            tl.to(descWrapEl, {
-                maxHeight: collapsedPx,
-                duration: reduce ? 0 : 0.35,
-                ease: 'power2.inOut',
-                onComplete: () => {
-                    // Leave collapsed state to CSS again
-                    gsap.set(descWrapEl, { clearProps: 'maxHeight' });
-                }
-            }, 0.02);
+            tl.to(
+                descWrapEl,
+                {
+                    maxHeight: collapsedPx,
+                    duration: reduce ? 0 : 0.35,
+                    ease: 'power2.inOut',
+                    onComplete: () => {
+                        gsap.set(descWrapEl, { clearProps: 'maxHeight' });
+                    },
+                },
+                0.02
+            );
 
-            // Fade gradient overlay back in (only matters if there is overflow; harmless otherwise)
             if (fadeEl) {
                 tl.to(fadeEl, { opacity: 1, duration: reduce ? 0 : 0.20, ease: 'power1.out' }, 0.18);
             }
 
-            // Columns back to single
-            tl.to(descEl, { flexBasis: '100%', duration: reduce ? 0 : 0.35, ease: 'power2.inOut' }, 0.02);
-            tl.to(mediaEl, {
-                flexBasis: '0%',
-                opacity: 0,
-                duration: reduce ? 0 : 0.30,
-                ease: 'power2.inOut',
-                onComplete: () => gsap.set(mediaEl, { display: 'none', pointerEvents: 'none' }),
-            }, 0.02);
+            tl.to(
+                descEl,
+                { flexBasis: '100%', duration: reduce ? 0 : 0.35, ease: 'power2.inOut' },
+                0.02
+            );
+            tl.to(
+                mediaEl,
+                {
+                    flexBasis: '0%',
+                    opacity: 0,
+                    duration: reduce ? 0 : 0.30,
+                    ease: 'power2.inOut',
+                    onComplete: () =>
+                        gsap.set(mediaEl, { display: 'none', pointerEvents: 'none' }),
+                },
+                0.02
+            );
 
-            tl.to(cardEl, { width: (collapsedWidthRef.current ?? cardEl.getBoundingClientRect().width), duration: reduce ? 0 : 0.45, ease: 'power3.inOut' }, 0.05);
+            tl.to(
+                cardEl,
+                {
+                    width:
+                        collapsedWidthRef.current ?? cardEl.getBoundingClientRect().width,
+                    duration: reduce ? 0 : 0.45,
+                    ease: 'power3.inOut',
+                },
+                0.05
+            );
 
-            // Re-sync logo
             tl.add(() => {
                 const h = Math.max(40, Math.round(titlesEl.getBoundingClientRect().height));
                 gsap.to(logoRef.current, { width: h, height: h, duration: reduce ? 0 : 0.25, ease: 'power2.out' });
@@ -537,34 +578,41 @@ const WorkCard: React.FC<WorkCardProps> = ({
 
     const detailSrc = item.detailImage ?? item.logoSrc;
 
-    // Class to show fade only when collapsed AND overflowing
-    const wrapClass =
-        `experience-card__desc-wrap ${hasOverflow && !isExpanded ? 'has-overflow' : ''}`;
+    // Module-safe wrapper class (adds hashed "has-overflow" only when needed)
+    const wrapClass = cx(
+        styles['experience-card__desc-wrap'],
+        hasOverflow && !isExpanded && styles['has-overflow']
+    );
 
     return (
         <article
             ref={cardRef}
-            className="experience-card"
+            className={styles['experience-card']}
             aria-labelledby={`${item.id}-company`}
             data-card-id={item.id}
         >
-            <div className="experience-card__top">
-                <div className="experience-card__ident">
-                    <img ref={logoRef} className="experience-card__logo" src={item.logoSrc} alt={item.logoAlt} />
-                    <div ref={titlesRef} className="experience-card__titles">
-                        <h3 id={`${item.id}-company`} className="experience-card__company">
+            <div className={styles['experience-card__top']}>
+                <div className={styles['experience-card__ident']}>
+                    <img
+                        ref={logoRef}
+                        className={styles['experience-card__logo']}
+                        src={item.logoSrc}
+                        alt={item.logoAlt}
+                    />
+                    <div ref={titlesRef} className={styles['experience-card__titles']}>
+                        <h3 id={`${item.id}-company`} className={styles['experience-card__company']}>
                             {item.company}
                         </h3>
 
                         {/* Role/Team */}
-                        <div ref={rtGridRef} className="rt-grid" aria-label="Role and Team">
-                            <div className="rt-pair" data-kind="role">
-                                <span className="rt-label">Role</span>
-                                <span className="rt-value">{item.role}</span>
+                        <div ref={rtGridRef} className={styles['rt-grid']} aria-label="Role and Team">
+                            <div className={styles['rt-pair']} data-kind="role">
+                                <span className={styles['rt-label']}>Role</span>
+                                <span className={styles['rt-value']}>{item.role}</span>
                             </div>
-                            <div className="rt-pair" data-kind="team">
-                                <span className="rt-label">Team</span>
-                                <span className="rt-value">{item.team}</span>
+                            <div className={styles['rt-pair']} data-kind="team">
+                                <span className={styles['rt-label']}>Team</span>
+                                <span className={styles['rt-value']}>{item.team}</span>
                             </div>
                         </div>
                     </div>
@@ -572,7 +620,7 @@ const WorkCard: React.FC<WorkCardProps> = ({
 
                 <button
                     type="button"
-                    className="experience-card__expand"
+                    className={styles['experience-card__expand']}
                     aria-expanded={isExpanded}
                     aria-controls={`${item.id}-body`}
                     onClick={() => onToggle(item.id)}
@@ -581,27 +629,30 @@ const WorkCard: React.FC<WorkCardProps> = ({
                 </button>
             </div>
 
-            <div ref={bodyRef} id={`${item.id}-body`} className="experience-card__body">
+            <div ref={bodyRef} id={`${item.id}-body`} className={styles['experience-card__body']}>
                 {/* Description column */}
-                <div ref={descColRef} className="experience-card__col experience-card__col--desc">
+                <div
+                    ref={descColRef}
+                    className={cx(styles['experience-card__col'], styles['experience-card__col--desc'])}
+                >
                     <div ref={descWrapRef} className={wrapClass}>
-                        <ul ref={descUlRef} className="experience-card__desc">
+                        <ul ref={descUlRef} className={styles['experience-card__desc']}>
                             {item.description.map((line, i) => (
                                 <li key={i}>{line}</li>
                             ))}
                         </ul>
                         {/* Gradient fade overlay (only visible when has-overflow + collapsed) */}
-                        <div ref={fadeRef} className="desc-fade" aria-hidden="true" />
+                        <div ref={fadeRef} className={styles['desc-fade']} aria-hidden="true" />
                     </div>
 
-                    <div ref={chipsRef} className="experience-card__tech">
+                    <div ref={chipsRef} className={styles['experience-card__tech']}>
                         {item.tech.map((t) => {
                             const icon = TECH_ICON_SRC[t];
                             const c = tint(t);
                             return (
                                 <span
                                     key={t}
-                                    className="tech-chip"
+                                    className={styles['tech-chip']}
                                     title={t}
                                     style={{
                                         backgroundColor: `${c}18`,
@@ -609,8 +660,8 @@ const WorkCard: React.FC<WorkCardProps> = ({
                                         color: c,
                                     }}
                                 >
-                                    {icon && <img src={icon} alt="" aria-hidden className="tech-chip__icon" />}
-                                    <span className="tech-chip__label">{t}</span>
+                                    {icon && <img src={icon} alt="" aria-hidden className={styles['tech-chip__icon']} />}
+                                    <span className={styles['tech-chip__label']}>{t}</span>
                                 </span>
                             );
                         })}
@@ -618,9 +669,13 @@ const WorkCard: React.FC<WorkCardProps> = ({
                 </div>
 
                 {/* Media column */}
-                <div ref={mediaColRef} className="experience-card__col experience-card__col--media" aria-hidden={!isExpanded}>
-                    <div className="experience-card__media-wrapper">
-                        <img src={detailSrc} alt="" className="experience-card__media" />
+                <div
+                    ref={mediaColRef}
+                    className={cx(styles['experience-card__col'], styles['experience-card__col--media'])}
+                    aria-hidden={!isExpanded}
+                >
+                    <div className={styles['experience-card__media-wrapper']}>
+                        <img src={detailSrc} alt="" className={styles['experience-card__media']} />
                     </div>
                 </div>
             </div>
@@ -645,18 +700,18 @@ const WorkExperience: React.FC = () => {
     const handleToggle = (id: string) => setExpandedId((cur) => (cur === id ? null : id));
 
     return (
-        <section id="work-experience" className="work-section" aria-labelledby="work-title">
-            <div className="work-header">
+        <section id="work-experience" className={styles['work-section']} aria-labelledby="work-title">
+            <div className={styles['work-header']}>
                 <HeaderArt textRef={headerTextRef} />
-                <div ref={headerTextRef} className="work-titles">
-                    <h2 id="work-title" className="work-title">Work Experience</h2>
-                    <p className="work-subtitle">From teaching computer science to applying it</p>
-                    <p className="work-meta">{EXPERIENCES.length} roles across industry &amp; academia</p>
+                <div ref={headerTextRef} className={styles['work-titles']}>
+                    <h2 id="work-title" className={styles['work-title']}>Work Experience</h2>
+                    <p className={styles['work-subtitle']}>From teaching computer science to applying it</p>
+                    <p className={styles['work-meta']}>{EXPERIENCES.length} roles across industry &amp; academia</p>
                 </div>
             </div>
 
-            <div ref={viewportRef} className="work-cards-viewport">
-                <div className="work-cards-rail">
+            <div ref={viewportRef} className={styles['work-cards-viewport']}>
+                <div className={styles['work-cards-rail']}>
                     {EXPERIENCES.map((exp) => (
                         <WorkCard
                             key={exp.id}

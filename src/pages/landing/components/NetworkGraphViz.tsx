@@ -11,6 +11,7 @@ import {
     NET_ALPHA_INACTIVE_LINE,
 } from '../utils/animation';
 import { drawPathSegment } from '../utils/canvasDrawing';
+import { shouldRunLandingAnimations } from '../utils/landingAnimationGate';
 
 const EMNIST_CHARS = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
@@ -209,6 +210,12 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     // Drawing
     const draw = useCallback(
         (ctx: CanvasRenderingContext2D) => {
+            // Gate: if animations are not active, just clear and skip the draw
+            if (!shouldRunLandingAnimations()) {
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                return;
+            }
+
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
             // 1) Static skeleton lines (thin, faint)
@@ -284,7 +291,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
                 ctx.restore();
             });
         },
-        [/* no external deps; refs used */],
+        [],
     );
 
     // Render loop
@@ -301,11 +308,23 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         };
         rafId = requestAnimationFrame(loop);
 
+        // React to global active toggles by clearing overlays/timelines when deactivated
+        const onActiveChange = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { active?: boolean } | undefined;
+            if (detail && detail.active === false) {
+                activeTimelines.forEach((tl) => tl.kill());
+                activeTimelines.clear();
+                overlayLinesRef.current = [];
+            }
+        };
+        window.addEventListener('landing:anim-active-changed', onActiveChange as EventListener);
+
         return () => {
             cancelAnimationFrame(rafId);
             activeTimelines.forEach((tl) => tl.kill());
             activeTimelines.clear();
             overlayLinesRef.current = [];
+            window.removeEventListener('landing:anim-active-changed', onActiveChange as EventListener);
         };
     }, [draw, activeTimelines]);
 
@@ -331,6 +350,9 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
 
     // New waves → attach overlays to the persistent graph
     useEffect(() => {
+        // Don't start any new animations if landing animations are gated off
+        if (!shouldRunLandingAnimations()) return;
+
         const { cf, fh, ho } = staticLinesRef.current;
 
         waves.forEach((wave) => {

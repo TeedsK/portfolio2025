@@ -1,0 +1,71 @@
+/* src/components/InlineWordToggle.css */
+
+/* Text‑link appearance */
+.inline-word-toggle {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: var(--see-more-accent, #2563eb);
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.2;
+    cursor: pointer;
+
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0;
+
+    /* No focus halo */
+    outline: none;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.inline-word-toggle:focus,
+.inline-word-toggle:focus-visible,
+.inline-word-toggle:active {
+    outline: none;
+    box-shadow: none;
+    border: none;
+}
+
+.inline-word-toggle .iwt-prefix,
+.inline-word-toggle .iwt-suffix {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+/* The middle word wrapper holds the baseline and masks the slide */
+.inline-word-toggle .iwt-wordwrap {
+    position: relative;
+    display: inline-block;
+    height: 1em;
+    line-height: 1em;
+    vertical-align: baseline;
+    overflow: hidden;
+    white-space: nowrap;
+    width: auto;
+    /* GSAP animates this */
+}
+
+/* Live word remains in normal flow; we animate its transform+opacity */
+.inline-word-toggle .iwt-live {
+    position: relative;
+    display: inline-block;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    transform: translate3d(0, 0, 0);
+}
+
+/* Ghost word is absolutely stacked on top and cross‑fades/Slides in */
+.inline-word-toggle .iwt-ghost {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: inline-block;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    transform: translate3d(0, 0, 0);
+    pointer-events: none;
+}

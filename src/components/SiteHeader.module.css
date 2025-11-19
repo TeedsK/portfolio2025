@@ -4,7 +4,6 @@
     --header-height: 64px;
     --side-gutter: 24px;
     --ctl-h: 40px;
-    /* unified control height */
 }
 
 /* Fixed header */
@@ -23,19 +22,20 @@
     border-bottom-color: rgba(20, 45, 62, 0.06);
 }
 
+/* Layout: brand + nav left; right controls to the right */
 .headerInner {
     height: 100%;
     display: grid;
-    /* ⬇️ ENSURED SPACER column between nav and right controls */
-    grid-template-columns: 1fr auto minmax(75px, 1fr) auto;
+    grid-template-columns: auto auto 1fr auto;
     align-items: center;
     gap: 12px;
     padding: 0 var(--side-gutter);
 }
 
-/* Left brand area */
+/* Brand */
 .brandArea {
     justify-self: start;
+    margin-right: 8px;
 }
 
 .brandText {
@@ -47,14 +47,13 @@
     text-decoration: none;
 }
 
-/* Center nav (desktop) */
+/* Nav */
 .nav {
     position: relative;
-    justify-self: center;
+    justify-self: start;
     display: flex;
-    gap: 26px;
+    gap: 18px;
     align-items: center;
-    padding-top: 0;
 }
 
 .navItem {
@@ -74,13 +73,10 @@
     height: var(--ctl-h);
     padding: 0 8px;
     border-radius: 8px;
+    transition: none;
+    /* GSAP drives hover */
     user-select: none;
-}
-
-.link:hover,
-.linkPlain:hover {
-    color: #0474e3;
-    background: rgba(4, 116, 227, 0.06);
+    will-change: background-color, color, transform;
 }
 
 .link:focus-visible,
@@ -94,33 +90,75 @@
     width: 14px;
     height: 14px;
     transform-origin: center;
-    transition: filter 0.2s ease;
 }
 
-/* Dropdown surface (GSAP controls transforms/visibility) */
+/* GAP BRIDGE (outside dropdown, so it's not clipped by overflow) */
+.gapBridge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    /* just below the nav row */
+    height: 16px;
+    /* spans the 10px dropdown margin + buffer */
+    pointer-events: none;
+    background: transparent;
+    z-index: 9;
+    /* sits above page, below dropdown (which is z=10) */
+}
+
+.gapBridgeOpen {
+    pointer-events: auto;
+}
+
+/* Dropdown surface (height animates via CSS) */
 .dropdownContent {
     position: absolute;
     top: 100%;
     left: 50%;
-    transform-origin: top center;
     transform: translateX(-50%) translateY(-8px) rotateX(6deg);
+    transform-origin: top center;
     background: #fff;
     border-radius: 12px;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
     margin-top: 10px;
+    /* visual gap */
     min-width: 640px;
     padding: 14px;
+    /* accounted in JS height */
     opacity: 0;
     pointer-events: none;
-    will-change: transform, opacity, filter;
     z-index: 10;
+
+    overflow: hidden;
+    /* background matches height exactly */
+    height: 0px;
+    /* collapsed by default */
+    transition: height 0.28s ease;
+    /* smooth both grow & shrink */
 }
 
 .open {
     pointer-events: auto;
 }
 
-/* Grid inside dropdown */
+/* Inner wrapper + swap overlay */
+.ddInner {
+    position: relative;
+    display: block;
+}
+
+.gridSwapWrap {
+    position: relative;
+}
+
+.gridOutgoing {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* Grid */
 .gridContainer {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -144,18 +182,24 @@
     transform: translateY(-1px);
 }
 
+/* Icon area: fit full asset, no background */
 .gridThumbWrap {
     width: 56px;
     height: 56px;
     border-radius: 12px;
     overflow: hidden;
-    background: #eef2f6;
+    background: transparent;
+    display: grid;
+    place-items: center;
+    padding: 6px;
+    box-sizing: border-box;
 }
 
 .gridThumb {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    display: block;
 }
 
 .gridText {
@@ -183,14 +227,7 @@
     max-width: 520px;
 }
 
-/* Spacer column element — no visuals; enforces min 75px gap */
-.navRightSpacer {
-    /* The min width is handled by the grid column's minmax(75px, 1fr);
-       this rule is a harmless reinforcement. */
-    min-width: 75px;
-}
-
-/* Right area */
+/* Right actions */
 .rightArea {
     justify-self: end;
     display: inline-flex;
@@ -198,12 +235,11 @@
     gap: 14px;
 }
 
-/* ---- ASK: input + internal submit button ---- */
+/* ASK control (unchanged visuals) */
 .askWrap {
     position: relative;
     display: inline-flex;
     align-items: center;
-    /* Allow shrinking; placeholder logic shortens text at narrower widths */
     width: clamp(180px, 28vw, 520px);
     height: var(--ctl-h);
     cursor: text;
@@ -215,10 +251,9 @@
     border-radius: 10px;
     border: 1px solid rgba(20, 45, 62, 0.22);
     padding: 8px 74px 8px 12px;
-    /* space for the Ask button */
     font-size: 0.95rem;
     color: #142d3e;
-    background: #ffffff;
+    background: #fff;
     transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
@@ -230,10 +265,8 @@
     outline: none;
     border-color: #0474e3;
     box-shadow: 0 0 0 3px rgba(4, 116, 227, 0.16);
-    background: #ffffff;
 }
 
-/* The submit lives INSIDE the input on the right */
 .askSubmit {
     position: absolute;
     right: 6px;
@@ -248,21 +281,11 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    /* background: #0474e3; */
     color: white;
     cursor: pointer;
     transition: background 0.15s ease;
     will-change: transform, opacity;
 }
-
-/* .askSubmit:hover {
-    background: #0366c5;
-}
-
-.askSubmit:focus-visible {
-    outline: 2px solid #79b8ff;
-    outline-offset: 2px;
-} */
 
 .askSubmitLabel {
     font-size: 0.86rem;
@@ -273,7 +296,6 @@
     display: block;
 }
 
-/* Independent dropdown overlay (rendered via portal) */
 .askDropdown {
     background: #ffffff;
     border: 1px solid rgba(20, 45, 62, 0.14);
@@ -282,7 +304,6 @@
     padding: 8px;
     max-height: min(50vh, 340px);
     overflow-y: auto;
-    will-change: transform, opacity;
 }
 
 .askItem {
@@ -305,7 +326,6 @@
     background: #e8f1fb;
 }
 
-/* Icon mode (when there isn't space for any placeholder text) */
 .askIconBtn {
     width: var(--ctl-h);
     height: var(--ctl-h);
@@ -314,7 +334,7 @@
     justify-content: center;
     border-radius: 10px;
     border: 1px solid rgba(20, 45, 62, 0.22);
-    background: #ffffff;
+    background: #fff;
     color: #142d3e;
     font-weight: 700;
     font-size: 1rem;
@@ -332,9 +352,8 @@
     outline-offset: 2px;
 }
 
-/* Flyout container for icon mode (rendered via portal) */
 .askFlyout {
-    background: #ffffff;
+    background: #fff;
     border: 1px solid rgba(20, 45, 62, 0.18);
     border-radius: 12px;
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
@@ -345,107 +364,20 @@
     width: 100%;
 }
 
-/* Ant Design primary Resume button */
 .resumeBtnAntd {
     height: var(--ctl-h) !important;
     display: inline-flex !important;
     align-items: center !important;
-    /* padding-inline: 14px !important; */
-    /* border-radius: 10px !important; */
 }
 
 /* Mobile */
-.hamburgerWrap {
-    justify-self: end;
-}
-
-.hamburgerBtn {
-    width: 40px;
-    height: 34px;
-    border: 0;
-    background: transparent;
-    display: inline-flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 5px;
-    cursor: pointer;
-}
-
-.hamburgerBtn span {
-    display: block;
-    height: 3px;
-    width: 28px;
-    background: #142d3e;
-    border-radius: 2px;
-}
-
-.mobilePanel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    top: var(--header-height);
-    bottom: 0;
-    background: #ffffff;
-    transform: translateY(-8px);
-    opacity: 0;
-    pointer-events: none;
-    transition: transform 0.25s ease, opacity 0.25s ease;
-    overflow-y: auto;
-    padding: 16px 18px 28px;
-    border-top: 1px solid rgba(20, 45, 62, 0.06);
-    z-index: 1999;
-}
-
-.mobilePanelOpen {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.mobileSection {
-    margin-bottom: 18px;
-}
-
-.mobileHeading {
-    font-weight: 700;
-    color: #142d3e;
-    margin-bottom: 8px;
-}
-
-.mobileList {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.mobileList li {
-    padding: 10px 2px;
-}
-
-.mobileList a {
-    text-decoration: none;
-    color: #142d3e;
-    font-weight: 400;
-}
-
-.mobileList a:hover {
-    color: #0474e3;
-}
-
-.mobileFooter {
-    border-top: 1px solid rgba(20, 45, 62, 0.06);
-    padding-top: 12px;
-}
-
-/* Small screens */
 @media (max-width: 720px) {
     .headerInner {
         grid-template-columns: 1fr auto;
     }
 
     .nav,
-    .rightArea,
-    .navRightSpacer {
+    .rightArea {
         display: none;
     }
 }

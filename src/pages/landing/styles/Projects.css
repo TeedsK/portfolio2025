@@ -2,8 +2,8 @@
 
 /* ========== Global guide variables ========== */
 :root {
-    /* Slightly darker than #f2f0f9 as requested */
     --guide-color: #e0dcf1;
+    /* darker than #f2f0f9 */
     --guide-width: 1px;
     --guide-dash: 24px;
     --projects-dash-offset: 0px;
@@ -17,13 +17,12 @@
     position: relative;
     width: 100%;
     padding-block: var(--section-pad);
-    /* used also to extend guides to full height */
     background: #f9f8fc;
 }
 
 .projects-inner {
     position: relative;
-    /* for the full-height right guide */
+    /* for full-height right guide */
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: clamp(24px, 4vw, 48px);
@@ -37,7 +36,6 @@
     content: "";
     position: absolute;
     top: calc(-1 * var(--section-pad));
-    /* extend into section padding */
     bottom: calc(-1 * var(--section-pad));
     right: 0;
     width: var(--guide-width);
@@ -53,8 +51,8 @@
     flex-direction: column;
     gap: clamp(16px, 2vh, 24px);
     z-index: 0;
-    padding-left: 10px;
-    /* 10px gap between the solid guide and text */
+    padding-left: 20px;
+    /* requested 20px padding on left */
 }
 
 /* Solid guide at far left of text column — full section height with negative offsets */
@@ -126,22 +124,15 @@
     z-index: 1;
 }
 
-/* When there is no hero image we preserve grid area */
-.project-hero img {
-    width: clamp(160px, 28vw, 260px);
-    height: auto;
-    border-radius: 14px;
-    box-shadow: 0 10px 30px color-mix(in oklab, CanvasText 12%, transparent);
-}
-
 .project-copy {
     max-width: 54ch;
 }
 
-/* Logo + eyebrow row */
+/* Meta row: logo + small project name */
 .project-meta {
     display: flex;
     align-items: center;
+    /* vertical align with the logo */
     gap: 10px;
     margin-bottom: 6px;
 }
@@ -153,45 +144,47 @@
     display: inline-block;
 }
 
-.project-eyebrow {
-    display: inline-block;
-    font-size: 11px;
+.project-name {
+    color: #000;
+    font-size: 16px;
+    line-height: 28px;
+    /* align visually with 28px logo height */
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: color-mix(in oklab, CanvasText 55%, transparent);
-    margin-bottom: 0;
 }
 
-/* Bold, compact title */
-.project-title {
-    font-size: clamp(24px, 2.8vw, 34px);
-    line-height: 1.15;
-    margin: 2px 0 8px 0;
-    font-weight: 800;
+/* Hide the old big title; keep for a11y/anchors */
+.sr-only {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
-/* —— Larger, stronger body with uniform spacing —— */
+/* Uniform spacing helper */
 .spaced {
     margin: 20px 0;
 }
 
-/* requested global spacing for key blocks */
-
-/* Bio text size */
+/* Headline-like project description */
 .project-desc {
     color: color-mix(in oklab, CanvasText 78%, transparent);
-    font-weight: 600;
-    font-size: 25px;
-    /* requested 25px */
+    font-weight: 800;
+    /* requested 800 */
+    font-size: 30px;
+    /* requested 30px */
 }
 
-/* High‑level bullets; larger as requested */
+/* High‑level bullets — color & size per request */
 .project-bullets {
     padding-left: 18px;
-    color: color-mix(in oklab, CanvasText 85%, transparent);
+    color: #425466;
+    /* requested color */
     font-size: 17px;
-    /* requested 17px */
 }
 
 .project-bullets li {
@@ -205,29 +198,15 @@
     gap: 14px;
 }
 
-.project-cta-button.ant-btn {
-    border-radius: 10px;
-    height: 42px;
-    padding-inline: 16px;
-    display: inline-flex;
-    align-items: center;
-    align-self: flex-start;
-    margin: 20px 0;
-    /* explicit spacing on the button too */
-}
-
-/* See more — plain text line; only label is highlighted/clickable */
+/* See more */
 .see-more-title {
     font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: color-mix(in oklab, CanvasText 55%, transparent);
-}
-
-/* spacing override for `spaced` on see-more -> 0px 0px */
-.see-more.spaced {
-    margin: 0 0;
+    margin: 20px 0 10px 0;
+    /* requested top/bottom spacing */
 }
 
 .see-more-list {
@@ -245,8 +224,8 @@
 
 .see-more-anchor {
     color: var(--see-more-accent);
-    font-weight: 600;
-    /* ← weight 600 */
+    font-weight: 400;
+    /* requested 400 for links */
     text-decoration: none;
 }
 
@@ -254,11 +233,14 @@
     text-decoration: underline;
 }
 
+.see-more-sep {
+    color: #000;
+}
+
 .see-more-desc {
     color: #000;
-    /* ← black */
+    /* keep black per prior request */
     font-weight: 500;
-    /* ← weight 500 */
 }
 
 /* Tech chips — under see more. May be collapsed to a single row. */
@@ -268,10 +250,8 @@
     gap: 8px;
 }
 
-/* collapsed: show one row; also pull the "view all" button closer */
 .project-tech.is-collapsed {
     max-height: var(--tech-collapsed-h, 32px);
-    /* one-row height measured in JS */
     overflow: hidden;
 }
 
@@ -279,8 +259,7 @@
     margin-bottom: 0;
 }
 
-/* ← closer to the button */
-
+/* pull the toggle closer */
 .project-tech.is-expanded {
     max-height: none;
 }
@@ -305,24 +284,57 @@
     object-fit: contain;
 }
 
+/* Toggle button (outline removed on focus/active) */
 .view-all-tech {
     background: transparent;
     border: none;
     color: var(--see-more-accent);
     font-weight: 600;
-    /* ← weight 600 */
     font-size: 14px;
-    /* ← size 14px */
     cursor: pointer;
     padding: 0;
     align-self: flex-start;
     margin-top: 0;
-    /* ← top 0 */
+    outline: none;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
-/* keep bottom spacing from `.spaced`, but ensure top is 0 even with spaced */
-.view-all-tech.spaced {
-    margin-top: 0;
+.view-all-tech:focus,
+.view-all-tech:focus-visible,
+.view-all-tech:active {
+    outline: none;
+    box-shadow: none;
+    border: none;
+}
+
+/* Flip-word label styling */
+.toggle-label {
+    display: inline-flex;
+    align-items: baseline;
+}
+
+.label-prefix,
+.label-suffix {
+    display: inline-block;
+}
+
+.label-wordflip {
+    display: inline-block;
+    position: relative;
+    height: 1em;
+    line-height: 1em;
+    overflow: hidden;
+    vertical-align: baseline;
+    /* width is set via JS to the max of the two words to avoid layout jump */
+}
+
+.label-wordflip .word {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translateY(0%);
+    will-change: transform;
 }
 
 /* ---------- Right column (sticky animation pane) ---------- */
@@ -394,10 +406,6 @@
 
     .project-block {
         grid-template-columns: 1fr;
-    }
-
-    .project-hero {
-        order: -1;
     }
 
     .viz-layer[data-viz="holoclean"] .holo-root-split {

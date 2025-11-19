@@ -1,16 +1,16 @@
 // src/pages/landing/sections/Projects.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../styles/Projects.css';
-import { Button } from 'antd';
 import gsap from 'gsap';
 
 import SmartLinkedCode from '../visuals/projects/SmartLinkedCode';
 import KudoToolsCode from '../visuals/projects/KudoToolsCode';
 import HoloCleanCode from '../visuals/projects/HoloCleanCode';
 import StackchanCode from '../visuals/projects/StackchanCode';
+import InlineWordToggle from '../../../components/InlineWordToggle';
 
 type ProjectKey = 'smartlinked' | 'kudotools' | 'holoclean' | 'stackchan';
-type SeeMoreKind = 'media' | 'metrics';
+type SeeMoreKind = 'media' | 'metrics' | 'github';
 
 type SeeMoreItem = {
     kind: SeeMoreKind;
@@ -22,18 +22,17 @@ type SeeMoreItem = {
 type ProjectDef = {
     key: ProjectKey;
     id: string;
-    eyebrow: string;
-    title: string;
-    description: string;
+    eyebrow: string;          // kept for completeness
+    title: string;            // small name beside logo
+    description: string;      // big headline text
     bullets?: string[];
-    github?: string;
+    github?: string;          // surfaced via seeMore, not a button
     seeMore?: SeeMoreItem[];
     hero?: string;
     logo: string;
     tech: string[];
 };
 
-/** ---------- Bold renderer (“**...**”) ---------- */
 function renderWithBold(text: string): React.ReactNode {
     if (!text) return null;
     const parts: React.ReactNode[] = [];
@@ -48,8 +47,8 @@ function renderWithBold(text: string): React.ReactNode {
     if (last < text.length) parts.push(text.slice(last));
     return <>{parts}</>;
 }
+const sanitizeDesc = (s: string) => s.replace(/[\u2013\u2014-]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
-/** ---------- Tech chips (icons + tints) ---------- */
 const TECH_ICON_SRC: Record<string, string | undefined> = {
     Python: '/images/coding/python_icon.png',
     'Node.js': '/images/coding/node_icon.png',
@@ -75,7 +74,6 @@ const TECH_ICON_SRC: Record<string, string | undefined> = {
     React: '/images/coding/react_icon.png',
     Pandas: '/images/coding/pandas_icon.png',
 };
-
 const TECH_TINT: Record<string, string> = {
     Python: '#3776AB',
     'Node.js': '#539E43',
@@ -101,25 +99,21 @@ const TECH_TINT: Record<string, string> = {
     React: '#61dafb',
     Pandas: '#150458',
 };
-const tint = (name: string) => TECH_TINT[name] ?? '#6366F1';
+const tint = (n: string) => TECH_TINT[n] ?? '#6366F1';
 
-/** ---------- Data ---------- */
 const PROJECTS: ProjectDef[] = [
     {
         key: 'smartlinked',
         id: 'smartlinked',
         eyebrow: 'Product • AI · React · Firebase',
         title: 'SmartLinked',
-        description: 'AI that **rewrites** and **grades** LinkedIn profiles—built end‑to‑end with growth in mind.',
-        bullets: [
-            'Profile generator + evaluator',
-            'Full‑stack: React · Firebase · MySQL',
-            'Referral & charge model',
-        ],
+        description: 'AI that **rewrites** and **grades** LinkedIn profiles, built for growth.',
+        bullets: ['Profile generator + evaluator', 'Full stack: React · Firebase · MySQL', 'Referral & charge model'],
         github: '#smartlinked-github',
         seeMore: [
             { kind: 'media', label: 'videos & pictures', description: 'see the design and functionality', href: '#smartlinked-media' },
             { kind: 'metrics', label: 'metrics', description: 'impact & adoption at a glance', href: '#smartlinked-metrics' },
+            { kind: 'github', label: 'github', description: 'repository and source code', href: '#smartlinked-github' },
         ],
         hero: '/smartlinked_hero.png',
         logo: '/images/icons/smartLinkedLogo.svg',
@@ -130,12 +124,13 @@ const PROJECTS: ProjectDef[] = [
         id: 'kudotools',
         eyebrow: 'Internal Toolkit • Node · React',
         title: 'Kudo Tools',
-        description: 'A compact toolkit for content ops—**fast macros**, plug‑ins, and guard‑railed flows.',
+        description: 'Compact content ops toolkit with **fast macros**, plug‑ins, and guided flows.',
         bullets: ['Batch actions', 'Audit‑ready flows', 'Plug‑in architecture'],
         github: '#kudotools-github',
         seeMore: [
             { kind: 'media', label: 'videos & pictures', description: 'UI speed & flows', href: '#kudotools-media' },
             { kind: 'metrics', label: 'metrics', description: 'ops throughput & savings', href: '#kudotools-metrics' },
+            { kind: 'github', label: 'github', description: 'repository and source code', href: '#kudotools-github' },
         ],
         hero: '/kudo_tools_hero.png',
         logo: '/images/icons/kudotools.png',
@@ -146,12 +141,13 @@ const PROJECTS: ProjectDef[] = [
         id: 'holoclean',
         eyebrow: 'Research • Python · Pandas',
         title: 'HoloClean',
-        description: 'Explainable data repair—**constraints**, **patterns**, and human‑in‑the‑loop review.',
+        description: 'Explainable data repair with **constraints**, **patterns**, and human‑in‑the‑loop review.',
         bullets: ['Constraint rules', 'Review UI', 'Repair metrics'],
         github: '#holoclean-github',
         seeMore: [
             { kind: 'media', label: 'videos & pictures', description: 'repair rationale demos', href: '#holoclean-media' },
             { kind: 'metrics', label: 'metrics', description: 'quality lift across datasets', href: '#holoclean-metrics' },
+            { kind: 'github', label: 'github', description: 'repository and source code', href: '#holoclean-github' },
         ],
         hero: '/holoclean_hero.png',
         logo: '/images/icons/holoclean.png',
@@ -162,12 +158,13 @@ const PROJECTS: ProjectDef[] = [
         id: 'stackchan',
         eyebrow: 'Hardware • C++ / Microcontrollers',
         title: 'Stackchan',
-        description: 'A tiny companion bot—**behaviors**, **speech**, and a playful animation runtime.',
+        description: 'A tiny companion bot with **behaviors**, **speech**, and a playful animation runtime.',
         bullets: ['Event loop', 'LED/Audio runtime', 'Modular sensors'],
         github: '#stackchan-github',
         seeMore: [
             { kind: 'media', label: 'videos & pictures', description: 'expressivity & motion', href: '#stackchan-media' },
             { kind: 'metrics', label: 'metrics', description: 'runtime & responsiveness', href: '#stackchan-metrics' },
+            { kind: 'github', label: 'github', description: 'repository and source code', href: '#stackchan-github' },
         ],
         hero: '/stackchan_hero.png',
         logo: '/images/icons/stackchan.png',
@@ -175,7 +172,6 @@ const PROJECTS: ProjectDef[] = [
     },
 ];
 
-/** ---------- Focus band measurement ---------- */
 function useMostCentered(refs: React.RefObject<HTMLElement>[]) {
     const [activeIndex, setActiveIndex] = useState(0);
     const rafRef = useRef<number | null>(null);
@@ -229,7 +225,6 @@ const Projects: React.FC = () => {
     const activeIndex = useMostCentered(itemRefs);
     const activeKey = PROJECTS[activeIndex]?.key ?? 'smartlinked';
 
-    // dashed-line motion
     useEffect(() => {
         let raf: number | null = null;
         const onScroll = () => {
@@ -244,7 +239,7 @@ const Projects: React.FC = () => {
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
-    /** ---- Tech stack overflow detection & "view all" expansion ---- */
+    /** ---- Tech stack overflow detection & toggle expand/collapse ---- */
     const techRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const [techOverflow, setTechOverflow] = useState<Record<string, boolean>>({});
     const [expandedTech, setExpandedTech] = useState<Record<string, boolean>>({});
@@ -270,6 +265,9 @@ const Projects: React.FC = () => {
                 (el as HTMLElement).style.setProperty('--tech-collapsed-h', `${Math.ceil(rowH)}px`);
                 const overflow = el.scrollHeight > rowH + 2;
                 next[id] = overflow;
+                if (!overflow) {
+                    (el as HTMLElement).style.maxHeight = 'none';
+                }
             });
             setTechOverflow(next);
         };
@@ -292,25 +290,53 @@ const Projects: React.FC = () => {
                 maxHeight: targetH,
                 duration: 0.35,
                 ease: 'power2.out',
+                onStart: () => (el as HTMLElement).classList.remove('is-collapsed'),
                 onComplete: () => {
+                    (el as HTMLElement).classList.add('is-expanded');
                     (el as HTMLElement).style.maxHeight = 'none';
                     setExpandedTech((s) => ({ ...s, [id]: true }));
                 },
             }
         );
 
+        // cascade-in extra chips
         const chips = Array.from(el.querySelectorAll('.tech-chip')) as HTMLElement[];
         const firstTop = chips[0]?.offsetTop ?? 0;
         const extra = chips.filter((ch) => ch.offsetTop > firstTop);
         gsap.fromTo(extra, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.25, stagger: 0.03, ease: 'power2.out', delay: 0.1 });
     };
 
+    const collapseTech = (id: string) => {
+        const el = techRefs.current[id];
+        if (!el) return;
+        const cs = getComputedStyle(el);
+        const collapsedH = parseFloat(cs.getPropertyValue('--tech-collapsed-h')) || 32;
+        const currentH = el.scrollHeight;
+
+        gsap.fromTo(
+            el,
+            { maxHeight: currentH },
+            {
+                maxHeight: collapsedH,
+                duration: 0.35,
+                ease: 'power2.inOut',
+                onStart: () => (el as HTMLElement).classList.remove('is-expanded'),
+                onComplete: () => {
+                    (el as HTMLElement).classList.add('is-collapsed');
+                    (el as HTMLElement).style.maxHeight = `${collapsedH}px`;
+                    setExpandedTech((s) => ({ ...s, [id]: false }));
+                },
+            }
+        );
+    };
+
+    const toggleTech = (id: string) => (expandedTech[id] ? collapseTech(id) : expandTech(id));
+
     return (
         <section id="projects" className="projects-section" aria-labelledby="projects-title">
             <div className="projects-inner">
                 {/* Left: write-ups */}
                 <div className="projects-left">
-                    {/* vertical guide overlays */}
                     <div className="column-guides" aria-hidden="true">
                         <span className="guide guide-center dash-line" />
                         <span className="guide guide-right dash-line" />
@@ -318,51 +344,24 @@ const Projects: React.FC = () => {
 
                     <div className="project-list" aria-live="polite">
                         {PROJECTS.map((p, i) => (
-                            <article
-                                key={p.key}
-                                ref={itemRefs[i]}
-                                className="project-block"
-                                aria-labelledby={p.id}
-                            >
+                            <article key={p.key} ref={itemRefs[i]} className="project-block" aria-labelledby={p.id}>
                                 <div className="project-copy">
                                     <div className="project-meta">
-                                        {p.logo && (
-                                            <img
-                                                className="project-logo"
-                                                src={p.logo}
-                                                alt={`${p.title} logo`}
-                                                loading="lazy"
-                                            />
-                                        )}
-                                        <div className="project-eyebrow">{p.eyebrow}</div>
+                                        {p.logo && <img className="project-logo" src={p.logo} alt={`${p.title} logo`} loading="lazy" />}
+                                        <div className="project-name">{p.title}</div>
                                     </div>
 
-                                    <h3 id={p.id} className="project-title">{p.title}</h3>
+                                    <h3 id={p.id} className="project-title sr-only">{p.title}</h3>
 
-                                    <p className="project-desc spaced">{renderWithBold(p.description)}</p>
+                                    <p className="project-desc spaced">{renderWithBold(sanitizeDesc(p.description))}</p>
 
-                                    {/* High‑level bullets */}
                                     {p.bullets && (
                                         <ul className="project-bullets spaced">
-                                            {p.bullets.map((b, idx) => (
-                                                <li key={idx}>{renderWithBold(b)}</li>
-                                            ))}
+                                            {p.bullets.map((b, idx) => <li key={idx}>{renderWithBold(b)}</li>)}
                                         </ul>
                                     )}
 
-                                    {/* Actions */}
                                     <div className="project-actions spaced">
-                                        {p.github && (
-                                            <Button
-                                                type="primary"
-                                                size="large"
-                                                href={p.github}
-                                                className="project-cta-button spaced"
-                                            >
-                                                View GitHub
-                                            </Button>
-                                        )}
-
                                         {p.seeMore && p.seeMore.length > 0 && (
                                             <div className="see-more spaced">
                                                 <div className="see-more-title">See more</div>
@@ -370,10 +369,9 @@ const Projects: React.FC = () => {
                                                     {p.seeMore.map((s) => (
                                                         <li key={`${p.id}-${s.kind}`} className={`see-more-item see-more-${s.kind}`}>
                                                             <span className="see-more-line">
-                                                                <a href={s.href} className="see-more-anchor" role="button">
-                                                                    {s.label}
-                                                                </a>
-                                                                <span className="see-more-desc"> — {s.description}</span>
+                                                                <a href={s.href} className="see-more-anchor" role="button">{s.label}</a>
+                                                                <span className="see-more-sep">: </span>
+                                                                <span className="see-more-desc">{s.description}</span>
                                                             </span>
                                                         </li>
                                                     ))}
@@ -381,7 +379,7 @@ const Projects: React.FC = () => {
                                             </div>
                                         )}
 
-                                        {/* Tech stack — under See more, with "View all frameworks" when wrapped */}
+                                        {/* Tech stack + animated inline toggle */}
                                         {p.tech?.length ? (
                                             <>
                                                 <div
@@ -396,11 +394,7 @@ const Projects: React.FC = () => {
                                                                 key={t}
                                                                 className="tech-chip"
                                                                 title={t}
-                                                                style={{
-                                                                    backgroundColor: `${c}18`,
-                                                                    borderColor: `${c}55`,
-                                                                    color: c,
-                                                                }}
+                                                                style={{ backgroundColor: `${c}18`, borderColor: `${c}55`, color: c }}
                                                             >
                                                                 {icon && <img src={icon} alt="" aria-hidden className="tech-chip__icon" />}
                                                                 <span className="tech-chip__label">{t}</span>
@@ -408,10 +402,13 @@ const Projects: React.FC = () => {
                                                         );
                                                     })}
                                                 </div>
-                                                {techOverflow[p.id] && !expandedTech[p.id] && (
-                                                    <button type="button" className="view-all-tech spaced" onClick={() => expandTech(p.id)}>
-                                                        View all frameworks
-                                                    </button>
+
+                                                {techOverflow[p.id] && (
+                                                    <InlineWordToggle
+                                                        className="view-all-tech spaced"
+                                                        expanded={!!expandedTech[p.id]}
+                                                        onToggle={() => toggleTech(p.id)}
+                                                    />
                                                 )}
                                             </>
                                         ) : null}

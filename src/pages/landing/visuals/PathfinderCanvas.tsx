@@ -54,6 +54,9 @@ type GridCell = { wall: boolean; color: string; scaleInStart: number; scaleOutSt
 type SizeItem = { label: string; sizePx: number };
 type Mode = 'auto' | 'fixed' | 'custom';
 
+/** Custom mode step types */
+export type CustomStep = 'idle' | 'place-start' | 'place-end' | 'draw-walls' | 'running' | 'complete';
+
 type Props = {
     heightPx?: number;
     mode?: Mode;
@@ -65,6 +68,8 @@ type Props = {
     customSignals?: { startCounter: number; resetCounter: number };
     speedMultiplier?: number;
     hintCounter?: number;
+    /** Callback when custom mode step changes */
+    onCustomStepChange?: (step: CustomStep) => void;
 };
 
 const PathfinderCanvas: React.FC<Props> = ({
@@ -84,6 +89,7 @@ const PathfinderCanvas: React.FC<Props> = ({
     customSignals = { startCounter: 0, resetCounter: 0 },
     speedMultiplier = 1,
     hintCounter = 0,
+    onCustomStepChange,
 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -145,6 +151,18 @@ const PathfinderCanvas: React.FC<Props> = ({
     const drawingWallsRef = useRef(false);
     const lastDrawIdxRef = useRef<number | null>(null);
 
+    /** Custom step tracking */
+    const customStepRef = useRef<CustomStep>('idle');
+    const onCustomStepChangeRef = useRef(onCustomStepChange);
+    onCustomStepChangeRef.current = onCustomStepChange;
+
+    const setCustomStep = (step: CustomStep) => {
+        if (customStepRef.current !== step) {
+            customStepRef.current = step;
+            onCustomStepChangeRef.current?.(step);
+        }
+    };
+
     /** Auto rotation index */
     const autoIndexRef = useRef<number>(initialAutoIndex % autoSequence.length);
 
@@ -165,7 +183,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         if (!container) return;
         const rect = container.getBoundingClientRect();
 
-        // Helper to place a marker in viewport coords
         const place = (el: HTMLDivElement | null, pos: { r: number; c: number } | null) => {
             if (!el) return;
             if (!showMarkers || !pos || pos.r < 0 || pos.c < 0 || pos.r >= rows || pos.c >= cols) {
@@ -289,10 +306,8 @@ const PathfinderCanvas: React.FC<Props> = ({
         ensureBottomRowOpenings(g);
     };
 
-    /** Scale (divide) a duration by current speed (2× speed => half duration) */
     const S = (ms: number) => ms / speedRef.current;
 
-    /** Block-based reveal schedule (two waves + center gap + coverage stripes) */
     const scheduleMazeRevealNoOverlap = (g: GridCell[][]) => {
         const rows = g.length;
         const cols = g[0].length;
@@ -351,7 +366,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             baseDelay += TIME.current.REVEAL_RING_DELAY_MS;
         }
 
-        // Center gap
         const topLastEnd = topStarts.length
             ? Math.min(mid - 1, topStarts[topStarts.length - 1] + BASE.REVEAL_BLOCK - 1)
             : -1;
@@ -372,7 +386,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             }
         }
 
-        // Final coverage stripes (no scale-in)
         const coverageAt = Math.max(lastScheduledAt, baseDelay) + 10;
         const STRIPE_ROWS = Math.max(8, Math.floor(rows / 16));
         let covAt = coverageAt;
@@ -565,7 +578,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         return startDelayMs + searchingDelay + S(400);
     };
 
-    /** Rendering with active set; END overlay; optional hint markers for start/end */
     const render = (ctx: CanvasRenderingContext2D, g: GridCell[][], cell: number, elapsedMs: number) => {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, dimsRef.current.width, dimsRef.current.height);
@@ -604,7 +616,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             ctx.fillRect(Math.round(cx), Math.round(cy), Math.ceil(w), Math.ceil(h));
         }
 
-        // END overlay (painted always on top)
         if (endRef.current) {
             const { r: er, c: ec } = endRef.current;
             const gcEnd = g[er][ec];
@@ -628,7 +639,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             }
         }
 
-        // Hint overlay (for ~2s after request)
         if (hintUntilMsRef.current >= 0 && elapsedMs <= hintUntilMsRef.current) {
             ctx.save();
             ctx.globalAlpha = 0.9;
@@ -655,7 +665,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             ctx.restore();
         }
 
-        // Update DOM markers (after we know positions/colors this frame)
         updateMarkers();
     };
 
@@ -663,7 +672,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         const rows = g.length;
         const cols = g[0].length;
 
-        // Block events
         const be = blockEventsRef.current;
         let bi = blockCursorRef.current;
         while (bi < be.length && be[bi].at <= elapsedMs) {
@@ -708,7 +716,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         }
         blockCursorRef.current = bi;
 
-        // Paint events
         const pe = paintEventsRef.current;
         let i = paintCursorRef.current;
         while (i < pe.length && pe[i].at <= elapsedMs) {
@@ -724,7 +731,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         }
         paintCursorRef.current = i;
 
-        // Scale events
         const se = scaleEventsRef.current;
         let j = scaleCursorRef.current;
         while (j < se.length && se[j].at <= elapsedMs) {
@@ -751,7 +757,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         scaleCursorRef.current = 0;
     };
 
-    /** Custom-mode helpers */
     const clearCustomGrid = () => {
         const { rows, cols } = dimsRef.current;
         const g = gridRef.current;
@@ -769,6 +774,7 @@ const PathfinderCanvas: React.FC<Props> = ({
             }
         }
         updateMarkers();
+        setCustomStep('place-start');
     };
 
     const toCellRC = (evt: PointerEvent) => {
@@ -797,6 +803,7 @@ const PathfinderCanvas: React.FC<Props> = ({
         customStartRef.current = { r, c };
         startRef.current = { r, c };
         updateMarkers();
+        setCustomStep('place-end');
     };
 
     const setCustomEnd = (r: number, c: number) => {
@@ -811,6 +818,7 @@ const PathfinderCanvas: React.FC<Props> = ({
         customEndRef.current = { r, c };
         endRef.current = { r, c };
         updateMarkers();
+        setCustomStep('draw-walls');
     };
 
     const drawWallAt = (r: number, c: number) => {
@@ -826,14 +834,12 @@ const PathfinderCanvas: React.FC<Props> = ({
         addActive(rows, cols, r, c);
     };
 
-    /** Start cycle with current mode, size, and speed */
     const startCycle = (ctx: CanvasRenderingContext2D) => {
         if (!visibleRef.current) return;
         runningRef.current = true;
         clearTimeline();
         activeCellsRef.current.clear();
 
-        // Compute scaled timings
         TIME.current = {
             DELAY_PER_ITERATION_MS: BASE.DELAY_PER_ITERATION_MS / speedRef.current,
             PULSE_STEP_MS: BASE.PULSE_STEP_MS / speedRef.current,
@@ -849,7 +855,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             REVEAL_BLOCK: BASE.REVEAL_BLOCK,
         };
 
-        // Resolve cell size per mode
         let cellPx: number = 12;
         if (modeRef.current === 'fixed') {
             cellPx = Math.max(1, Math.floor(fixedCellSizePx ?? 12));
@@ -864,7 +869,6 @@ const PathfinderCanvas: React.FC<Props> = ({
             cellPx = Math.max(1, Math.floor(fixedCellSizePx ?? 12));
         }
 
-        // Compute dims & init grid
         const container = containerRef.current!;
         const rect = container.getBoundingClientRect();
         dimsRef.current = computeGridDims(rect.width, rect.height, cellPx);
@@ -873,18 +877,19 @@ const PathfinderCanvas: React.FC<Props> = ({
         const g = gridRef.current;
 
         startRef.current = null; endRef.current = null;
-        updateMarkers(); // hide until we set positions
+        updateMarkers();
 
         if (modeRef.current === 'custom') {
+            customStartRef.current = null;
+            customEndRef.current = null;
+            setCustomStep('place-start');
             cycleStartRef.current = performance.now();
             tick(ctx);
             return;
         }
 
-        // Normal (auto/fixed): carve
         carveMazeBinary(g);
 
-        // Reveal
         const lastRevealDelay = scheduleMazeRevealNoOverlap(g);
 
         const { s, e } = chooseStartEnd(g);
@@ -892,7 +897,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         endRef.current = e;
         updateMarkers();
 
-        // Paint start/end with pulses
         paintEventsRef.current.push({ at: lastRevealDelay + 200 / speedRef.current, r: s.r, c: s.c, color: START });
         scaleEventsRef.current.push({ at: lastRevealDelay + 200 / speedRef.current, r: s.r, c: s.c, kind: 'in' });
         paintEventsRef.current.push({ at: lastRevealDelay + 200 / speedRef.current, r: e.r, c: e.c, color: END });
@@ -900,7 +904,6 @@ const PathfinderCanvas: React.FC<Props> = ({
 
         const doneAt = runAStarWithTimeline(g, s, e, lastRevealDelay + 300 / speedRef.current);
 
-        // Fade bands then sentinel
         const fadeDoneAt = scheduleResetFadeBandsTopToBottom(g, doneAt + TIME.current.AFTER_PATH_PAUSE_MS);
         paintEventsRef.current.push({ at: fadeDoneAt + 50 / speedRef.current, r: 0, c: 0, color: EMPTY });
 
@@ -933,6 +936,9 @@ const PathfinderCanvas: React.FC<Props> = ({
             if (modeRef.current !== 'custom') {
                 setTimeout(() => { if (!ctxRef.current) return; startCycle(ctxRef.current); }, 0);
             } else {
+                if (customStepRef.current === 'running') {
+                    setCustomStep('complete');
+                }
                 rafRef.current = requestAnimationFrame(() => tick(ctx));
             }
             return;
@@ -941,7 +947,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         rafRef.current = requestAnimationFrame(() => tick(ctx));
     };
 
-    /** Lifecycle mount */
     useEffect(() => {
         const container = containerRef.current!;
         const canvas = canvasRef.current!;
@@ -950,7 +955,7 @@ const PathfinderCanvas: React.FC<Props> = ({
             const rect = container.getBoundingClientRect();
             const ctx = sizeCanvas(canvas, rect.width, rect.height);
             ctxRef.current = ctx;
-            updateMarkers(); // reposition to viewport
+            updateMarkers();
             return ctx;
         };
 
@@ -979,9 +984,10 @@ const PathfinderCanvas: React.FC<Props> = ({
         );
         io.observe(container);
 
-        // Pointer interactions for custom mode
         const onPointerDown = (e: PointerEvent) => {
             if (modeRef.current !== 'custom') return;
+            if (customStepRef.current === 'running' || customStepRef.current === 'complete') return;
+
             const { r, c, idx } = toCellRC(e);
             const g = gridRef.current;
 
@@ -999,6 +1005,8 @@ const PathfinderCanvas: React.FC<Props> = ({
         };
         const onPointerMove = (e: PointerEvent) => {
             if (modeRef.current !== 'custom' || !drawingWallsRef.current) return;
+            if (customStepRef.current === 'running' || customStepRef.current === 'complete') return;
+
             const { r, c, idx } = toCellRC(e);
             if (lastDrawIdxRef.current === idx) return;
             drawWallAt(r, c);
@@ -1025,7 +1033,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         canvas.addEventListener('pointerleave', onPointerLeave);
         canvas.addEventListener('contextmenu', onContextMenu);
 
-        // initial start
         startCycle(ctx);
 
         return () => {
@@ -1041,9 +1048,11 @@ const PathfinderCanvas: React.FC<Props> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /** Respond to external prop changes */
     useEffect(() => {
         modeRef.current = mode;
+        if (mode !== 'custom') {
+            setCustomStep('idle');
+        }
         if (ctxRef.current) { stopCycle(); startCycle(ctxRef.current); }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
@@ -1069,7 +1078,6 @@ const PathfinderCanvas: React.FC<Props> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resetCounter]);
 
-    /** Custom control signals */
     const prevCustomStart = useRef(customSignals.startCounter);
     const prevCustomReset = useRef(customSignals.resetCounter);
 
@@ -1079,35 +1087,53 @@ const PathfinderCanvas: React.FC<Props> = ({
             prevCustomStart.current = customSignals.startCounter;
 
             if (customStartRef.current && customEndRef.current) {
+                setCustomStep('running');
                 clearTimeline();
                 const { rows, cols } = dimsRef.current;
                 const g = gridRef.current;
                 activeCellsRef.current.clear();
+
+                const newCycleStart = performance.now();
+
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
                         const cell = g[r][c];
                         if (customStartRef.current && r === customStartRef.current.r && c === customStartRef.current.c) {
-                            cell.wall = false; cell.color = START; cell.scaleInStart = performance.now() - cycleStartRef.current;
+                            cell.wall = false;
+                            cell.color = START;
+                            cell.scaleInStart = 0;
+                            cell.scaleOutStart = -1;
                             addActive(rows, cols, r, c);
                             startRef.current = { r, c };
                             continue;
                         }
                         if (customEndRef.current && r === customEndRef.current.r && c === customEndRef.current.c) {
-                            cell.wall = false; cell.color = END; cell.scaleInStart = performance.now() - cycleStartRef.current;
+                            cell.wall = false;
+                            cell.color = END;
+                            cell.scaleInStart = 0;
+                            cell.scaleOutStart = -1;
                             addActive(rows, cols, r, c);
                             endRef.current = { r, c };
                             continue;
                         }
-                        if (cell.wall) { cell.color = WALL; addActive(rows, cols, r, c); }
-                        else { cell.color = EMPTY; removeActive(rows, cols, r, c); }
-                        cell.scaleOutStart = -1;
+                        if (cell.wall) {
+                            cell.color = WALL;
+                            cell.scaleInStart = -1; // FIX: Set to -1 so walls appear at full scale
+                            cell.scaleOutStart = -1;
+                            addActive(rows, cols, r, c);
+                        } else {
+                            cell.color = EMPTY;
+                            cell.scaleInStart = -1;
+                            cell.scaleOutStart = -1;
+                            removeActive(rows, cols, r, c);
+                        }
                     }
                 }
                 updateMarkers();
 
                 runAStarWithTimeline(g, customStartRef.current, customEndRef.current, 0);
                 finalizeSchedules();
-                cycleStartRef.current = performance.now();
+                cycleStartRef.current = newCycleStart;
                 if (ctxRef.current) tick(ctxRef.current);
             }
         }
@@ -1125,12 +1151,10 @@ const PathfinderCanvas: React.FC<Props> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [customSignals.resetCounter, mode]);
 
-    /** Hint overlay trigger */
     const prevHint = useRef(hintCounter);
     useEffect(() => {
         if (hintCounter !== prevHint.current) {
             prevHint.current = hintCounter;
-            // show for ~2000ms in the canvas timeline
             const elapsed = performance.now() - cycleStartRef.current;
             hintUntilMsRef.current = elapsed + 2000;
         }
@@ -1141,13 +1165,11 @@ const PathfinderCanvas: React.FC<Props> = ({
             ref={containerRef}
             style={{ width: '100%', height: heightPx ? `${heightPx}px` : '100%', position: 'relative' }}
         >
-            {/* Canvas */}
             <canvas
                 ref={canvasRef}
                 style={{ width: '100%', height: '100%', display: 'block', cursor: mode === 'custom' ? 'crosshair' : 'default' }}
             />
 
-            {/* Overlay markers (fixed, above everything; only visible on XL/XXL) */}
             <div className="pf-overlay" aria-hidden>
                 <Popover content="Start" placement="top" trigger={['hover', 'click']}>
                     <div ref={startMarkerRef} className="pf-marker start" />

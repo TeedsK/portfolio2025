@@ -30,12 +30,12 @@ const FallingProjectShowcase: React.FC<Props> = ({
   const registerWrapper = (id: string) => (el: HTMLDivElement | null) => { wrappersRef.current[id] = el; };
   const registerImage  = (id: string) => (el: HTMLImageElement | null) => { imagesRef.current[id] = el; };
 
-  // Fixed slot order to match your mock:
-  // 0 stackchan (purple) | 1 smartlinked (red)
-  // 2 kudo (green)       | 3 holoclean (yellow)
+  // Fixed slot order:
+  // 0 smartlinked (red)
+  // 1 kudo (green)
+  // 2 holoclean (yellow)
   const items: ShowcaseItem[] = useMemo(
     () => itemsProp ?? [
-      { id: 'stackchan',   src: '/stackchan_hero.png',   alt: 'Stack-chan hero' },
       { id: 'smartlinked', src: '/smartlinked_hero.png', alt: 'SmartLinked hero' },
       { id: 'kudo',        src: '/kudo_tools_hero.png',  alt: 'Kudo Tools hero' },
       { id: 'holoclean',   src: '/holoclean_hero.png',   alt: 'HoloClean hero' },
@@ -161,9 +161,6 @@ const FallingProjectShowcase: React.FC<Props> = ({
       return { w: Math.round(baseW * s), h: Math.round(baseH * s) };
     });
 
-    const row0Width = sizes[0].w + GAP_FINAL + sizes[1].w;
-    const row1Width = sizes[2].w + GAP_FINAL + sizes[3].w;
-
     // ============================================================
     // GROUP POSITION DIALS (tweak these to move the WHOLE formation)
     // Negative Y moves UP toward the header; positive moves DOWN.
@@ -180,16 +177,15 @@ const FallingProjectShowcase: React.FC<Props> = ({
 
     const rightEdge = w - rightMargin;
 
-    const row0X = rightEdge - row0Width;
-    const row1X = rightEdge - row1Width;
-
-    const A = { x: row0X,                 y: topMargin,               w: sizes[0].w, h: sizes[0].h }; // stackchan
-    const B = { x: A.x + A.w + GAP_FINAL, y: topMargin,               w: sizes[1].w, h: sizes[1].h }; // smartlinked
-    const C = { x: row1X,                 y: A.y + A.h + GAP_FINAL,   w: sizes[2].w, h: sizes[2].h }; // kudo
-    const D = { x: C.x + C.w + GAP_FINAL, y: B.y + B.h + GAP_FINAL,   w: sizes[3].w, h: sizes[3].h }; // holoclean
+    // Layout for 3 items: smartlinked (top), kudo & holoclean (bottom row)
+    const A = { x: rightEdge - sizes[0].w,  y: topMargin,               w: sizes[0].w, h: sizes[0].h }; // smartlinked
+    const rowWidth = sizes[1].w + GAP_FINAL + sizes[2].w;
+    const row1X = rightEdge - rowWidth;
+    const B = { x: row1X,                    y: A.y + A.h + GAP_FINAL,   w: sizes[1].w, h: sizes[1].h }; // kudo
+    const C = { x: B.x + B.w + GAP_FINAL,    y: A.y + A.h + GAP_FINAL,   w: sizes[2].w, h: sizes[2].h }; // holoclean
 
     const targetsById: Record<string, {x:number;y:number;w:number;h:number}> = {
-      stackchan: A, smartlinked: B, kudo: C, holoclean: D,
+      smartlinked: A, kudo: B, holoclean: C,
     };
 
     overlayRef.current?.classList.remove('is-wait');

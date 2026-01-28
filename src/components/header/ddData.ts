@@ -68,14 +68,6 @@ export const PROJECT_ITEMS: DDItem[] = [
             'Machine learning repair, fixing errors in data tables.'
     },
     {
-        label: 'Stackchan',
-        href: '/projects/stackchan',
-        sub: 'Physical Robot Companion',
-        img: '/images/icons/stackchan.png',
-        desc:
-            'Smart, expressive, and programmable robot' 
-    },
-    {
         label: 'Frontend Work',
         href: '/projects/portfolios',
         sub: "Webpages I've Built",

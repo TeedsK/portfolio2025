@@ -6,10 +6,9 @@ import gsap from 'gsap';
 import SmartLinkedCode from '../visuals/projects/SmartLinkedCode';
 import KudoToolsCode from '../visuals/projects/KudoToolsCode';
 import HoloCleanCode from '../visuals/projects/HoloCleanCode';
-import StackchanCode from '../visuals/projects/StackchanCode';
 import InlineWordToggle from '../../../components/InlineWordToggle';
 
-type ProjectKey = 'smartlinked' | 'kudotools' | 'holoclean' | 'stackchan';
+type ProjectKey = 'smartlinked' | 'kudotools' | 'holoclean';
 type SeeMoreKind = 'media' | 'metrics' | 'github';
 
 type SeeMoreItem = {
@@ -152,23 +151,6 @@ const PROJECTS: ProjectDef[] = [
         hero: '/holoclean_hero.png',
         logo: '/images/icons/holoclean.png',
         tech: ['Python', 'Pandas'],
-    },
-    {
-        key: 'stackchan',
-        id: 'stackchan',
-        eyebrow: 'Hardware • C++ / Microcontrollers',
-        title: 'Stackchan',
-        description: 'A tiny companion bot with **behaviors**, **speech**, and a playful animation runtime.',
-        bullets: ['Event loop', 'LED/Audio runtime', 'Modular sensors'],
-        github: '#stackchan-github',
-        seeMore: [
-            { kind: 'media', label: 'videos & pictures', description: 'expressivity & motion', href: '#stackchan-media' },
-            { kind: 'metrics', label: 'metrics', description: 'runtime & responsiveness', href: '#stackchan-metrics' },
-            { kind: 'github', label: 'github', description: 'repository and source code', href: '#stackchan-github' },
-        ],
-        hero: '/stackchan_hero.png',
-        logo: '/images/icons/stackchan.png',
-        tech: ['C++', 'Python'],
     },
 ];
 
@@ -430,9 +412,6 @@ const Projects: React.FC = () => {
                         </div>
                         <div className={`viz-layer ${activeKey === 'holoclean' ? 'is-active' : ''}`} data-viz="holoclean">
                             <HoloCleanCode play={activeKey === 'holoclean'} />
-                        </div>
-                        <div className={`viz-layer ${activeKey === 'stackchan' ? 'is-active' : ''}`} data-viz="stackchan">
-                            <StackchanCode play={activeKey === 'stackchan'} />
                         </div>
                     </div>
                 </div>

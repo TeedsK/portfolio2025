@@ -23,7 +23,7 @@ import { useTfModel } from '../../../utils/useTfModel';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
-import FallingProjectShowcase from '../components/FallingProjectShowcase';
+import AsciiOrb from '../components/AsciiOrb';
 
 const GRAPH_CANVAS_HEIGHT = 340;
 const BOTTOM_Y_LIFT_PX = 30;
@@ -76,7 +76,7 @@ const Hero: React.FC = () => {
     const [typoAnimationComplete1, setTypoAnimationComplete1] = useState(false);
     const [typoAnimationComplete2, setTypoAnimationComplete2] = useState(false);
 
-    // === NEW: gate FallingProjectShowcase start until the neural viz has faded away ===
+    // === Gate ASCII orb appearance until the neural viz has faded away ===
     const [hasFadedNeuralNet, setHasFadedNeuralNet] = useState(false);
     const neuralContainerRef = useRef<HTMLDivElement>(null);
     const hasTriggeredFadeRef = useRef(false);
@@ -877,8 +877,8 @@ const Hero: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Right column — Neural Network */}
-                    <div className="right-column">
+                    {/* Right column — Neural Network + ASCII Orb */}
+                    <div className="right-column" style={{ position: 'relative' }}>
                         <div
                             ref={neuralContainerRef}
                             className="steps-extra-info-container"
@@ -899,6 +899,26 @@ const Hero: React.FC = () => {
                                 )}
                             </div>
                         </div>
+
+                        {/* ASCII Orb - appears after neural network fades */}
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                pointerEvents: 'none',
+                                zIndex: 10,
+                            }}
+                        >
+                            <AsciiOrb
+                                show={hasFadedNeuralNet}
+                                size={70}
+                                animationSpeed={0.6}
+                                morphSpeed={0.5}
+                                shapeDuration={5}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -910,18 +930,6 @@ const Hero: React.FC = () => {
                         onBeamFinished={onBeamFinished}
                     />
                 </div>
-                <FallingProjectShowcase
-                    heroAnimationsDone={hasFadedNeuralNet}
-                    startDelayMs={1000}
-                    finalScales={{
-                        // tweak these to taste (1 = default)
-                        smartlinked: 1.3, // red (top) slightly larger/taller
-                        kudo: 1.0,        // green (bottom-left) the largest tile
-                        holoclean: 0.95,  // yellow (bottom-right) modest
-                    }}
-                    // Optional: set a global base long side (before per-image scale)
-                    baseLongSidePx={340}
-                />
             </section>
 
         </>

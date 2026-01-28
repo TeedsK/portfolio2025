@@ -817,7 +817,7 @@ const Hero: React.FC = () => {
                                                 {/* Icons row (container animates like labels; items stagger) */}
                                                 <div ref={impactIconsWrapRef} className="impact-socials" aria-label="Social links">
                                                     {/* LinkedIn */}
-                                                    <a className="impact-social" href="#" aria-label="LinkedIn" title="LinkedIn" role="link">
+                                                    <a className="impact-social" href="http://linkedin.com/in/ttkremer" aria-label="LinkedIn" title="LinkedIn" role="link">
                                                         <img
                                                             className="impact-social__img"
                                                             src="/images/coding/linkedin_icon.png"
@@ -835,7 +835,7 @@ const Hero: React.FC = () => {
                                                     </a>
 
                                                     {/* GitHub */}
-                                                    <a className="impact-social" href="#" aria-label="GitHub" title="GitHub" role="link">
+                                                    <a className="impact-social" href="https://github.com/TeedsK" aria-label="GitHub" title="GitHub" role="link">
                                                         <img
                                                             className="impact-social__img"
                                                             src="/images/coding/github_icon.png"
@@ -852,7 +852,7 @@ const Hero: React.FC = () => {
                                                     </a>
 
                                                     {/* Instagram */}
-                                                    <a className="impact-social" href="#" aria-label="Instagram" title="Instagram" role="link">
+                                                    <a className="impact-social" href="https://www.instagram.com/theo.kremer" aria-label="Instagram" title="Instagram" role="link">
                                                         <img
                                                             className="impact-social__img"
                                                             src="/images/coding/instagram_icon.png"
@@ -915,8 +915,7 @@ const Hero: React.FC = () => {
                     startDelayMs={1000}
                     finalScales={{
                         // tweak these to taste (1 = default)
-                        stackchan: 0.7,   // purple (top-left) a touch smaller
-                        smartlinked: 1.3, // red (top-right) slightly larger/taller
+                        smartlinked: 1.3, // red (top) slightly larger/taller
                         kudo: 1.0,        // green (bottom-left) the largest tile
                         holoclean: 0.95,  // yellow (bottom-right) modest
                     }}

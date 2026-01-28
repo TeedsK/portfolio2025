@@ -1,6 +1,5 @@
 // src/pages/landing/sections/Hero.tsx
 import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
-import { Alert, Spin } from 'antd';
 import '../styles/HeroLayout.css';
 import gsap from 'gsap';
 import OcrOverlay from "../components/OcrOverlay";
@@ -32,7 +31,6 @@ const BOTTOM_Y_LIFT_PX = 30;
 type OcrSourceIndex = 0 | 1;
 
 const Hero: React.FC = () => {
-    const [errorState, setErrorState] = useState<string | null>(null);
     const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
 
     const gradientIndex1Ref = useRef(0);
@@ -90,8 +88,8 @@ const Hero: React.FC = () => {
     const linkIconsTLRef = useRef<gsap.core.Timeline | null>(null);
 
     // --- Non-white mask generation for icons (keeps whites visible) ---
-    const WHITE_THRESHOLD = 245;   // treat near-white as white
-    const ALPHA_THRESHOLD = 10;    // ignore near-transparent pixels
+    const WHITE_THRESHOLD = 245;    // treat near-white as white
+    const ALPHA_THRESHOLD = 10;     // ignore near-transparent pixels
 
     const generateNonWhiteMask = useCallback((src: string): Promise<string> => {
         return new Promise((resolve) => {
@@ -167,7 +165,6 @@ const Hero: React.FC = () => {
         visModel,
         isLoading: isLoadingModel,
         tfReady,
-        error: modelLoadError,
     } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
     const commonSetNetworkWaves = useCallback((updater: React.SetStateAction<AnimationWave[]>) => {
@@ -208,7 +205,6 @@ const Hero: React.FC = () => {
     }, []);
 
     const networkContainerRef = useRef<HTMLDivElement>(null);
-    useEffect(() => { if (modelLoadError) setErrorState(modelLoadError); }, [modelLoadError]);
 
     // Resize observers for media (track DISPLAY size for overlay/canvas)
     useEffect(() => {
@@ -888,11 +884,6 @@ const Hero: React.FC = () => {
                             className="steps-extra-info-container"
                             style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}
                         >
-                            {/* {(ocrProcess1.isProcessingOCR || ocrProcess2.isProcessingOCR) && (
-                                <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
-                                    <Spin tip="Processing OCR..." />
-                                </div>
-                            )} */}
                             <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
                                 {networkContainerRef.current && (
                                     <NetworkGraphViz
@@ -908,12 +899,6 @@ const Hero: React.FC = () => {
                                 )}
                             </div>
                         </div>
-
-                        <Alert.ErrorBoundary>
-                            {!tfReady && !errorState && !isLoadingModel && <Alert message="Initializing TensorFlow.js..." type="info" showIcon />}
-                            {isLoadingModel && tfReady && (<Alert message={<span>Loading EMNIST Model... <Spin size="small" /></span>} type="info" showIcon />)}
-                            {errorState && (<Alert message={errorState} type="error" showIcon closable onClose={() => setErrorState(null)} />)}
-                        </Alert.ErrorBoundary>
                     </div>
                 </div>
 

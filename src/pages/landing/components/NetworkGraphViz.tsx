@@ -116,6 +116,10 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
     // Manage active timelines per wave
     const activeTimelines = useRef(new Map<string, gsap.core.Timeline>()).current;
 
+    // Manage entrance animation
+    const entranceTimelineRef = useRef<gsap.core.Timeline | null>(null);
+    const hasAnimatedEntranceRef = useRef(false);
+
     // Central connector
     const centralPoint: Point = useMemo(() => {
         return (
@@ -160,6 +164,13 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         activeTimelines.clear();
         overlayLinesRef.current = [];
 
+        // Kill entrance timeline if running
+        if (entranceTimelineRef.current) {
+            entranceTimelineRef.current.kill();
+            entranceTimelineRef.current = null;
+        }
+        hasAnimatedEntranceRef.current = false;
+
         // Nodes
         const nodes: StaticNode[] = [];
         flattenNodePositions.forEach((p, i) => nodes.push({ id: `fl-${i}`, x: p.x, y: p.y, layer: 'flatten' }));
@@ -169,10 +180,10 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         );
         staticNodesRef.current = nodes;
 
-        // Node state defaults
+        // Node state defaults - start invisible for entrance animation
         const st: Record<string, { scale: number; stroke: string; alpha: number }> = {};
         nodes.forEach((n) => {
-            st[n.id] = { scale: 1, stroke: '#d0d4db', alpha: 1 };
+            st[n.id] = { scale: 0, stroke: '#d0d4db', alpha: 0 };
         });
         nodeStateRef.current = st;
 
@@ -198,6 +209,46 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
         });
 
         staticLinesRef.current = { cf, fh, ho };
+
+        // --- NEW: Trigger sequential build animation ---
+        if (shouldRunLandingAnimations()) {
+            const tl = gsap.timeline({
+                onComplete: () => { hasAnimatedEntranceRef.current = true; }
+            });
+            entranceTimelineRef.current = tl;
+
+            // Helper to animate a group of nodes
+            const animateLayer = (layerIds: string[], delay: number) => {
+                layerIds.forEach((id, i) => {
+                    const nodeSt = nodeStateRef.current[id];
+                    if (nodeSt) {
+                        tl.to(nodeSt, {
+                            scale: 1,
+                            alpha: 1,
+                            duration: 0.4,
+                            ease: 'back.out(1.7)',
+                        }, delay + (i * 0.03)); // Stagger within layer
+                    }
+                });
+            };
+
+            // 1. Flatten Layer (Input)
+            const flatIds = nodes.filter(n => n.layer === 'flatten').map(n => n.id);
+            animateLayer(flatIds, 0);
+
+            // 2. Hidden Layer
+            const hiddenIds = nodes.filter(n => n.layer === 'hidden').map(n => n.id);
+            animateLayer(hiddenIds, 0.4);
+
+            // 3. Output Layer
+            const outputIds = nodes.filter(n => n.layer === 'output').map(n => n.id);
+            animateLayer(outputIds, 0.8);
+        } else {
+            // If animations disabled/hidden, just set visible immediately
+            Object.values(st).forEach(s => { s.scale = 1; s.alpha = 1; });
+            hasAnimatedEntranceRef.current = true;
+        }
+
     }, [
         activeTimelines,
         centralPoint.x,
@@ -219,13 +270,29 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
             // 1) Static skeleton lines (thin, faint)
+            // Use global alpha for skeleton lines based on average node visibility per layer to sync with node fade-in
+            // Simply put: draw lines only if connected nodes are visible enough.
+            // For simplicity/performance, we just draw them at fixed alpha, but we could gate them.
+            // Let's stick to drawing them always but maybe modulated by a global "entrance" factor if we had one.
+            // Since nodes scale up from 0, lines connecting to scale=0 nodes look weird if we draw them fully?
+            // Actually, static lines are background. Let's draw them at STATIC_LINE_ALPHA.
+            // To make it look "building", we can check if nodes have alpha > 0.
+
             ctx.globalAlpha = STATIC_LINE_ALPHA;
             ctx.lineWidth = LINE_INACTIVE_STROKE_WIDTH;
             ctx.strokeStyle = COLOR_DEFAULT_LINE;
 
             const { cf, fh, ho } = staticLinesRef.current;
+            const ns = nodeStateRef.current;
 
-            const drawStaticList = (list: StaticLine[]) => {
+            // Only draw lines if we have animated past the entrance or if nodes are visible
+            // Heuristic: check alpha of first node in relevant layers
+            const flatVisible = (ns['fl-0']?.alpha || 0) > 0.1;
+            const hiddenVisible = (ns['hd-0']?.alpha || 0) > 0.1;
+            const outputVisible = (ns['out-0']?.alpha || 0) > 0.1;
+
+            const drawStaticList = (list: StaticLine[], condition: boolean) => {
+                if (!condition) return;
                 list.forEach((ln) => {
                     ctx.beginPath();
                     ctx.moveTo(ln.p0.x, ln.p0.y);
@@ -233,9 +300,13 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
                     ctx.stroke();
                 });
             };
-            drawStaticList(cf);
-            drawStaticList(fh);
-            drawStaticList(ho);
+
+            // cf lines connect center -> flatten. Draw when flatten is visible.
+            drawStaticList(cf, flatVisible);
+            // fh lines connect flatten -> hidden. Draw when hidden is visible.
+            drawStaticList(fh, hiddenVisible);
+            // ho lines connect hidden -> output. Draw when output is visible.
+            drawStaticList(ho, outputVisible);
 
             // 2) Overlay animated segments (gradient + active width)
             ctx.globalAlpha = 1;
@@ -324,6 +395,7 @@ export const NetworkGraphViz: React.FC<NetworkGraphVizProps> = ({
             activeTimelines.forEach((tl) => tl.kill());
             activeTimelines.clear();
             overlayLinesRef.current = [];
+            if (entranceTimelineRef.current) entranceTimelineRef.current.kill();
             window.removeEventListener('landing:anim-active-changed', onActiveChange as EventListener);
         };
     }, [draw, activeTimelines]);

@@ -16,10 +16,10 @@ export const FINAL_LAYER_NAME = 'dense_1';
 export const TYPO_API_URL = 'http://localhost:5001/api/check_typos';
 
 // ⬇️ Start OCR exactly 500 ms after the respective video starts
-export const OCR_START_DELAY_MS = 500;
+export const OCR_START_DELAY_MS = 2000;
 
-// How long to wait between characters
-export const OCR_PROCESSING_DELAY_MS = 100;
+// How long to wait between characters (Slower speed requested: increased from 100 to 350)
+export const OCR_PROCESSING_DELAY_MS = 150;
 
 // New Gradient Sets for specific OCR sources
 export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [
@@ -47,7 +47,7 @@ export const OCR_OVERLAY_TEXT_COLOR_NORMAL = 'rgba(50, 50, 50, 0.95)';
 export const OCR_OVERLAY_BACKGROUND_COLOR_DURING_OCR = 'rgba(255, 255, 255, 0.0)';
 
 export const STATUS_TEXTS = [
-    'Writing text...', 
+    'Writing text...',
     'Predicting handwriting...',
     'Checking typos...'
 ];

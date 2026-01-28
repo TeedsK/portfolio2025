@@ -19,7 +19,7 @@ interface AnimatedScanBoxProps {
     visible: boolean;
     /** Optional z-index to layer above the media. Default: 4 */
     zIndex?: number;
-    /** Border width (px). Default: 2 */
+    /** Border width (px). Default: 1.5 (reduced from 2 for "less bold") */
     borderWidth?: number;
     /** Animation duration in seconds. Default: 0.18 */
     durationSec?: number;
@@ -40,7 +40,7 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
     accentColor,
     visible,
     zIndex = 4,
-    borderWidth = 2,
+    borderWidth = 1.5,
     durationSec = 0.18,
     onBoxRectChange,
     onSettled,
@@ -116,7 +116,10 @@ const AnimatedScanBox: React.FC<AnimatedScanBoxProps> = ({
                 width: 0,
                 height: 0,
                 pointerEvents: 'none',
+                // Outline: solid accent color, thinner per request
                 border: `${borderWidth}px solid ${accentColor}`,
+                // Background: "very opaque" interpreted as visible tint (25% opacity)
+                backgroundColor: `color-mix(in srgb, ${accentColor}, transparent 75%)`,
                 boxSizing: 'border-box',
                 borderRadius: 3,
                 boxShadow: `0 0 8px ${accentColor}66, 0 0 2px ${accentColor}80 inset`,

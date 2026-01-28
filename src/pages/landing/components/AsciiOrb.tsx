@@ -1,275 +1,85 @@
 // src/pages/landing/components/AsciiOrb.tsx
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import gsap from 'gsap';
 
 type Props = {
   show: boolean;
-  size?: number;
-  animationSpeed?: number;
-  morphSpeed?: number;
-  shapeDuration?: number;
+  bodyLength?: number;
+  speed?: number;
+  thickness?: number;
 };
 
-// Character palette - more gradations for better detail at larger sizes
-const CHARS = '  ..-::=+*#%@';
+// Characters ordered by "elevation" - @ is highest/closest, . is lowest/deepest
+const DEPTH_CHARS = ['@', '#', '%', '*', '+', '=', '-', ':', '.'];
 
-// Green color with intensity
-const getGreenColor = (intensity: number): string => {
-  const alpha = 0.25 + intensity * 0.75;
-  const lightness = 75 - intensity * 40;
-  const saturation = 35 + intensity * 50;
+// Get color based on depth (0 = deepest/far, 1 = highest/close)
+const getDepthColor = (depth: number, fade: number = 1): string => {
+  const alpha = (0.2 + depth * 0.8) * fade;
+  const lightness = 35 + depth * 35;
+  const saturation = 35 + depth * 45;
   return `hsla(125, ${saturation}%, ${lightness}%, ${alpha})`;
 };
 
-// 2D shape definitions - using polar coordinates for clearer shapes
-// Returns radius at given angle (0 = center, 1 = edge of unit circle)
-type Shape2D = (angle: number, time: number) => number;
-
-const shapes: { name: string; fn: Shape2D; scale: number }[] = [
-  // Circle/Sphere
-  {
-    name: 'circle',
-    scale: 1.0,
-    fn: () => 1.0,
-  },
-  // Star (5-pointed)
-  {
-    name: 'star',
-    scale: 1.1,
-    fn: (angle) => {
-      const points = 5;
-      const inner = 0.4;
-      const outer = 1.0;
-      const a = angle % (Math.PI * 2 / points);
-      const mid = Math.PI / points;
-      const t = Math.abs(a - mid) / mid;
-      return inner + (outer - inner) * (1 - t);
-    },
-  },
-  // Heart
-  {
-    name: 'heart',
-    scale: 0.9,
-    fn: (angle) => {
-      const a = angle - Math.PI / 2;
-      const sin = Math.sin(a);
-      const cos = Math.cos(a);
-      // Heart parametric formula
-      return (2 - 2 * sin + sin * Math.sqrt(Math.abs(cos)) / (sin + 1.4)) / 3;
-    },
-  },
-  // Question mark (approximated)
-  {
-    name: 'question',
-    scale: 1.0,
-    fn: (angle, time) => {
-      const a = angle;
-      // Create hook at top
-      if (a > Math.PI * 0.2 && a < Math.PI * 1.3) {
-        const hookT = (a - Math.PI * 0.2) / (Math.PI * 1.1);
-        return 0.7 + Math.sin(hookT * Math.PI) * 0.35;
-      }
-      // Stem
-      if (a >= Math.PI * 1.3 && a < Math.PI * 1.7) {
-        return 0.3;
-      }
-      // Dot at bottom
-      if (a >= Math.PI * 1.7 || a < Math.PI * 0.2) {
-        const dotAngle = a >= Math.PI * 1.7 ? a - Math.PI * 1.85 : a + Math.PI * 0.15;
-        return 0.2 + Math.cos(dotAngle * 5) * 0.15;
-      }
-      return 0.5;
-    },
-  },
-  // Arrow pointing right
-  {
-    name: 'arrow',
-    scale: 1.0,
-    fn: (angle) => {
-      const a = ((angle + Math.PI) % (Math.PI * 2)) - Math.PI;
-      // Arrow head (right side)
-      if (Math.abs(a) < Math.PI * 0.4) {
-        return 1.0 - Math.abs(a) / (Math.PI * 0.4) * 0.7;
-      }
-      // Arrow shaft
-      if (Math.abs(a) > Math.PI * 0.7) {
-        return 0.25;
-      }
-      return 0.3;
-    },
-  },
-  // Smiley face
-  {
-    name: 'smiley',
-    scale: 1.0,
-    fn: (angle) => {
-      // Base circle
-      let r = 1.0;
-      const a = angle;
-
-      // Left eye indent
-      const eyeLA = Math.PI * 0.65;
-      const eyeDist = Math.abs(a - eyeLA);
-      if (eyeDist < 0.3) {
-        r -= (0.3 - eyeDist) * 0.5;
-      }
-
-      // Right eye indent
-      const eyeRA = Math.PI * 0.35;
-      const eyeRDist = Math.abs(a - eyeRA);
-      if (eyeRDist < 0.3) {
-        r -= (0.3 - eyeRDist) * 0.5;
-      }
-
-      // Smile indent (bottom curve)
-      if (a > Math.PI * 1.2 && a < Math.PI * 1.8) {
-        const smileT = (a - Math.PI * 1.2) / (Math.PI * 0.6);
-        r -= Math.sin(smileT * Math.PI) * 0.2;
-      }
-
-      return r;
-    },
-  },
-  // Diamond
-  {
-    name: 'diamond',
-    scale: 1.0,
-    fn: (angle) => {
-      const a = angle % (Math.PI / 2);
-      const t = a / (Math.PI / 2);
-      return 0.7 / (Math.abs(Math.cos(angle)) + Math.abs(Math.sin(angle)));
-    },
-  },
-  // Blob (organic shape)
-  {
-    name: 'blob',
-    scale: 1.0,
-    fn: (angle, time) => {
-      return 0.8 +
-        Math.sin(angle * 3 + time) * 0.15 +
-        Math.cos(angle * 5 - time * 0.7) * 0.1 +
-        Math.sin(angle * 2 + time * 1.3) * 0.12;
-    },
-  },
-];
-
-// Smooth interpolation
-const smoothstep = (t: number): number => t * t * (3 - 2 * t);
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-
-// Organic noise for surface detail
-const noise = (x: number, y: number, seed: number): number => {
+// Smooth noise for movement
+const noise1D = (t: number, seed: number): number => {
   return (
-    Math.sin(x * 3.1 + seed) * Math.cos(y * 2.7 + seed * 0.8) * 0.5 +
-    Math.sin(x * 5.3 - seed * 0.5) * Math.cos(y * 4.1 + seed * 1.2) * 0.3 +
-    Math.sin((x + y) * 2 + seed * 0.3) * 0.2
-  ) * 0.15;
+    Math.sin(t * 0.9 + seed) * 0.4 +
+    Math.sin(t * 1.7 + seed * 2.1) * 0.35 +
+    Math.sin(t * 0.5 + seed * 0.7) * 0.25
+  );
+};
+
+// Surface waves for 3D effect on the body
+const surfaceWave = (along: number, around: number, time: number): number => {
+  return (
+    Math.sin(along * 8 + time * 3) * 0.15 +
+    Math.sin(around * 4 + time * 2) * 0.1 +
+    Math.sin(along * 3 - time * 1.5) * 0.1
+  );
+};
+
+type BodySegment = {
+  x: number;
+  y: number;
+  time: number;
 };
 
 const AsciiOrb: React.FC<Props> = ({
   show,
-  size = 70,
-  animationSpeed = 1,
-  morphSpeed = 1,
-  shapeDuration = 5,
+  bodyLength = 120,
+  speed = 1,
+  thickness = 8,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLPreElement>(null);
-  const timeRef = useRef(0);
-  const lightAngleRef = useRef(0);
   const [isVisible, setIsVisible] = useState(false);
-  const shapeIndexRef = useRef(0);
-  const transitionProgressRef = useRef(0);
+  const [dimensions, setDimensions] = useState({ width: 140, height: 55 });
 
-  const radius = size / 2 - 2;
-  const centerX = size / 2;
-  const centerY = size / 2;
+  const timeRef = useRef(0);
+  const bodyRef = useRef<BodySegment[]>([]);
+  const seedRef = useRef({
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+  });
 
-  const generateFrame = useCallback((
-    time: number,
-    lightAngle: number,
-    currentShapeIdx: number,
-    transitionProgress: number
-  ): { char: string; color: string }[][] => {
-    const grid: { char: string; color: string }[][] = [];
-
-    // Initialize grid
-    for (let y = 0; y < size; y++) {
-      grid[y] = [];
-      for (let x = 0; x < size; x++) {
-        grid[y][x] = { char: ' ', color: 'transparent' };
+  // Measure container
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const charWidth = 7;
+        const charHeight = 13;
+        setDimensions({
+          width: Math.max(80, Math.floor(rect.width / charWidth)),
+          height: Math.max(35, Math.floor(rect.height / charHeight)),
+        });
       }
-    }
+    };
 
-    const nextShapeIdx = (currentShapeIdx + 1) % shapes.length;
-    const currentShape = shapes[currentShapeIdx];
-    const nextShape = shapes[nextShapeIdx];
-    const t = smoothstep(transitionProgress);
-
-    // Light direction
-    const lightX = Math.cos(lightAngle);
-    const lightY = Math.sin(lightAngle);
-
-    // Render each pixel
-    for (let py = 0; py < size; py++) {
-      for (let px = 0; px < size; px++) {
-        // Convert to centered coordinates
-        const x = (px - centerX) / radius;
-        const y = (py - centerY) / (radius * 0.55); // Adjust for char aspect ratio
-
-        // Distance from center
-        const dist = Math.sqrt(x * x + y * y);
-
-        // Angle from center
-        const angle = Math.atan2(y, x) + Math.PI;
-
-        // Get shape radius at this angle
-        const r1 = currentShape.fn(angle, time) * currentShape.scale;
-        const r2 = nextShape.fn(angle, time) * nextShape.scale;
-        const shapeR = lerp(r1, r2, t);
-
-        // Add organic noise
-        const noiseVal = noise(x * 2, y * 2, time);
-        const finalR = shapeR + noiseVal;
-
-        // Check if point is inside shape
-        if (dist < finalR) {
-          // Calculate "depth" for 3D effect (sphere-like)
-          const normalizedDist = dist / finalR;
-          const depth = Math.sqrt(Math.max(0, 1 - normalizedDist * normalizedDist));
-
-          // Surface normal for lighting
-          const nx = x / (dist || 1);
-          const ny = y / (dist || 1);
-
-          // Lighting calculation
-          const lightDot = nx * lightX + ny * lightY;
-          const lightIntensity = Math.max(0, lightDot * 0.5 + 0.5);
-
-          // Edge darkening
-          const edgeFade = Math.pow(1 - normalizedDist, 0.3);
-
-          // Combined intensity
-          const intensity = depth * edgeFade * (0.4 + lightIntensity * 0.6);
-
-          // Map to character
-          const charIdx = Math.min(
-            CHARS.length - 1,
-            Math.max(0, Math.floor(intensity * CHARS.length))
-          );
-
-          if (CHARS[charIdx] !== ' ') {
-            grid[py][px] = {
-              char: CHARS[charIdx],
-              color: getGreenColor(intensity),
-            };
-          }
-        }
-      }
-    }
-
-    return grid;
-  }, [size, radius, centerX, centerY]);
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, [isVisible]);
 
   // Animation loop
   useEffect(() => {
@@ -282,34 +92,116 @@ const AsciiOrb: React.FC<Props> = ({
       const deltaTime = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
 
-      // Update time
-      timeRef.current += deltaTime * morphSpeed;
-      lightAngleRef.current += deltaTime * animationSpeed * 0.8;
+      timeRef.current += deltaTime * speed;
+      const t = timeRef.current;
 
-      // Update shape transition
-      transitionProgressRef.current += deltaTime / shapeDuration;
-      if (transitionProgressRef.current >= 1) {
-        transitionProgressRef.current = 0;
-        shapeIndexRef.current = (shapeIndexRef.current + 1) % shapes.length;
+      const { width, height } = dimensions;
+      const margin = thickness * 3;
+
+      // Snake head position - smooth slithering motion
+      const noiseX = noise1D(t * 0.6, seedRef.current.x);
+      const noiseY = noise1D(t * 0.5, seedRef.current.y);
+
+      // Add extra wiggle for snake-like movement
+      const wiggleX = Math.sin(t * 2.5) * 0.08;
+      const wiggleY = Math.cos(t * 2.2) * 0.06;
+
+      const headX = margin + (width - margin * 2) * ((noiseX + wiggleX) * 0.5 + 0.5);
+      const headY = margin + (height - margin * 2) * ((noiseY + wiggleY) * 0.5 + 0.5);
+
+      // Add new head position
+      bodyRef.current.unshift({ x: headX, y: headY, time: t });
+
+      // Keep body at fixed length
+      if (bodyRef.current.length > bodyLength) {
+        bodyRef.current = bodyRef.current.slice(0, bodyLength);
       }
 
-      const frame = generateFrame(
-        timeRef.current,
-        lightAngleRef.current,
-        shapeIndexRef.current,
-        transitionProgressRef.current
-      );
+      // Create grid
+      const grid: { char: string; color: string; depth: number }[][] = [];
+      for (let y = 0; y < height; y++) {
+        grid[y] = [];
+        for (let x = 0; x < width; x++) {
+          grid[y][x] = { char: ' ', color: 'transparent', depth: -1 };
+        }
+      }
 
-      // Render
+      const body = bodyRef.current;
+      if (body.length < 2) {
+        animationId = requestAnimationFrame(animate);
+        return;
+      }
+
+      // Render snake body (tail to head so head overwrites)
+      for (let i = body.length - 1; i >= 0; i--) {
+        const segment = body[i];
+        const bodyPos = i / (body.length - 1); // 0 = head, 1 = tail
+
+        // Body thickness tapers toward tail
+        const taperFactor = 1 - bodyPos * 0.6;
+        const segmentThickness = thickness * taperFactor;
+
+        // Fade factor for tail
+        const fadeFactor = 1 - bodyPos * 0.85;
+
+        // Render this segment as a 3D tube cross-section
+        const radiusX = segmentThickness * 2; // Wider for char aspect ratio
+        const radiusY = segmentThickness;
+
+        for (let dy = -Math.ceil(radiusY); dy <= Math.ceil(radiusY); dy++) {
+          for (let dx = -Math.ceil(radiusX); dx <= Math.ceil(radiusX); dx++) {
+            const px = Math.round(segment.x) + dx;
+            const py = Math.round(segment.y) + dy;
+
+            if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+            // Check if inside ellipse (snake body cross-section)
+            const normalizedX = dx / radiusX;
+            const normalizedY = dy / radiusY;
+            const dist = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+
+            if (dist <= 1) {
+              // Calculate 3D depth - tube/cylinder shape
+              // Center of tube is highest, edges curve away
+              const tubeDepth = Math.sqrt(Math.max(0, 1 - dist * dist));
+
+              // Add surface waves for organic movement
+              const alongBody = bodyPos; // Position along snake
+              const aroundBody = Math.atan2(normalizedY, normalizedX) / Math.PI; // -1 to 1
+              const wave = surfaceWave(alongBody * 10, aroundBody, segment.time);
+
+              let depth = tubeDepth + wave;
+              depth = Math.max(0, Math.min(1, depth));
+
+              // Apply fade for tail sections
+              const effectiveDepth = depth * fadeFactor;
+
+              // Only draw if higher than existing
+              if (effectiveDepth > grid[py][px].depth) {
+                const charIdx = Math.floor((1 - depth) * (DEPTH_CHARS.length - 0.5));
+                const char = DEPTH_CHARS[Math.max(0, Math.min(charIdx, DEPTH_CHARS.length - 1))];
+
+                grid[py][px] = {
+                  char,
+                  color: getDepthColor(depth, fadeFactor),
+                  depth: effectiveDepth,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      // Render to canvas
       if (canvasRef.current) {
         const lines: string[] = [];
-        frame.forEach((row) => {
-          const lineChars = row.map((cell) => {
+        for (let y = 0; y < height; y++) {
+          const lineChars = grid[y].map((cell) => {
             if (cell.char === ' ') return ' ';
             return `<span style="color:${cell.color}">${cell.char}</span>`;
           });
           lines.push(lineChars.join(''));
-        });
+        }
         canvasRef.current.innerHTML = lines.join('\n');
       }
 
@@ -317,27 +209,26 @@ const AsciiOrb: React.FC<Props> = ({
     };
 
     animationId = requestAnimationFrame(animate);
-
     return () => {
       if (animationId) cancelAnimationFrame(animationId);
     };
-  }, [isVisible, generateFrame, animationSpeed, morphSpeed, shapeDuration]);
+  }, [isVisible, dimensions, bodyLength, speed, thickness]);
 
-  // Show/hide animation
+  // Show/hide
   useEffect(() => {
     if (!containerRef.current) return;
 
     if (show) {
       setIsVisible(true);
+      bodyRef.current = [];
       gsap.fromTo(
         containerRef.current,
-        { opacity: 0, scale: 0.5 },
-        { opacity: 1, scale: 1, duration: 1.2, ease: 'power2.out', delay: 0.2 }
+        { opacity: 0 },
+        { opacity: 1, duration: 1.5, ease: 'power2.out', delay: 0.3 }
       );
     } else {
       gsap.to(containerRef.current, {
         opacity: 0,
-        scale: 0.5,
         duration: 0.5,
         ease: 'power2.in',
         onComplete: () => setIsVisible(false),
@@ -346,22 +237,29 @@ const AsciiOrb: React.FC<Props> = ({
   }, [show]);
 
   const containerStyle: React.CSSProperties = useMemo(() => ({
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
     opacity: 0,
+    pointerEvents: 'none',
+    zIndex: 1,
+    overflow: 'hidden',
   }), []);
 
   const preStyle: React.CSSProperties = useMemo(() => ({
     fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
     fontSize: '12px',
-    lineHeight: '1.15',
-    letterSpacing: '0.05em',
+    lineHeight: '1.1',
+    letterSpacing: '0.02em',
     margin: 0,
     padding: 0,
     whiteSpace: 'pre',
     userSelect: 'none',
-    textShadow: '0 0 10px rgba(50, 205, 50, 0.4)',
   }), []);
 
   if (!show && !isVisible) return null;

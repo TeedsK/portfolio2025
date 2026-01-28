@@ -609,7 +609,15 @@ const Hero: React.FC = () => {
     return (
         <>
             {/* ======= Full-screen hero ======= */}
-            <section className="hero" style={{ ['--title-left-offset' as any]: '30px' }}>
+            <section className="hero" style={{ ['--title-left-offset' as any]: '30px', position: 'relative' }}>
+                {/* Floating ASCII snake - covers entire hero */}
+                <AsciiOrb
+                    show={hasFadedNeuralNet}
+                    bodyLength={150}
+                    speed={0.8}
+                    thickness={6}
+                />
+
                 <div className="split-layout">
                     <div className="left-column">
                         {/* ------ Section 2: Handwriting (TOP) ------ */}
@@ -900,25 +908,6 @@ const Hero: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* ASCII Orb - appears after neural network fades */}
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                pointerEvents: 'none',
-                                zIndex: 10,
-                            }}
-                        >
-                            <AsciiOrb
-                                show={hasFadedNeuralNet}
-                                size={70}
-                                animationSpeed={0.6}
-                                morphSpeed={0.5}
-                                shapeDuration={5}
-                            />
-                        </div>
                     </div>
                 </div>
 

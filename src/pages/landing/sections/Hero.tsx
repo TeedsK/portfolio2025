@@ -613,7 +613,7 @@ const Hero: React.FC = () => {
                 {/* Floating 3D ASCII snake - covers entire hero */}
                 <AsciiOrb
                     show={hasFadedNeuralNet}
-                    bodyLength={180}
+                    bodyLength={45}
                     speed={0.7}
                     baseThickness={6}
                     minZ={0.15}

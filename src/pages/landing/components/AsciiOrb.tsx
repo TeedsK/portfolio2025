@@ -11,10 +11,13 @@ type Props = {
   maxZ?: number;
 };
 
-// Dense fill characters for solid appearance (brightest to darkest)
-const SOLID_CHARS = ['█', '▓', '▒', '░'];
-// Classic ASCII for detail and edge definition
-const DETAIL_CHARS = ['@', '#', '%', '&', '*', '+', '=', '-', ':', '.'];
+// Depth-based character sets for dramatic visual separation
+const DEPTH_CHARS = {
+  far: ['.', ':', '·', '-', '~'],           // Sparse, light (z < 0.35)
+  mid: ['*', '+', '=', 'o', 'x'],           // Medium (0.35 <= z < 0.55)
+  close: ['@', '#', '%', '&', '8', '0'],    // Dense (0.55 <= z < 0.8)
+  closest: ['@', '#', 'W', 'M', '8', 'B'],  // Heaviest ASCII chars (z >= 0.8) - no unicode blocks
+};
 
 // Light direction (normalized) - top-left front lighting
 const LIGHT_DIR = { x: -0.5, y: -0.7, z: 0.5 };
@@ -31,26 +34,33 @@ const DIFFUSE_STRENGTH = 0.6;
 const SPECULAR_STRENGTH = 0.4;
 const SHININESS = 32;
 
-// Get character based on lighting intensity and z-depth
-const getCharacter = (intensity: number, zDepth: number, isEdge: boolean): string => {
-  // Clamp intensity
+// Get character based on Z-depth with distinct character zones
+const getDepthCharacter = (zDepth: number, intensity: number, isEdge: boolean): string => {
   const clampedIntensity = Math.max(0, Math.min(1, intensity));
 
-  // Use solid chars for high intensity and middle areas, detail chars for edges/low intensity
-  if (isEdge || clampedIntensity < 0.3) {
-    const idx = Math.floor((1 - clampedIntensity) * (DETAIL_CHARS.length - 1));
-    return DETAIL_CHARS[Math.max(0, Math.min(idx, DETAIL_CHARS.length - 1))];
+  let charSet: string[];
+
+  // Select character set based on Z-depth zones
+  if (zDepth < 0.35) {
+    charSet = DEPTH_CHARS.far;
+  } else if (zDepth < 0.55) {
+    charSet = DEPTH_CHARS.mid;
+  } else if (zDepth < 0.8) {
+    charSet = DEPTH_CHARS.close;
+  } else {
+    charSet = DEPTH_CHARS.closest;
   }
 
-  // For solid areas, blend between solid and detail based on z and intensity
-  if (clampedIntensity > 0.7 && zDepth > 0.5) {
-    const solidIdx = Math.floor((1 - clampedIntensity) * (SOLID_CHARS.length - 1));
-    return SOLID_CHARS[Math.max(0, Math.min(solidIdx, SOLID_CHARS.length - 1))];
+  // Edge characters should be lighter/sparser
+  if (isEdge && zDepth < 0.8) {
+    const edgeChars = DEPTH_CHARS.far;
+    const idx = Math.floor((1 - clampedIntensity) * (edgeChars.length - 1));
+    return edgeChars[Math.max(0, Math.min(idx, edgeChars.length - 1))];
   }
 
-  // Medium intensity - use dense detail chars
-  const detailIdx = Math.floor((1 - clampedIntensity) * 6);
-  return DETAIL_CHARS[Math.max(0, Math.min(detailIdx, DETAIL_CHARS.length - 1))];
+  // Select character within set based on intensity
+  const idx = Math.floor((1 - clampedIntensity) * (charSet.length - 1));
+  return charSet[Math.max(0, Math.min(idx, charSet.length - 1))];
 };
 
 // Calculate Phong lighting
@@ -85,39 +95,130 @@ const calculateLighting = (
   return { diffuse, specular, total: Math.min(1, total) };
 };
 
-// Get color with enhanced model
-const getColor = (
-  lighting: { diffuse: number; specular: number; total: number },
+// Atmospheric perspective color system - DRAMATIC depth-based color changes
+const getAtmosphericColor = (
   zDepth: number,
-  bodyPos: number,
-  aoFactor: number
+  lighting: { diffuse: number; specular: number; total: number },
+  aoFactor: number,
+  isOccluded: boolean,
+  occlusionStrength: number,
+  isRimLit: boolean
 ): string => {
-  // Base hue varies along body (blue-green to yellow-green)
-  const hue = 115 + bodyPos * 30 + zDepth * 5;
+  // Normalize Z to 0-1 range (assuming minZ=0.2, maxZ=1.0)
+  const normalizedZ = Math.max(0, Math.min(1, (zDepth - 0.2) / 0.8));
 
-  // Saturation: more saturated when close and lit
-  const saturation = 50 + lighting.total * 30 + zDepth * 20;
+  // ATMOSPHERIC PERSPECTIVE: Far = cool teal, Close = warm yellow-green
+  // Far (z ~ 0.2): Hue 180-200 (teal/cyan)
+  // Close (z ~ 1.0): Hue 85-110 (yellow-green)
+  let hue = 190 - normalizedZ * 100; // 190 (far) -> 90 (close)
 
-  // Lightness: much brighter for highlights
-  const baseLightness = 30 + lighting.diffuse * 25 + zDepth * 15;
-  const specularBoost = lighting.specular * 25;
-  const lightness = Math.min(75, baseLightness + specularBoost);
+  // Saturation: Far = washed out, Close = VERY vivid
+  // Far: 30-40%, Close: 85-95% (boosted for closest)
+  let saturation = 35 + normalizedZ * 55; // 35% (far) -> 90% (close)
 
-  // Apply ambient occlusion
-  const aoLightness = lightness * aoFactor;
+  // Lightness: Far = washed out/foggy, Close = rich and bold
+  // Far: 60-70%, Close: 30-45%
+  let lightness = 65 - normalizedZ * 30; // 65% (far) -> 35% (close)
 
-  // Alpha: more opaque overall for solid look
-  const alpha = 0.5 + lighting.total * 0.35 + zDepth * 0.15;
-
-  // Add specular highlight color (bright white-green)
-  if (lighting.specular > 0.3) {
-    const specHue = hue - 10;
-    const specSat = Math.max(30, saturation - lighting.specular * 40);
-    const specLight = Math.min(85, aoLightness + lighting.specular * 20);
-    return `hsla(${specHue}, ${specSat}%, ${specLight}%, ${Math.min(1, alpha)})`;
+  // CLOSEST BOOST: Extra saturation and contrast for z > 0.8
+  if (zDepth > 0.8) {
+    const closestBoost = (zDepth - 0.8) / 0.2; // 0-1 for z 0.8-1.0
+    saturation = Math.min(100, saturation + closestBoost * 15);
+    lightness = Math.max(25, lightness - closestBoost * 8);
+    hue = hue - closestBoost * 10; // Shift even more toward vibrant green
   }
 
-  return `hsla(${hue}, ${saturation}%, ${aoLightness}%, ${Math.min(1, alpha)})`;
+  // Apply lighting
+  lightness = lightness + lighting.diffuse * 15 + lighting.specular * 20;
+
+  // Apply AO
+  lightness *= aoFactor;
+
+  // Alpha: Far = transparent, Close = FULLY opaque
+  // Far: 0.4-0.5, Close: 0.95-1.0
+  let alpha = 0.4 + normalizedZ * 0.55; // 0.4 (far) -> 0.95 (close)
+
+  // Closest segments get full opacity
+  if (zDepth > 0.8) {
+    alpha = Math.min(1.0, alpha + 0.1);
+  }
+
+  alpha *= (0.75 + lighting.total * 0.25);
+
+  // OCCLUSION SHADOW SYSTEM - darken and shift to blue when behind another segment
+  if (isOccluded) {
+    // Shift hue toward blue (-20 to -40)
+    hue = hue - 30 * occlusionStrength;
+    // Reduce saturation dramatically
+    saturation *= (1 - occlusionStrength * 0.5);
+    // Darken significantly (up to 60% darker)
+    lightness *= (1 - occlusionStrength * 0.6);
+    // Reduce alpha slightly
+    alpha *= (1 - occlusionStrength * 0.2);
+  }
+
+  // RIM LIGHTING for close segments at edges
+  if (isRimLit && zDepth > 0.7) {
+    // Increase lightness by 20-25%
+    lightness = Math.min(85, lightness * 1.22);
+    // Slightly desaturate
+    saturation *= 0.85;
+  }
+
+  // Specular highlight override
+  if (lighting.specular > 0.3 && !isOccluded) {
+    const specLight = Math.min(90, lightness + lighting.specular * 25);
+    const specSat = Math.max(25, saturation - lighting.specular * 30);
+    return `hsla(${Math.round(hue)}, ${Math.round(specSat)}%, ${Math.round(specLight)}%, ${Math.min(1, alpha).toFixed(2)})`;
+  }
+
+  return `hsla(${Math.round(hue)}, ${Math.round(saturation)}%, ${Math.round(Math.min(85, lightness))}%, ${Math.min(1, alpha).toFixed(2)})`;
+};
+
+// Calculate occlusion - check if this segment is behind another
+const calculateOcclusion = (
+  segmentIndex: number,
+  body: BodySegment[],
+  px: number,
+  py: number,
+  currentZ: number,
+  segmentThickness: number
+): { isOccluded: boolean; occlusionStrength: number } => {
+  let maxOcclusion = 0;
+
+  for (let j = 0; j < body.length; j++) {
+    if (Math.abs(segmentIndex - j) < 5) continue; // Skip nearby segments
+
+    const other = body[j];
+
+    // Only check segments that are in FRONT (higher Z)
+    if (other.z <= currentZ) continue;
+
+    // Calculate 2D distance
+    const dx = px - other.x;
+    const dy = py - other.y;
+    const dist2D = Math.sqrt(dx * dx + dy * dy);
+
+    // Other segment's effective radius
+    const otherBodyPos = j / (body.length - 1);
+    const otherTaper = 1 - otherBodyPos * 0.6;
+    const otherZScale = 0.25 + other.z * 1.25;
+    const otherRadius = segmentThickness * otherTaper * otherZScale * 2.5;
+
+    // Check if we're under the other segment's projection
+    if (dist2D < otherRadius * 1.2) {
+      // Occlusion strength based on how much overlap and Z difference
+      const overlapFactor = 1 - (dist2D / (otherRadius * 1.2));
+      const zDiff = other.z - currentZ;
+      const occlusionAmount = overlapFactor * Math.min(1, zDiff * 3);
+      maxOcclusion = Math.max(maxOcclusion, occlusionAmount);
+    }
+  }
+
+  return {
+    isOccluded: maxOcclusion > 0.1,
+    occlusionStrength: maxOcclusion,
+  };
 };
 
 // Enhanced noise with multiple octaves for organic movement
@@ -148,9 +249,16 @@ type BodySegment = {
   tangentY: number;
 };
 
+type GridCell = {
+  char: string;
+  color: string;
+  priority: number;
+  isShadow?: boolean;
+};
+
 const AsciiOrb: React.FC<Props> = ({
   show,
-  bodyLength = 150,
+  bodyLength = 45, // Much shorter snake
   speed = 1,
   baseThickness = 7,
   minZ = 0.2,
@@ -169,12 +277,14 @@ const AsciiOrb: React.FC<Props> = ({
     z: Math.random() * 100,
   });
 
+  // Track average Z for dynamic glow
+  const avgZRef = useRef(0.5);
+
   // Measure container with denser grid
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        // Smaller characters = denser grid (6px font, ~3.5x5 char size)
         const charWidth = 3.5;
         const charHeight = 5;
         setDimensions({
@@ -252,8 +362,15 @@ const AsciiOrb: React.FC<Props> = ({
         bodyRef.current = bodyRef.current.slice(0, bodyLength);
       }
 
+      // Calculate average Z for glow intensity
+      const body = bodyRef.current;
+      if (body.length > 0) {
+        const sumZ = body.reduce((acc, seg) => acc + seg.z, 0);
+        avgZRef.current = sumZ / body.length;
+      }
+
       // Create grid with Z-buffer
-      const grid: { char: string; color: string; priority: number }[][] = [];
+      const grid: GridCell[][] = [];
       for (let y = 0; y < height; y++) {
         grid[y] = [];
         for (let x = 0; x < width; x++) {
@@ -261,10 +378,59 @@ const AsciiOrb: React.FC<Props> = ({
         }
       }
 
-      const body = bodyRef.current;
       if (body.length < 2) {
         animationId = requestAnimationFrame(animate);
         return;
+      }
+
+      // CAST SHADOW LAYER - render shadows first (lowest priority)
+      for (let i = 0; i < body.length; i++) {
+        const segment = body[i];
+        const bodyPos = i / (body.length - 1);
+
+        // Shadow offset increases with Z (closer = bigger shadow offset)
+        const normalizedZ = (segment.z - minZ) / (maxZ - minZ);
+        const shadowOffsetY = Math.round(2 + normalizedZ * 3); // 2-5 chars down
+        const shadowOffsetX = Math.round(normalizedZ * 1.5); // Slight X offset
+
+        // Shadow size scales with segment
+        const taperFactor = 1 - bodyPos * 0.6;
+        const zScale = 0.25 + segment.z * 1.25;
+        const segmentThickness = baseThickness * taperFactor * zScale;
+        const shadowRadiusX = segmentThickness * 2.0;
+        const shadowRadiusY = segmentThickness * 0.8;
+
+        // Shadow alpha based on Z (closer = darker shadow)
+        const shadowAlpha = 0.08 + normalizedZ * 0.12; // 0.08-0.20
+
+        for (let dy = -Math.ceil(shadowRadiusY); dy <= Math.ceil(shadowRadiusY); dy++) {
+          for (let dx = -Math.ceil(shadowRadiusX); dx <= Math.ceil(shadowRadiusX); dx++) {
+            const px = Math.round(segment.x) + dx + shadowOffsetX;
+            const py = Math.round(segment.y) + dy + shadowOffsetY;
+
+            if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+            const normalizedX = dx / shadowRadiusX;
+            const normalizedY = dy / shadowRadiusY;
+            const dist = Math.sqrt(normalizedX ** 2 + normalizedY ** 2);
+
+            if (dist <= 1) {
+              // Shadow fades at edges
+              const edgeFade = 1 - dist;
+              const shadowColor = `hsla(220, 10%, 20%, ${(shadowAlpha * edgeFade).toFixed(2)})`;
+
+              // Only place shadow if nothing else is there (priority -500)
+              if (grid[py][px].priority < -100) {
+                grid[py][px] = {
+                  char: '.',
+                  color: shadowColor,
+                  priority: -500,
+                  isShadow: true,
+                };
+              }
+            }
+          }
+        }
       }
 
       // Sort segments by Z for proper rendering (far to near)
@@ -278,9 +444,10 @@ const AsciiOrb: React.FC<Props> = ({
         const segment = body[i];
         const bodyPos = i / (body.length - 1); // 0 = head, 1 = tail
 
-        // Body thickness with taper and Z scaling
+        // DRAMATIC SIZE VARIATION - 6x size difference
+        // zScale range: 0.25x to 1.5x (6x difference)
         const taperFactor = 1 - bodyPos * 0.6;
-        const zScale = 0.4 + segment.z * 0.9;
+        const zScale = 0.25 + segment.z * 1.25; // 0.25 at z=0 to 1.5 at z=1
         const segmentThickness = baseThickness * taperFactor * zScale;
 
         // Fade factor for tail
@@ -289,9 +456,9 @@ const AsciiOrb: React.FC<Props> = ({
         // Base priority from Z
         const basePriority = segment.z * 1000;
 
-        // Elliptical cross-section (wider horizontally)
-        const radiusX = segmentThickness * 2.5;
-        const radiusY = segmentThickness * 1.2;
+        // Elliptical cross-section - also scale radii more with Z
+        const radiusX = segmentThickness * (2.0 + segment.z * 1.0); // 2.0-3.0 multiplier
+        const radiusY = segmentThickness * (1.0 + segment.z * 0.4); // 1.0-1.4 multiplier
 
         // Perpendicular to tangent (for normal transformation)
         const perpX = -segment.tangentY;
@@ -314,8 +481,7 @@ const AsciiOrb: React.FC<Props> = ({
               // Calculate tube surface depth (3D bulge)
               const tubeDepth = Math.sqrt(Math.max(0, 1 - dist * dist));
 
-              // Surface normal for tube cross-section (pointing outward)
-              // Base normal in tube's local space
+              // Surface normal for tube cross-section
               const localNormalX = normalizedX;
               const localNormalY = normalizedY;
               const localNormalZ = tubeDepth;
@@ -332,37 +498,31 @@ const AsciiOrb: React.FC<Props> = ({
               const lighting = calculateLighting(normal, viewDir);
 
               // Ambient occlusion factors
-              // 1. Edge darkening (tube curvature)
               const edgeAO = 0.7 + tubeDepth * 0.3;
-
-              // 2. Joint darkening (periodic along body)
               const jointFreq = bodyPos * 20;
               const jointAO = 0.85 + Math.sin(jointFreq * Math.PI * 2) * 0.15;
+              const aoFactor = edgeAO * jointAO * fadeFactor;
 
-              // 3. Z proximity darkening (segments close together)
-              let proximityAO = 1;
-              for (let j = 0; j < body.length; j++) {
-                if (Math.abs(i - j) < 3) continue;
-                const other = body[j];
-                const distToOther = Math.sqrt(
-                  (segment.x - other.x) ** 2 +
-                  (segment.y - other.y) ** 2
-                );
-                const combinedRadius = segmentThickness * 2;
-                if (distToOther < combinedRadius && other.z > segment.z) {
-                  proximityAO *= 0.7 + 0.3 * (distToOther / combinedRadius);
-                }
-              }
-
-              const aoFactor = edgeAO * jointAO * proximityAO * fadeFactor;
-
-              // Is this an edge pixel?
+              // Is this an edge pixel? (for rim lighting detection)
               const isEdge = dist > 0.85;
 
-              // Get character and color
+              // RIM LIGHTING for close segments at edges
+              const isRimLit = isEdge && segment.z > 0.7;
+
+              // OCCLUSION detection
+              const occlusion = calculateOcclusion(i, body, px, py, segment.z, baseThickness);
+
+              // Get character and color with atmospheric perspective
               const intensity = lighting.total * aoFactor;
-              const char = getCharacter(intensity, segment.z, isEdge);
-              const color = getColor(lighting, segment.z, bodyPos, aoFactor);
+              const char = getDepthCharacter(segment.z, intensity, isEdge);
+              const color = getAtmosphericColor(
+                segment.z,
+                lighting,
+                aoFactor,
+                occlusion.isOccluded,
+                occlusion.occlusionStrength,
+                isRimLit
+              );
 
               // Priority combines Z depth and surface depth
               const priority = basePriority + tubeDepth * 10;
@@ -435,18 +595,25 @@ const AsciiOrb: React.FC<Props> = ({
     overflow: 'hidden',
   }), []);
 
-  const preStyle: React.CSSProperties = useMemo(() => ({
-    fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
-    fontSize: '6px',
-    lineHeight: 1.0,
-    letterSpacing: '-0.03em',
-    margin: 0,
-    padding: 0,
-    whiteSpace: 'pre',
-    userSelect: 'none',
-    filter: 'drop-shadow(0 0 8px rgba(100, 255, 100, 0.3))',
-    textShadow: '0 0 4px rgba(100, 255, 100, 0.2)',
-  }), []);
+  // Dynamic glow based on average Z depth
+  const preStyle: React.CSSProperties = useMemo(() => {
+    // More glow when segments are closer on average
+    const glowIntensity = 0.2 + avgZRef.current * 0.3;
+    const glowSize = 6 + avgZRef.current * 6;
+
+    return {
+      fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
+      fontSize: '6px',
+      lineHeight: 1.0,
+      letterSpacing: '-0.03em',
+      margin: 0,
+      padding: 0,
+      whiteSpace: 'pre',
+      userSelect: 'none',
+      filter: `drop-shadow(0 0 ${glowSize}px rgba(100, 255, 100, ${glowIntensity}))`,
+      textShadow: `0 0 4px rgba(100, 255, 100, ${glowIntensity * 0.6})`,
+    };
+  }, []);
 
   if (!show && !isVisible) return null;
 

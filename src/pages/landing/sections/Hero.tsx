@@ -610,12 +610,14 @@ const Hero: React.FC = () => {
         <>
             {/* ======= Full-screen hero ======= */}
             <section className="hero" style={{ ['--title-left-offset' as any]: '30px', position: 'relative' }}>
-                {/* Floating ASCII snake - covers entire hero */}
+                {/* Floating 3D ASCII snake - covers entire hero */}
                 <AsciiOrb
                     show={hasFadedNeuralNet}
-                    bodyLength={150}
-                    speed={0.8}
-                    thickness={6}
+                    bodyLength={180}
+                    speed={0.7}
+                    baseThickness={6}
+                    minZ={0.15}
+                    maxZ={1.0}
                 />
 
                 <div className="split-layout">

@@ -6,18 +6,39 @@ type Props = {
   show: boolean;
   bodyLength?: number;
   speed?: number;
-  thickness?: number;
+  baseThickness?: number;
+  minZ?: number;  // Furthest (smallest)
+  maxZ?: number;  // Closest (largest)
 };
 
 // Characters ordered by "elevation" - @ is highest/closest, . is lowest/deepest
-const DEPTH_CHARS = ['@', '#', '%', '*', '+', '=', '-', ':', '.'];
+const DEPTH_CHARS_CLOSE = ['@', '#', '#', '%', '%', '*', '+', '=', '-', ':'];
+const DEPTH_CHARS_FAR = ['*', '+', '=', '-', '-', ':', ':', '.', '.', '.'];
 
-// Get color based on depth (0 = deepest/far, 1 = highest/close)
-const getDepthColor = (depth: number, fade: number = 1): string => {
-  const alpha = (0.2 + depth * 0.8) * fade;
-  const lightness = 35 + depth * 35;
-  const saturation = 35 + depth * 45;
-  return `hsla(125, ${saturation}%, ${lightness}%, ${alpha})`;
+// Get character based on surface depth and Z depth
+const getDepthChar = (surfaceDepth: number, zDepth: number): string => {
+  const charIdx = Math.floor((1 - surfaceDepth) * 9);
+  const idx = Math.max(0, Math.min(charIdx, 9));
+
+  // Blend between close and far character sets based on Z
+  if (zDepth > 0.7) return DEPTH_CHARS_CLOSE[idx];
+  if (zDepth < 0.3) return DEPTH_CHARS_FAR[idx];
+
+  // Middle range - use close chars but simplified
+  const midChars = ['#', '%', '*', '*', '+', '=', '-', ':', '.', '.'];
+  return midChars[idx];
+};
+
+// Get color based on depth and Z position
+const getDepthColor = (surfaceDepth: number, zDepth: number, fade: number = 1): string => {
+  // Z affects overall intensity
+  const zIntensity = 0.3 + zDepth * 0.7; // 0.3 when far, 1.0 when close
+
+  const alpha = (0.15 + surfaceDepth * 0.6 + zDepth * 0.25) * fade * zIntensity;
+  const lightness = 30 + surfaceDepth * 30 + zDepth * 15; // Brighter when close
+  const saturation = 25 + surfaceDepth * 35 + zDepth * 25; // More saturated when close
+
+  return `hsla(125, ${saturation}%, ${lightness}%, ${Math.min(1, alpha)})`;
 };
 
 // Smooth noise for movement
@@ -32,23 +53,26 @@ const noise1D = (t: number, seed: number): number => {
 // Surface waves for 3D effect on the body
 const surfaceWave = (along: number, around: number, time: number): number => {
   return (
-    Math.sin(along * 8 + time * 3) * 0.15 +
-    Math.sin(around * 4 + time * 2) * 0.1 +
-    Math.sin(along * 3 - time * 1.5) * 0.1
+    Math.sin(along * 8 + time * 3) * 0.12 +
+    Math.sin(around * 4 + time * 2) * 0.08 +
+    Math.sin(along * 3 - time * 1.5) * 0.08
   );
 };
 
 type BodySegment = {
   x: number;
   y: number;
+  z: number; // 0 = far, 1 = close
   time: number;
 };
 
 const AsciiOrb: React.FC<Props> = ({
   show,
-  bodyLength = 120,
+  bodyLength = 150,
   speed = 1,
-  thickness = 8,
+  baseThickness = 7,
+  minZ = 0.2,
+  maxZ = 1.0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLPreElement>(null);
@@ -60,6 +84,7 @@ const AsciiOrb: React.FC<Props> = ({
   const seedRef = useRef({
     x: Math.random() * 100,
     y: Math.random() * 100,
+    z: Math.random() * 100,
   });
 
   // Measure container
@@ -96,33 +121,40 @@ const AsciiOrb: React.FC<Props> = ({
       const t = timeRef.current;
 
       const { width, height } = dimensions;
-      const margin = thickness * 3;
+
+      // Calculate Z position (depth in 3D space)
+      const noiseZ = noise1D(t * 0.25, seedRef.current.z);
+      const currentZ = minZ + (maxZ - minZ) * (noiseZ * 0.5 + 0.5);
+
+      // Margin adjusts based on Z (bigger snake needs more margin)
+      const currentThickness = baseThickness * (0.5 + currentZ * 0.8);
+      const margin = currentThickness * 3;
 
       // Snake head position - smooth slithering motion
-      const noiseX = noise1D(t * 0.6, seedRef.current.x);
-      const noiseY = noise1D(t * 0.5, seedRef.current.y);
+      const noiseX = noise1D(t * 0.55, seedRef.current.x);
+      const noiseY = noise1D(t * 0.45, seedRef.current.y);
 
-      // Add extra wiggle for snake-like movement
-      const wiggleX = Math.sin(t * 2.5) * 0.08;
-      const wiggleY = Math.cos(t * 2.2) * 0.06;
+      // Extra wiggle for snake-like movement
+      const wiggleX = Math.sin(t * 2.5) * 0.06;
+      const wiggleY = Math.cos(t * 2.2) * 0.05;
 
       const headX = margin + (width - margin * 2) * ((noiseX + wiggleX) * 0.5 + 0.5);
       const headY = margin + (height - margin * 2) * ((noiseY + wiggleY) * 0.5 + 0.5);
 
-      // Add new head position
-      bodyRef.current.unshift({ x: headX, y: headY, time: t });
+      // Add new head position with Z
+      bodyRef.current.unshift({ x: headX, y: headY, z: currentZ, time: t });
 
       // Keep body at fixed length
       if (bodyRef.current.length > bodyLength) {
         bodyRef.current = bodyRef.current.slice(0, bodyLength);
       }
 
-      // Create grid
-      const grid: { char: string; color: string; depth: number }[][] = [];
+      // Create grid with Z-buffer for proper depth sorting
+      const grid: { char: string; color: string; priority: number }[][] = [];
       for (let y = 0; y < height; y++) {
         grid[y] = [];
         for (let x = 0; x < width; x++) {
-          grid[y][x] = { char: ' ', color: 'transparent', depth: -1 };
+          grid[y][x] = { char: ' ', color: 'transparent', priority: -1 };
         }
       }
 
@@ -132,20 +164,27 @@ const AsciiOrb: React.FC<Props> = ({
         return;
       }
 
-      // Render snake body (tail to head so head overwrites)
-      for (let i = body.length - 1; i >= 0; i--) {
+      // Sort segments by Z for proper rendering (far to near)
+      const sortedIndices = body.map((_, i) => i).sort((a, b) => body[a].z - body[b].z);
+
+      // Render snake body (far to near so close parts overwrite)
+      for (const i of sortedIndices) {
         const segment = body[i];
         const bodyPos = i / (body.length - 1); // 0 = head, 1 = tail
 
-        // Body thickness tapers toward tail
-        const taperFactor = 1 - bodyPos * 0.6;
-        const segmentThickness = thickness * taperFactor;
+        // Body thickness based on Z and taper
+        const taperFactor = 1 - bodyPos * 0.5;
+        const zScale = 0.4 + segment.z * 0.9; // Far = 0.4x, Close = 1.3x
+        const segmentThickness = baseThickness * taperFactor * zScale;
 
         // Fade factor for tail
-        const fadeFactor = 1 - bodyPos * 0.85;
+        const fadeFactor = 1 - bodyPos * 0.8;
+
+        // Z-based priority (for depth sorting within grid)
+        const basePriority = segment.z * 100;
 
         // Render this segment as a 3D tube cross-section
-        const radiusX = segmentThickness * 2; // Wider for char aspect ratio
+        const radiusX = segmentThickness * 2;
         const radiusY = segmentThickness;
 
         for (let dy = -Math.ceil(radiusY); dy <= Math.ceil(radiusY); dy++) {
@@ -155,37 +194,32 @@ const AsciiOrb: React.FC<Props> = ({
 
             if (px < 0 || px >= width || py < 0 || py >= height) continue;
 
-            // Check if inside ellipse (snake body cross-section)
+            // Check if inside ellipse
             const normalizedX = dx / radiusX;
             const normalizedY = dy / radiusY;
             const dist = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
 
             if (dist <= 1) {
-              // Calculate 3D depth - tube/cylinder shape
-              // Center of tube is highest, edges curve away
+              // Calculate 3D surface depth on tube
               const tubeDepth = Math.sqrt(Math.max(0, 1 - dist * dist));
 
-              // Add surface waves for organic movement
-              const alongBody = bodyPos; // Position along snake
-              const aroundBody = Math.atan2(normalizedY, normalizedX) / Math.PI; // -1 to 1
+              // Add surface waves
+              const alongBody = bodyPos;
+              const aroundBody = Math.atan2(normalizedY, normalizedX) / Math.PI;
               const wave = surfaceWave(alongBody * 10, aroundBody, segment.time);
 
-              let depth = tubeDepth + wave;
-              depth = Math.max(0, Math.min(1, depth));
+              let surfaceDepth = tubeDepth + wave;
+              surfaceDepth = Math.max(0, Math.min(1, surfaceDepth));
 
-              // Apply fade for tail sections
-              const effectiveDepth = depth * fadeFactor;
+              // Priority combines Z depth and surface depth
+              const priority = basePriority + surfaceDepth * 10;
 
-              // Only draw if higher than existing
-              if (effectiveDepth > grid[py][px].depth) {
-                const charIdx = Math.floor((1 - depth) * (DEPTH_CHARS.length - 0.5));
-                const char = DEPTH_CHARS[Math.max(0, Math.min(charIdx, DEPTH_CHARS.length - 1))];
+              // Only draw if higher priority than existing
+              if (priority > grid[py][px].priority) {
+                const char = getDepthChar(surfaceDepth, segment.z);
+                const color = getDepthColor(surfaceDepth, segment.z, fadeFactor);
 
-                grid[py][px] = {
-                  char,
-                  color: getDepthColor(depth, fadeFactor),
-                  depth: effectiveDepth,
-                };
+                grid[py][px] = { char, color, priority };
               }
             }
           }
@@ -212,7 +246,7 @@ const AsciiOrb: React.FC<Props> = ({
     return () => {
       if (animationId) cancelAnimationFrame(animationId);
     };
-  }, [isVisible, dimensions, bodyLength, speed, thickness]);
+  }, [isVisible, dimensions, bodyLength, speed, baseThickness, minZ, maxZ]);
 
   // Show/hide
   useEffect(() => {

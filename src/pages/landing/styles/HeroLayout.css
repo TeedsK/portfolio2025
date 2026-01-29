@@ -234,6 +234,43 @@ h1 {
 }
 
 /* =========================
+   ASCII Snake Glow Effect
+   ========================= */
+.ascii-snake-glow {
+    filter:
+        drop-shadow(0 0 4px rgba(100, 255, 150, 0.35))
+        drop-shadow(0 0 12px rgba(100, 255, 150, 0.25))
+        drop-shadow(0 0 24px rgba(100, 255, 150, 0.15));
+    transition: filter 0.3s ease;
+}
+
+/* Subtle pulsing glow animation */
+@keyframes snakeGlowPulse {
+    0%, 100% {
+        filter:
+            drop-shadow(0 0 4px rgba(100, 255, 150, 0.35))
+            drop-shadow(0 0 12px rgba(100, 255, 150, 0.25))
+            drop-shadow(0 0 24px rgba(100, 255, 150, 0.15));
+    }
+    50% {
+        filter:
+            drop-shadow(0 0 6px rgba(100, 255, 150, 0.4))
+            drop-shadow(0 0 16px rgba(100, 255, 150, 0.3))
+            drop-shadow(0 0 32px rgba(100, 255, 150, 0.2));
+    }
+}
+
+.ascii-snake-glow--animated {
+    animation: snakeGlowPulse 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ascii-snake-glow--animated {
+        animation: none;
+    }
+}
+
+/* =========================
    Responsive adjustments
    ========================= */
 @media (max-width: 1024px) {

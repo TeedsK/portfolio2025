@@ -1,368 +1,297 @@
 /* src/pages/landing/styles/WorkExperience.module.css */
+/* Card-based Grid Layout - transparent background for orb visibility */
 
 /* ---------- Section ---------- */
-.work-section {
+.section {
     width: 100%;
-    text-align: left;
-    margin-top: clamp(16px, 4vh, 56px);
-    scroll-margin-top: calc(var(--header-height) + 12px);
+    padding: clamp(40px, 8vh, 80px) clamp(16px, 6vw, 64px);
+    background: transparent;
+    scroll-margin-top: calc(var(--header-height, 60px) + 20px);
 }
 
-.work-header {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 16px;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    padding-inline: clamp(16px, 6vw, 48px);
+.sectionHeader {
+    max-width: 1400px;
+    margin: 0 auto 48px;
+    text-align: center;
 }
 
-/* presentational utility (referenced in TSX) */
-.work-titles {}
-
-.work-header-art {
-    display: block;
-    border-radius: 12px;
-    object-fit: cover;
-    transform: scale(0.8);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-}
-
-.work-title {
-    margin: 0;
-    font-size: clamp(28px, 3.2vw, 36px);
-    line-height: 1.15;
-    color: #0f172a;
+.sectionTitle {
+    margin: 0 0 12px;
+    font-size: clamp(32px, 4vw, 48px);
     font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.02em;
 }
 
-.work-subtitle {
-    margin: 0ch 0;
-    color: #475569;
-    font-size: 16px;
-    font-weight: 500;
-}
-
-.work-meta {
+.sectionSubtitle {
     margin: 0;
+    font-size: clamp(16px, 2vw, 20px);
     color: #64748b;
-    font-size: 16px;
-    font-weight: 500;
+    font-weight: 400;
 }
 
-/* ---------- Horizontal rail (no snapping) ---------- */
-.work-cards-viewport {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    padding-inline: clamp(16px, 6vw, 48px);
-    padding-bottom: 8px;
-    margin-top: clamp(30px, 1.8vh, 50px);
+/* ---------- Card Grid ---------- */
+.cardGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
-.work-cards-rail {
+/* ---------- Experience Card ---------- */
+.card {
     display: flex;
-    flex-direction: row;
-    gap: 18px;
-    min-height: 1px;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 28px 24px;
+    background: transparent;
+    border-radius: 16px;
+    /* Ensure equal height cards with flexbox */
+    height: 100%;
 }
 
-/* ---------- Card ---------- */
-.experience-card {
-    --card-bg: #ffffff;
-    --desc-fade-height: 48px;
-    background: var(--card-bg);
-    border: none;
-    box-shadow: none;
-
-    border-radius: 14px;
-    width: 560px;
-    padding: 16px 16px 12px;
-    flex: 0 0 auto;
-    position: relative;
-    transition: box-shadow 0.25s ease;
+/* ---------- Logo ---------- */
+.logoWrapper {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-bottom: 16px;
 }
 
-@media (max-width: 720px) {
-    .experience-card {
-        width: 85vw;
+.logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    object-fit: contain;
+    background: transparent;
+    padding: 0;
+}
+
+/* ---------- Typography ---------- */
+.role {
+    margin: 0 0 6px;
+    font-size: clamp(16px, 1.8vw, 18px);
+    font-weight: 700;
+    color: #0f172a;
+    text-align: left;
+    line-height: 1.3;
+}
+
+.company {
+    margin: 0 0 8px;
+    font-size: clamp(14px, 1.5vw, 15px);
+    font-weight: 500;
+    color: #334155;
+    text-align: left;
+}
+
+.dateRange {
+    margin: 0 0 16px;
+    font-size: clamp(12px, 1.3vw, 14px);
+    font-weight: 500;
+    color: #64748b;
+    text-align: left;
+}
+
+/* ---------- Description ---------- */
+.description {
+    flex: 1;
+    margin: 0 0 16px;
+    text-align: left;
+}
+
+.description p {
+    margin: 0 0 10px;
+    color: #475569;
+    font-size: clamp(13px, 1.3vw, 14px);
+    line-height: 1.6;
+}
+
+.description p:last-child {
+    margin-bottom: 0;
+}
+
+/* ---------- Tech Stack ---------- */
+.techStack {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.techChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.techIcon {
+    width: 12px;
+    height: 12px;
+    object-fit: contain;
+}
+
+/* ---------- Detail Image ---------- */
+.imageWrapper {
+    width: 100%;
+    display: flex;
+    justify-content: flex-start;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.detailImage {
+    width: 100%;
+    height: 180px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: transparent;
+}
+
+/* ---------- Responsive: Tablet (2 columns) ---------- */
+@media (max-width: 1024px) {
+    .cardGrid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+    }
+
+    .card {
+        padding: 24px 20px;
+    }
+
+    .detailImage {
+        height: 160px;
     }
 }
 
-/* Top row */
-.experience-card__top {
+/* ---------- Responsive: Mobile (1 column) ---------- */
+@media (max-width: 640px) {
+    .section {
+        padding: clamp(32px, 6vh, 48px) clamp(12px, 4vw, 24px);
+    }
+
+    .sectionHeader {
+        margin-bottom: 32px;
+    }
+
+    .cardGrid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        max-width: 480px;
+    }
+
+    .card {
+        padding: 24px 20px;
+    }
+
+    .logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .techStack {
+        gap: 5px;
+    }
+
+    .techChip {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+
+    .techIcon {
+        width: 10px;
+        height: 10px;
+    }
+
+    .detailImage {
+        height: 160px;
+    }
+
+    .toggleButtonWrapper {
+        margin-top: 24px;
+    }
+
+    .toggleButton {
+        padding: 10px 20px;
+        font-size: 13px;
+    }
+
+    .hiddenWrapper {
+        padding-top: 16px;
+    }
+}
+
+/* ---------- Hidden Wrapper ---------- */
+.hiddenWrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-top: 24px;
+}
+
+/* ---------- Toggle Button ---------- */
+.toggleButtonWrapper {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+    justify-content: center;
+    margin-top: 32px;
+    max-width: 1400px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
-.experience-card__ident {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    min-width: 0;
-}
-
-/* Logo auto-sizes via JS to match text column height (square). */
-.experience-card__logo {
-    width: 58px;
-    height: 58px;
-    border-radius: 10px;
-    object-fit: contain;
-    background: #fff;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-}
-
-.experience-card__titles {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-}
-
-.experience-card__company {
-    margin: 0;
-    font-size: 18px;
-    line-height: 1.2;
-    color: #0f172a;
-    font-weight: 800;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-}
-
-/* Role/Team grid */
-.rt-grid {
-    display: grid;
-    grid-auto-flow: row;
-    grid-template-columns: 1fr;
-    gap: 2px;
-}
-
-.rt-pair {
-    display: grid;
-    grid-template-rows: auto auto;
-    align-items: start;
-    min-width: 0;
-}
-
-.rt-label {
-    font-size: 12px;
-    color: #64748b;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    line-height: 1;
-    max-height: 0;
-    opacity: 0;
-    transform: translateY(-6px);
-    overflow: hidden;
-}
-
-.rt-value {
-    font-size: 15px;
-    font-weight: 600;
-    color: #0f172a;
-    margin-top: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: inline-block;
-}
-
-.experience-card--expanded .rt-grid {
-    grid-auto-flow: column;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(16px, 3vw, 28px);
-}
-
-/* Expand button */
-.experience-card__expand {
-    appearance: none;
-    background: transparent;
-    border: none;
-    color: #2563eb;
-    font-weight: 700;
-    cursor: pointer;
-    padding: 6px 8px;
-    border-radius: 6px;
-    white-space: nowrap;
-}
-
-.experience-card__expand:hover {
-    text-decoration: underline;
-}
-
-.experience-card__expand:focus-visible {
-    outline: 2px solid #93c5fd;
-    outline-offset: 2px;
-}
-
-/* Body layout */
-.experience-card__body {
-    margin-top: 12px;
-    display: flex;
-    gap: 12px;
-    align-items: stretch;
-}
-
-/* presentational utility (referenced in TSX) */
-.experience-card__col {}
-
-.experience-card__col--desc {
-    min-width: 0;
-    flex: 1 1 100%;
-}
-
-.experience-card__col--media {
-    display: none;
-    flex: 0 0 0%;
-    opacity: 0;
-    pointer-events: none;
-}
-
-/* ---------- Description & Fade ---------- */
-.experience-card__desc-wrap {
-    position: relative;
-    overflow: hidden;
-    /* enables fade and clip */
-    margin: 0 0 12px;
-    /* moved margin here so fade sits inside */
-    max-height: calc(1.5em * 6);
-    /* collapsed height (≈6 lines) */
-}
-
-.experience-card__desc-wrap .experience-card__desc {
-    margin: 0;
-    /* reset margin from original rule */
-    padding-left: 18px;
-    /* keep the list indent */
-    color: #334155;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.experience-card__desc li+li {
-    margin-top: 6px;
-}
-
-/* Gradient overlay (hidden by default; shown when wrapper has .has-overflow and card is collapsed) */
-.desc-fade {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--desc-fade-height);
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.25s ease;
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--card-bg) 80%);
-}
-
-/* Show fade only when there is real overflow and card is NOT expanded */
-.experience-card:not(.experience-card--expanded) .experience-card__desc-wrap.has-overflow .desc-fade {
-    opacity: 1;
-}
-
-/* Tech chips */
-.experience-card__tech {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.tech-chip {
+.toggleButton {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
-    font-weight: 800;
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    background: #f8fafc;
-    line-height: 1;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #475569;
+    background: transparent;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.tech-chip__icon {
-    width: 14px;
-    height: 14px;
-    display: block;
-    object-fit: contain;
+.toggleButton:hover {
+    color: #1e293b;
+    border-color: #cbd5e1;
+    background-color: rgba(241, 245, 249, 0.5);
 }
 
-/* presentational utility (referenced in TSX) */
-.tech-chip__label {}
-
-/* Media (image) */
-.experience-card__media-wrapper {
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    border-radius: 10px;
-    overflow: hidden;
-    background: #f1f5f9;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+.toggleButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
 }
 
-.experience-card__media {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+.toggleIcon {
+    transition: transform 0.3s ease;
 }
 
-.experience-card--expanded .experience-card__desc-wrap {
-    max-height: none;
-    /* ensures full content is visible post-animation */
+.toggleIcon.rotated {
+    transform: rotate(180deg);
 }
 
-.experience-card--expanded .desc-fade {
-    display: none;
-}
-
-/* Hide horizontal scrollbar cross‑browser while keeping scrolling */
-.work-cards-viewport {
-    /* existing props ... */
-    scrollbar-width: none;
-    /* Firefox */
-}
-
-.work-cards-viewport::-webkit-scrollbar {
-    display: none;
-    /* Chrome/Safari/Edge */
-}
-
-/* ---------- Dark mode ---------- */
-@media (prefers-color-scheme: dark) {
-    .experience-card {
-        --card-bg: #0b1020;
-        background: var(--card-bg);
-        border: none;
-        box-shadow: none;
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .card {
+        transition: none;
     }
 
-    .work-title {
-        color: #e5e7eb;
+    .toggleButton {
+        transition: none;
     }
 
-    .work-subtitle,
-    .work-meta {
-        color: #94a3b8;
-    }
-
-    .experience-card__company {
-        color: #e2e8f0;
-    }
-
-    .rt-value {
-        color: #e2e8f0;
-    }
-
-    .experience-card__desc-wrap .experience-card__desc {
-        color: #cbd5e1;
-    }
-
-    .experience-card__media-wrapper {
-        background: #0f172a;
-        border-color: rgba(255, 255, 255, 0.06);
+    .toggleIcon {
+        transition: none;
     }
 }

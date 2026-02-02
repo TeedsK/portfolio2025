@@ -23,14 +23,17 @@ import { useTfModel } from '../../../utils/useTfModel';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
-import AsciiOrb from '../components/AsciiOrb';
 
 const GRAPH_CANVAS_HEIGHT = 340;
 const BOTTOM_Y_LIFT_PX = 30;
 
 type OcrSourceIndex = 0 | 1;
 
-const Hero: React.FC = () => {
+type HeroProps = {
+    onNeuralNetFaded?: () => void;
+};
+
+const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
     const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
 
     const gradientIndex1Ref = useRef(0);
@@ -579,6 +582,7 @@ const Hero: React.FC = () => {
         if (!el) {
             // If for some reason the ref is missing, just allow the showcase to proceed.
             setHasFadedNeuralNet(true);
+            onNeuralNetFaded?.();
             return;
         }
 
@@ -592,11 +596,13 @@ const Hero: React.FC = () => {
             onComplete: () => {
                 // Let the showcase know it can move into place now
                 setHasFadedNeuralNet(true);
+                // Notify parent that neural net has faded (for ASCII orb display)
+                onNeuralNetFaded?.();
                 // Optionally collapse pointer-events after fade
                 gsap.set(el, { pointerEvents: 'none', visibility: 'hidden' });
             }
         });
-    }, [allOcrAndNetworkFinished, hasFadedNeuralNet]);
+    }, [allOcrAndNetworkFinished, hasFadedNeuralNet, onNeuralNetFaded]);
 
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
@@ -610,27 +616,7 @@ const Hero: React.FC = () => {
         <>
             {/* ======= Full-screen hero ======= */}
             <section className="hero" style={{ ['--title-left-offset' as any]: '30px', position: 'relative' }}>
-                {/* Floating 3D ASCII snakes - covers entire hero */}
-                <AsciiOrb
-                    show={hasFadedNeuralNet}
-                    bodyLength={45}
-                    speed={0.7}
-                    baseThickness={6}
-                    minZ={0.15}
-                    maxZ={1.0}
-                    colorTheme="green"
-                    seed={42}
-                />
-                <AsciiOrb
-                    show={hasFadedNeuralNet}
-                    bodyLength={40}
-                    speed={0.8}
-                    baseThickness={5}
-                    minZ={0.2}
-                    maxZ={0.95}
-                    colorTheme="pink"
-                    seed={137}
-                />
+                {/* ASCII snakes are now rendered in LandingPage to span Hero + WorkExperience */}
 
                 <div className="split-layout">
                     <div className="left-column">

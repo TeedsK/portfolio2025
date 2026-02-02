@@ -14,6 +14,9 @@ type Props = {
   maxZ?: number;
   colorTheme?: ColorTheme;
   seed?: number; // Optional seed for different movement patterns
+  followScroll?: boolean; // Enable scroll-following behavior
+  scrollTargetY?: number; // Target Y position (0-1 normalized) based on scroll
+  scrollInfluence?: number; // How strongly the scroll target influences movement (0-1, default 0.3)
 };
 
 // Depth-based character sets
@@ -119,6 +122,9 @@ const AsciiOrb: React.FC<Props> = ({
   maxZ = 1.0,
   colorTheme = 'green',
   seed: seedProp,
+  followScroll = false,
+  scrollTargetY = 0.5,
+  scrollInfluence = 0.3,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -134,6 +140,11 @@ const AsciiOrb: React.FC<Props> = ({
   });
   const avgZRef = useRef(0.5);
   const isPageVisibleRef = useRef(true);
+
+  // Scroll-following refs (use refs to avoid re-creating animation loop on every scroll)
+  const scrollTargetYRef = useRef(scrollTargetY);
+  const scrollInfluenceRef = useRef(scrollInfluence);
+  const followScrollRef = useRef(followScroll);
 
   // Reusable grid
   const gridRef = useRef<GridCell[][] | null>(null);
@@ -166,6 +177,17 @@ const AsciiOrb: React.FC<Props> = ({
     }
     return gridRef.current;
   }, []);
+
+  // Keep scroll refs in sync with props (avoids re-creating animation loop)
+  useEffect(() => {
+    scrollTargetYRef.current = scrollTargetY;
+  }, [scrollTargetY]);
+  useEffect(() => {
+    scrollInfluenceRef.current = scrollInfluence;
+  }, [scrollInfluence]);
+  useEffect(() => {
+    followScrollRef.current = followScroll;
+  }, [followScroll]);
 
   // Page visibility - pause when hidden
   useEffect(() => {
@@ -239,7 +261,30 @@ const AsciiOrb: React.FC<Props> = ({
       const wiggleY = Math.cos(t * 1.9) * 0.06 + Math.cos(t * 3.3) * 0.03;
 
       const headX = margin + (width - margin * 2) * ((noiseX + wiggleX) * 0.5 + 0.5);
-      const headY = margin + (height - margin * 2) * ((noiseY + wiggleY) * 0.5 + 0.5);
+
+      // Calculate natural Y position from noise
+      const naturalYNorm = (noiseY + wiggleY) * 0.5 + 0.5;
+
+      // If following scroll, blend natural movement with scroll target
+      // The scroll target acts as an "attractor" - the snake prefers to be near it
+      // but still maintains its organic noise-based movement
+      let finalYNorm = naturalYNorm;
+      if (followScrollRef.current) {
+        // Smoothly blend toward scroll target - more influence = more following
+        // Use a soft blending that allows natural movement within a region around the target
+        const attractorStrength = scrollInfluenceRef.current;
+        const targetY = scrollTargetYRef.current;
+        const delta = targetY - naturalYNorm;
+        // Apply a soft curve so the snake isn't rigidly following
+        // Allow more freedom when close to target, pull more when far
+        const distance = Math.abs(delta);
+        const pullFactor = distance * attractorStrength * 1.5; // Stronger pull when far
+        finalYNorm = naturalYNorm + delta * Math.min(pullFactor, attractorStrength);
+        // Clamp to valid range
+        finalYNorm = Math.max(0, Math.min(1, finalYNorm));
+      }
+
+      const headY = margin + (height - margin * 2) * finalYNorm;
 
       // Tangent
       let tangentX = 1, tangentY = 0;

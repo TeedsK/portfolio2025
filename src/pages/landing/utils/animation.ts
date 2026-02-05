@@ -28,10 +28,21 @@ export const NET_ALPHA_PREDICTED_LINE = 1.0;          // Solid for lines to the 
 // For "the rest" (0-60% transparent means alpha 1.0 down to 0.4)
 // Strongest "other" lines will be less transparent (closer to 1.0, but capped below NET_ALPHA_PREDICTED_LINE)
 // Weakest "other" active lines will be more transparent (closer to 0.4)
-export const NET_ALPHA_OTHER_ACTIVE_MIN = 0.2; // Min alpha for "other" active lines (70% transparent)
-export const NET_ALPHA_OTHER_ACTIVE_MAX = 0.4; // Max alpha for "other" active lines (30% transparent) - ensures they don't hit 1.0
+export const NET_ALPHA_OTHER_ACTIVE_MIN = 0.0; // Min alpha for "other" active lines (70% transparent)
+export const NET_ALPHA_OTHER_ACTIVE_MAX = 1.0; // Max alpha for "other" active lines (30% transparent) - ensures they don't hit 1.0
 
-export const NET_ALPHA_INACTIVE_LINE = 0.2;          // Alpha for lines below activation threshold
+export const NET_ALPHA_INACTIVE_LINE = 1.0;          // Alpha for lines below activation threshold
+
+// --- NetworkGraphViz3D Tunable Parameters ---
+// Adjust these to control how busy/sparse the visualization looks
+
+// Activation threshold: nodes with activation below this won't show animated connections
+// Higher = fewer connections shown = less busy. Range: 0.0 to 1.0
+export const NET_ACTIVATION_THRESHOLD = 0.9;
+
+// Skeleton line alpha: opacity of the static grey connection lines
+// Lower = more subtle/faint lines. Range: 0.0 to 1.0
+export const NET_SKELETON_LINE_ALPHA = 0.00;
 
 
 // --- OcrOverlay Timings (in milliseconds) ---

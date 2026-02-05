@@ -6,7 +6,7 @@ import OcrOverlay from "../components/OcrOverlay";
 import useOcrProcessing from '../hooks/useOcrProcessing';
 import { AnimationWave, ScanBeam, Point } from '../../../types';
 import { processOcrText, CorrectedTextPart } from '../utils/correctionData';
-import { NetworkGraphViz } from '../components/NetworkGraphViz';
+import { NetworkGraphViz3D } from '../components/NetworkGraphViz3D';
 import AnimatedTypoText from '../components/AnimatedTypoText';
 import {
     EMNIST_MODEL_URL,
@@ -23,8 +23,9 @@ import { useTfModel } from '../../../utils/useTfModel';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
+import { getInputNode2DPosition } from '../utils/math3d';
 
-const GRAPH_CANVAS_HEIGHT = 340;
+const GRAPH_CANVAS_HEIGHT = 700;
 const BOTTOM_Y_LIFT_PX = 30;
 
 type OcrSourceIndex = 0 | 1;
@@ -334,8 +335,11 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
     }, [typoAnimationComplete1]);
 
     /** ===== Network entry point (single source of truth) ===== */
-    const calcCentralPoint = useCallback((w: number, h: number): Point => {
-        return { x: Math.max(20, Math.floor(w * 0.15)), y: Math.floor(h / 2) };
+    const calcInputPoint = useCallback((w: number, h: number): Point => {
+        // Calculate the exact 2D position where the input node is rendered
+        // in the 3D neural network visualization using the same projection math
+        const pos = getInputNode2DPosition(w, h);
+        return { x: Math.floor(pos.x), y: Math.floor(pos.y) };
     }, []);
     const networkCanvasSize = useMemo(() => ({
         width: networkContainerRef.current?.clientWidth ?? 800,
@@ -379,10 +383,10 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
 
         const netRect = networkContainerRef.current.getBoundingClientRect();
         const netW = networkContainerRef.current.clientWidth || 800;
-        const localCentral = calcCentralPoint(netW, GRAPH_CANVAS_HEIGHT);
+        const localInput = calcInputPoint(netW, GRAPH_CANVAS_HEIGHT);
 
         // Compute *viewport* entry point for the graph, then convert to document space
-        const netEntryViewport = { x: Math.round(netRect.left + localCentral.x), y: Math.round(netRect.top + localCentral.y) };
+        const netEntryViewport = { x: Math.round(netRect.left + localInput.x), y: Math.round(netRect.top + localInput.y) };
 
         // Convert origin + entry to *document* space so the path stays stable while scrolling
         const sx = window.scrollX || 0;
@@ -417,7 +421,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
                 arcRadius,
             }
         ]));
-    }, [calcCentralPoint]);
+    }, [calcInputPoint]);
 
     useEffect(() => {
         if (ocrProcess1.currentChar) {
@@ -607,9 +611,9 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
 
-    const centralPointForGraph = useMemo(
-        () => calcCentralPoint(networkCanvasSize.width, networkCanvasSize.height),
-        [calcCentralPoint, networkCanvasSize.width, networkCanvasSize.height]
+    const inputPointForGraph = useMemo(
+        () => calcInputPoint(networkCanvasSize.width, networkCanvasSize.height),
+        [calcInputPoint, networkCanvasSize.width, networkCanvasSize.height]
     );
 
     return (
@@ -894,15 +898,14 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
                         >
                             <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
                                 {networkContainerRef.current && (
-                                    <NetworkGraphViz
+                                    <NetworkGraphViz3D
                                         waves={networkWaves}
                                         onWaveFinished={onNetworkWaveFinishedApp}
-                                        flattenLayerName="flatten"
                                         hiddenDenseLayerName="dense"
                                         outputLayerName={FINAL_LAYER_NAME}
                                         width={networkContainerRef.current.clientWidth}
                                         height={GRAPH_CANVAS_HEIGHT}
-                                        centralConnectionPoint={centralPointForGraph}
+                                        inputConnectionPoint={inputPointForGraph}
                                     />
                                 )}
                             </div>

@@ -113,3 +113,26 @@ export interface RecognizedCharResult {
     char: string;           // predicted letter
 }
 
+// ---- 3D Neural Network Visualization Types ----
+
+export interface Point3D {
+    x: number;
+    y: number;
+    z: number;
+}
+
+export interface StaticNode3D {
+    id: string;
+    position: Point3D;
+    label?: string;
+    layer: 'input' | 'hidden' | 'output';
+}
+
+export interface StaticLine3D {
+    p0: Point3D;
+    p1: Point3D;
+    totalLength: number;
+    nodeId0: string;
+    nodeId1: string;
+}
+

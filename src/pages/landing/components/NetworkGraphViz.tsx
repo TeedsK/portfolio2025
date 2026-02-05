@@ -25,7 +25,7 @@ const LINE_INACTIVE_STROKE_WIDTH = 0.5;
 const LINE_ACTIVE_WIDTH = 1.4;
 
 // How much of the skeleton to show (alpha)
-const STATIC_LINE_ALPHA = 0.18;
+const STATIC_LINE_ALPHA = 0.15;
 
 const ACTIVATION_THRESHOLD = 0.5;
 const MAX_NODES_TO_DRAW = 10;

@@ -37,6 +37,7 @@ export interface GridCell {
   char: string;
   color: string;
   priority: number;  // z-depth for painter's algorithm
+  source: 'planet' | 'snake' | 'impact' | null;
 }
 
 // Planet surface point for rendering
@@ -75,8 +76,8 @@ export const COLOR_THEMES: Record<ColorTheme, ThemeConfig> = {
 export const PLANET_THEME = {
   hueStart: 220,  // Deep blue (far)
   hueEnd: 200,    // Lighter blue (close)
-  saturationMin: 60,
-  saturationMax: 85,
-  lightnessMin: 25,
-  lightnessMax: 50,  // Capped lower to prevent white/washed out colors
+  saturationMin: 70,   // Increased from 60 - keeps color from washing out
+  saturationMax: 90,   // Increased from 85 - vivid color at close depths
+  lightnessMin: 20,    // Slightly lower for better depth contrast
+  lightnessMax: 55,    // Range for lighting variation
 };

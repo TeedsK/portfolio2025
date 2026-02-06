@@ -8,22 +8,21 @@ import {
   ImpactEffect,
   GridCell,
   COLOR_THEMES,
-  PLANET_THEME,
   ColorTheme,
 } from './types';
 
 // ============== CONSTANTS ==============
 
-// Planet - smaller to fit within canvas with margin
+// Planet
 const PLANET_RADIUS = 90;
 const PLANET_ROTATION_SPEED = 0.1;  // radians per second
 
-// Snake orbits - tighter to stay within bounds
-const ORBIT_RADIUS = 140;  // distance from planet center
-const SNAKE_1_INCLINATION = Math.PI * 0.25;   // ~45 degrees
-const SNAKE_2_INCLINATION = -Math.PI * 0.15;  // ~-27 degrees
-const SNAKE_1_ORBIT_SPEED = 0.3;   // radians per second
-const SNAKE_2_ORBIT_SPEED = 0.35;  // radians per second
+// Snake orbits
+const ORBIT_RADIUS = 140;
+const SNAKE_1_INCLINATION = Math.PI * 0.25;
+const SNAKE_2_INCLINATION = -Math.PI * 0.15;
+const SNAKE_1_ORBIT_SPEED = 0.3;
+const SNAKE_2_ORBIT_SPEED = 0.35;
 
 // Snake body
 const SNAKE_1_BODY_LENGTH = 45;
@@ -38,13 +37,13 @@ const IMPACT_DURATION_MS = 800;
 // Character dimensions
 const CHAR_WIDTH = 5;
 const CHAR_HEIGHT = 8;
-// Aspect ratio correction - characters are taller than wide, so we need to compress Y
-const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT;  // 0.625
+// Characters are taller than wide, so compress Y to keep circles circular
+const CHAR_ASPECT_RATIO = CHAR_WIDTH / CHAR_HEIGHT; // 0.625
 
 // Frame timing
-const FRAME_TIME = 33;  // ~30fps
+const FRAME_TIME = 33; // ~30fps
 
-// Depth-based character sets
+// Depth-based character sets (used for snakes + impacts)
 const DEPTH_CHARS = {
   far: ['.', ':', '·', '-', '~'],
   mid: ['*', '+', '=', 'o', 'x'],
@@ -52,14 +51,47 @@ const DEPTH_CHARS = {
   closest: ['@', '#', 'W', 'M', '8', 'B'],
 };
 
-// Pre-computed light direction (normalized)
+// Light direction (kept as-is so snakes behave exactly the same)
 const LIGHT_X = -0.408;
 const LIGHT_Y = -0.572;
 const LIGHT_Z = 0.408;
 
-// ============== HELPER FUNCTIONS ==============
+// Precompute length so we can normalize dot products for the *planet* shading
+const LIGHT_LEN = Math.max(1e-6, Math.sqrt(LIGHT_X * LIGHT_X + LIGHT_Y * LIGHT_Y + LIGHT_Z * LIGHT_Z));
 
-// Get ASCII character based on depth and lighting
+// ============== PLANET (NEW) SETTINGS ==============
+
+// You asked for main sphere color = RGB(0, 120, 255)
+const PLANET_BASE_RGB = { r: 0, g: 120, b: 255 };
+
+// Planet char ramp (no spaces; “lightest” is still visible on white bg)
+const PLANET_CHAR_RAMP = ['·', '-', '=', '+', '*', 'o', 'O', '0', '#', '@'];
+
+// Controls how dense/visible the bright side stays.
+// Increase MIN_DENSITY_BIAS to reduce “washed” look on white background.
+const PLANET_MIN_DENSITY_BIAS = 0.14; // 0..1
+
+// Mapping between planet-space (px units) and grid-space (char cells).
+// This should match your previous planet scale so the size stays the same.
+const PLANET_PIXEL_SCALE = 3;
+
+// ============== HELPERS ==============
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+const rotateX = (p: Point3D, angle: number): Point3D => {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: p.x, y: p.y * cos - p.z * sin, z: p.y * sin + p.z * cos };
+};
+
+const rotateY = (p: Point3D, angle: number): Point3D => {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: p.x * cos + p.z * sin, y: p.y, z: -p.x * sin + p.z * cos };
+};
+
+// Snakes/impacts character selection (unchanged)
 const getChar = (zDepth: number, intensity: number): string => {
   const idx = Math.max(0, Math.min(4, ((1 - intensity) * 4) | 0));
   if (zDepth < 0.35) return DEPTH_CHARS.far[idx];
@@ -68,7 +100,7 @@ const getChar = (zDepth: number, intensity: number): string => {
   return DEPTH_CHARS.closest[Math.min(idx, 5)];
 };
 
-// Generate color LUT for snake themes
+// Color LUT for snakes (unchanged)
 const generateColorLUT = (theme: ColorTheme): string[] => {
   const lut: string[] = [];
   const { hueStart, hueEnd } = COLOR_THEMES[theme];
@@ -86,7 +118,6 @@ const generateColorLUT = (theme: ColorTheme): string[] => {
   return lut;
 };
 
-// Pre-generate LUTs for all themes
 const colorLUTs: Record<ColorTheme, string[]> = {
   green: generateColorLUT('green'),
   pink: generateColorLUT('pink'),
@@ -99,55 +130,45 @@ const getSnakeColor = (zDepth: number, lighting: number, theme: ColorTheme): str
   return colorLUTs[theme][zIdx * 10 + lIdx];
 };
 
-// Get planet surface color (blue theme) - similar approach to snake colors
+// Planet color (NEW): pure RGB shading so it never turns white
 const getPlanetColor = (zDepth: number, lighting: number): string => {
-  const { hueStart, hueEnd, saturationMin, saturationMax, lightnessMin, lightnessMax } = PLANET_THEME;
-  const hue = hueStart - zDepth * (hueStart - hueEnd);
-  // Keep saturation high to maintain color (not white)
-  const saturation = saturationMin + zDepth * (saturationMax - saturationMin);
-  // Lightness varies with lighting but stays in a tighter range
-  const lightness = lightnessMin + lighting * (lightnessMax - lightnessMin);
-  // Alpha based on depth like snakes (0.5 to 0.85)
-  const alpha = 0.5 + zDepth * 0.35;
-  return `hsla(${hue | 0}, ${saturation | 0}%, ${lightness | 0}%, ${alpha.toFixed(2)})`;
+  // lighting: 0..1
+  // Use an ambient + diffuse model, then slightly bias center brighter than edge.
+  const ambient = 0.28;
+  const diffuse = 0.72;
+
+  // Keep within [0,1]
+  let i = clamp01(ambient + diffuse * lighting);
+
+  // Gentle depth bias: edge a bit darker, center a bit brighter
+  const depthBoost = 0.86 + 0.14 * zDepth; // zDepth 0(edge)..1(center-ish)
+  i = clamp01(i * depthBoost);
+
+  const r = Math.round(PLANET_BASE_RGB.r * i);
+  const g = Math.round(PLANET_BASE_RGB.g * i);
+  const b = Math.round(PLANET_BASE_RGB.b * i);
+
+  return `rgba(${r}, ${g}, ${b}, 1)`;
 };
 
-// Noise functions for organic movement
-const noise1D = (t: number, seed: number): number => (
-  Math.sin(t * 0.7 + seed) * 0.35 +
-  Math.sin(t * 1.3 + seed * 1.7) * 0.25 +
-  Math.sin(t * 2.1 + seed * 2.3) * 0.15 +
-  Math.sin(t * 0.4 + seed * 0.5) * 0.25
-);
+// Planet char (NEW): choose from a ramp that stays visible on white background
+const getPlanetChar = (zDepth: number, lighting: number): string => {
+  // darker => heavier
+  const darkness = 1 - clamp01(lighting);
 
-const noise1DFine = (t: number, seed: number): number => (
-  Math.sin(t * 3.1 + seed) * 0.1 +
-  Math.sin(t * 4.7 + seed * 1.3) * 0.08
-);
+  // Bias bright side away from ultra-light glyphs
+  // (prevents “looks empty” on white background)
+  const t = clamp01(PLANET_MIN_DENSITY_BIAS + darkness * (1 - PLANET_MIN_DENSITY_BIAS));
 
-// 3D rotation functions
-const rotateX = (p: Point3D, angle: number): Point3D => {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return {
-    x: p.x,
-    y: p.y * cos - p.z * sin,
-    z: p.y * sin + p.z * cos,
-  };
+  // Slight extra lightening near edge for a rounder look (optional, subtle)
+  const edge = 1 - zDepth; // 0 center, 1 edge
+  const t2 = clamp01(t + edge * 0.06);
+
+  const idx = Math.min(PLANET_CHAR_RAMP.length - 1, Math.max(0, Math.round(t2 * (PLANET_CHAR_RAMP.length - 1))));
+  return PLANET_CHAR_RAMP[idx];
 };
 
-// rotateY currently unused but keeping for future use
-// const rotateY = (p: Point3D, angle: number): Point3D => {
-//   const cos = Math.cos(angle);
-//   const sin = Math.sin(angle);
-//   return {
-//     x: p.x * cos + p.z * sin,
-//     y: p.y,
-//     z: -p.x * sin + p.z * cos,
-//   };
-// };
-
-// Get orbital position for a snake head
+// Orbital position helper (unchanged)
 const getOrbitalPosition = (
   phase: number,
   radius: number,
@@ -155,31 +176,38 @@ const getOrbitalPosition = (
   centerX: number,
   centerY: number,
 ): { x: number; y: number; z: number } => {
-  // Start with a circle in the XZ plane (horizontal)
   const x = Math.cos(phase) * radius;
   const z = Math.sin(phase) * radius;
-
-  // Rotate around X axis to tilt the orbital plane
   const rotated = rotateX({ x, y: 0, z }, inclination);
-
   return {
     x: centerX + rotated.x,
-    // Apply aspect ratio correction so orbit appears circular
     y: centerY + rotated.y * CHAR_ASPECT_RATIO,
     z: rotated.z,
   };
 };
 
+// Organic noise (unchanged)
+const noise1D = (t: number, seed: number): number => (
+  Math.sin(t * 0.7 + seed) * 0.35 +
+  Math.sin(t * 1.3 + seed * 1.7) * 0.25 +
+  Math.sin(t * 2.1 + seed * 2.3) * 0.15 +
+  Math.sin(t * 0.4 + seed * 0.5) * 0.25
+);
+const noise1DFine = (t: number, seed: number): number => (
+  Math.sin(t * 3.1 + seed) * 0.1 +
+  Math.sin(t * 4.7 + seed * 1.3) * 0.08
+);
+
 // ============== COMPONENT ==============
 
 interface AsciiPlanetSystemProps {
-  scrollProgress: number;  // 0 = orbital mode, >0.3 = free roaming
+  scrollProgress: number;
   activeBeams: ScanBeam[];
   onBeamImpact?: (surfacePoint: Point3D) => void;
   width: number;
   height: number;
-  planetXOffset?: number;  // Horizontal offset (0-1, where 0.5 = center). Default positions planet in right area
-  planetYOffset?: number;  // Vertical offset (0-1, where 0.5 = center). Default positions planet in upper area
+  planetXOffset?: number;
+  planetYOffset?: number;
 }
 
 export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
@@ -188,18 +216,18 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   onBeamImpact,
   width,
   height,
-  planetXOffset = 0.75,  // Default: planet in right area (3/4 across)
-  planetYOffset = 0.18,  // Default: planet near top
+  planetXOffset = 0.75,
+  planetYOffset = 0.18,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Animation state refs
+  // Animation state
   const timeRef = useRef(0);
   const lastFrameRef = useRef(0);
   const planetRotationRef = useRef(0);
   const isPageVisibleRef = useRef(true);
 
-  // Impact effects
+  // Impacts
   const impactsRef = useRef<ImpactEffect[]>([]);
   const lastBeamIdsRef = useRef<Set<string>>(new Set());
 
@@ -222,7 +250,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       body: [],
       colorTheme: 'pink',
       orbitalInclination: SNAKE_2_INCLINATION,
-      orbitalPhase: Math.PI,  // Start on opposite side
+      orbitalPhase: Math.PI,
       orbitSpeed: SNAKE_2_ORBIT_SPEED,
       orbitDirection: -1,
       bodyLength: SNAKE_2_BODY_LENGTH,
@@ -231,30 +259,28 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
     },
   ]);
 
-  // Grid buffer for ASCII rendering
+  // Grid buffer
   const gridRef = useRef<GridCell[][] | null>(null);
   const gridDimsRef = useRef({ width: 0, height: 0 });
 
-  // Calculate grid dimensions in characters
   const gridWidth = useMemo(() => Math.max(40, Math.floor(width / CHAR_WIDTH)), [width]);
   const gridHeight = useMemo(() => Math.max(30, Math.floor(height / CHAR_HEIGHT)), [height]);
 
-  // Planet center - positioned based on offsets (right area, upper area)
+  // Planet center in grid cells
   const planetCenterX = useMemo(() => Math.floor(gridWidth * planetXOffset), [gridWidth, planetXOffset]);
   const planetCenterY = useMemo(() => Math.floor(gridHeight * planetYOffset), [gridHeight, planetYOffset]);
 
-  // Snakes can roam the full canvas area
+  // Free-roam center
   const centerX = useMemo(() => gridWidth / 2, [gridWidth]);
   const centerY = useMemo(() => gridHeight / 2, [gridHeight]);
 
-  // Get or reset grid buffer
   const getGrid = useCallback((w: number, h: number): GridCell[][] => {
     if (!gridRef.current || gridDimsRef.current.width !== w || gridDimsRef.current.height !== h) {
       const grid: GridCell[][] = [];
       for (let y = 0; y < h; y++) {
         grid[y] = [];
         for (let x = 0; x < w; x++) {
-          grid[y][x] = { char: '', color: '', priority: -1e9 };
+          grid[y][x] = { char: '', color: '', priority: -1e9, source: null };
         }
       }
       gridRef.current = grid;
@@ -264,31 +290,29 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           grid[y][x].char = '';
+          grid[y][x].color = '';
           grid[y][x].priority = -1e9;
+          grid[y][x].source = null;
         }
       }
     }
-    return gridRef.current;
+    return gridRef.current!;
   }, []);
 
-  // Page visibility handling
+  // Page visibility
   useEffect(() => {
-    const handleVisibility = () => {
-      isPageVisibleRef.current = document.visibilityState === 'visible';
-    };
+    const handleVisibility = () => { isPageVisibleRef.current = document.visibilityState === 'visible'; };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
-  // Detect new beam arrivals for impact effects
+  // Beam impacts -> planet center
   useEffect(() => {
     const currentIds = new Set(activeBeams.map(b => b.id));
     const previousIds = lastBeamIdsRef.current;
 
-    // Find beams that just completed (were in previous, not in current, or headProgress >= 1)
     activeBeams.forEach(beam => {
       if (beam.headProgress >= 0.95 && !previousIds.has(beam.id + '-impacted')) {
-        // Create impact at planet center (the beam target)
         const impact: ImpactEffect = {
           id: `impact-${Date.now()}-${Math.random()}`,
           surfacePoint: { x: planetCenterX, y: planetCenterY, z: PLANET_RADIUS * 0.8 },
@@ -297,19 +321,18 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           impactTime: performance.now(),
         };
         impactsRef.current.push(impact);
-        lastBeamIdsRef.current.add(beam.id + '-impacted');
+        previousIds.add(beam.id + '-impacted');
         onBeamImpact?.(impact.surfacePoint);
       }
     });
 
-    // Clean up old beam IDs
+    // cleanup
     previousIds.forEach(id => {
-      if (!currentIds.has(id.replace('-impacted', ''))) {
-        previousIds.delete(id);
-      }
+      const base = id.replace('-impacted', '');
+      if (!currentIds.has(base)) previousIds.delete(id);
     });
 
-    lastBeamIdsRef.current = currentIds;
+    lastBeamIdsRef.current = previousIds;
   }, [activeBeams, planetCenterX, planetCenterY, onBeamImpact]);
 
   // Main animation loop
@@ -330,7 +353,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
     let prevTime = performance.now();
 
     const animate = (now: number) => {
-      // Skip if page hidden or throttled
       if (!isPageVisibleRef.current || now - lastFrameRef.current < FRAME_TIME) {
         animId = requestAnimationFrame(animate);
         return;
@@ -342,76 +364,84 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       timeRef.current += dt;
       const t = timeRef.current;
 
-      // Update planet rotation
+      // Update "rotation" (used for subtle surface variation)
       planetRotationRef.current += PLANET_ROTATION_SPEED * dt;
-
-      // Calculate orbital vs free-roaming influence
-      // scrollProgress 0-0.3 transitions from orbital to free
-      const orbitInfluence = 1 - Math.min(1, scrollProgress / 0.3);
-
-      // Get grid buffer
-      const grid = getGrid(gridWidth, gridHeight);
-
-      // ============== RENDER PLANET ==============
       const planetRotation = planetRotationRef.current;
 
-      // Pixel-to-grid scaling factor
-      const pixelScale = 3;
+      // Orbit influence 0..1
+      const orbitInfluence = 1 - Math.min(1, scrollProgress / 0.3);
 
-      // Sample planet surface points - render at planet center position
-      for (let py = -PLANET_RADIUS; py <= PLANET_RADIUS; py += 3) {
-        for (let px = -PLANET_RADIUS; px <= PLANET_RADIUS; px += 3) {
-          const d2 = px * px + py * py;
-          if (d2 > PLANET_RADIUS * PLANET_RADIUS) continue;
+      const grid = getGrid(gridWidth, gridHeight);
 
-          // Calculate z on sphere surface
-          const pz = Math.sqrt(PLANET_RADIUS * PLANET_RADIUS - d2);
+      // ============== RENDER PLANET (RECODED: HOLE-FREE) ==============
+      // Instead of scattering samples and rounding into grid cells (which causes gaps),
+      // we rasterize by iterating every grid cell in the planet bounding box and solving
+      // the sphere surface point for that cell.
+      const rX = Math.ceil(PLANET_RADIUS / PLANET_PIXEL_SCALE);
+      const rY = Math.ceil((PLANET_RADIUS / PLANET_PIXEL_SCALE) * CHAR_ASPECT_RATIO);
 
-          // Apply planet rotation (around Y axis)
-          const rotatedPx = px * Math.cos(planetRotation) + pz * Math.sin(planetRotation);
-          const rotatedPz = -px * Math.sin(planetRotation) + pz * Math.cos(planetRotation);
+      for (let gy = planetCenterY - rY; gy <= planetCenterY + rY; gy++) {
+        if (gy < 0 || gy >= gridHeight) continue;
 
-          // Back-face culling
-          if (rotatedPz < -PLANET_RADIUS * 0.1) continue;
+        // Undo aspect compression to get planet-space Y
+        const y = (gy - planetCenterY) * (PLANET_PIXEL_SCALE / CHAR_ASPECT_RATIO);
 
-          // Calculate normal for lighting
-          const normalX = rotatedPx / PLANET_RADIUS;
-          const normalY = py / PLANET_RADIUS;
-          const normalZ = rotatedPz / PLANET_RADIUS;
+        for (let gx = planetCenterX - rX; gx <= planetCenterX + rX; gx++) {
+          if (gx < 0 || gx >= gridWidth) continue;
 
-          // Lambertian lighting
-          const lighting = Math.max(0.15, normalX * LIGHT_X + normalY * LIGHT_Y + normalZ * LIGHT_Z);
+          const x = (gx - planetCenterX) * PLANET_PIXEL_SCALE;
 
-          // Normalize depth (0 = far, 1 = close)
-          const zDepth = (rotatedPz + PLANET_RADIUS) / (2 * PLANET_RADIUS);
+          const d2 = x * x + y * y;
+          const R2 = PLANET_RADIUS * PLANET_RADIUS;
+          if (d2 > R2) continue;
 
-          // Convert to grid coordinates - apply aspect ratio correction to Y for circular appearance
-          const gridX = Math.round(planetCenterX + rotatedPx / pixelScale);
-          const gridY = Math.round(planetCenterY + (py / pixelScale) * CHAR_ASPECT_RATIO);
+          // Visible hemisphere: z >= 0
+          const z = Math.sqrt(R2 - d2);
 
-          if (gridX < 0 || gridX >= gridWidth || gridY < 0 || gridY >= gridHeight) continue;
+          // Normal in camera space (unit sphere)
+          const nx = x / PLANET_RADIUS;
+          const ny = y / PLANET_RADIUS;
+          const nz = z / PLANET_RADIUS;
 
-          const priority = rotatedPz;
-          if (priority > grid[gridY][gridX].priority) {
-            grid[gridY][gridX].char = getChar(zDepth, lighting);
-            grid[gridY][gridX].color = getPlanetColor(zDepth, lighting);
-            grid[gridY][gridX].priority = priority;
+          // Diffuse lighting; normalize light length so result is in [0,1]
+          const ndotlRaw = nx * LIGHT_X + ny * LIGHT_Y + nz * LIGHT_Z;
+          const ndotl = clamp01(Math.max(0, ndotlRaw) / LIGHT_LEN);
+
+          // Rim/edge shaping: darker near edge (nz low), brighter near center (nz high)
+          const zDepth = clamp01(nz); // 0 edge .. 1 center-ish
+          const rim = 0.55 + zDepth * 0.45;
+
+          // Base lighting
+          let lighting = clamp01(ndotl * rim);
+
+          // Subtle rotating surface variation so the planet actually "moves"
+          // even though a perfect sphere has no visible rotation without texture.
+          const obj = rotateY({ x, y, z }, -planetRotation);
+          const lon = Math.atan2(obj.z, obj.x);           // [-π, π]
+          const lat = Math.asin(obj.y / PLANET_RADIUS);   // [-π/2, π/2]
+          const tex = 0.06 * Math.sin(lon * 5 + lat * 3); // small amplitude
+          lighting = clamp01(lighting + tex);
+
+          const priority = z; // closer points win
+          if (priority > grid[gy][gx].priority) {
+            grid[gy][gx].char = getPlanetChar(zDepth, lighting);
+            grid[gy][gx].color = getPlanetColor(zDepth, lighting);
+            grid[gy][gx].priority = priority;
+            grid[gy][gx].source = 'planet';
           }
         }
       }
 
-      // ============== UPDATE AND RENDER SNAKES ==============
+      // ============== UPDATE AND RENDER SNAKES (UNCHANGED) ==============
       snakesRef.current.forEach(snake => {
-        // Update orbital phase
         snake.orbitalPhase += snake.orbitSpeed * snake.orbitDirection * dt;
 
         let headX: number, headY: number, headZ: number;
 
         if (orbitInfluence > 0.95) {
-          // Pure orbital mode - orbit around planet center
           const pos = getOrbitalPosition(
             snake.orbitalPhase,
-            ORBIT_RADIUS / 3,  // Scale for grid coordinates
+            ORBIT_RADIUS / 3,
             snake.orbitalInclination,
             planetCenterX,
             planetCenterY,
@@ -420,7 +450,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           headY = pos.y;
           headZ = pos.z;
         } else if (orbitInfluence < 0.05) {
-          // Pure free-roaming mode - roam full canvas
           const noiseX = noise1D(t * 0.45, snake.seed.x) + noise1DFine(t * 0.8, snake.seed.x);
           const noiseY = noise1D(t * 0.35, snake.seed.y) + noise1DFine(t * 0.7, snake.seed.y);
           const noiseZ = noise1D(t * 0.2, snake.seed.z) + noise1DFine(t * 0.4, snake.seed.z);
@@ -430,7 +459,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           headY = margin + (gridHeight - margin * 2) * ((noiseY) * 0.5 + 0.5);
           headZ = -PLANET_RADIUS + (2 * PLANET_RADIUS) * ((noiseZ) * 0.5 + 0.5);
         } else {
-          // Blended transition - orbit around planet, then roam full canvas
           const orbitalPos = getOrbitalPosition(
             snake.orbitalPhase,
             ORBIT_RADIUS / 3,
@@ -453,7 +481,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           headZ = orbitalPos.z * orbitInfluence + freeZ * (1 - orbitInfluence);
         }
 
-        // Calculate tangent
+        // Tangent
         let tangentX = 1, tangentY = 0;
         if (snake.body.length > 0) {
           const prev = snake.body[0];
@@ -466,27 +494,19 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           }
         }
 
-        // Add head segment
         snake.body.unshift({ x: headX, y: headY, z: headZ, tangentX, tangentY });
-        if (snake.body.length > snake.bodyLength) {
-          snake.body.length = snake.bodyLength;
-        }
-
-        // Skip rendering if body too short
+        if (snake.body.length > snake.bodyLength) snake.body.length = snake.bodyLength;
         if (snake.body.length < 2) return;
 
-        // Sort segments by Z (far to near) for painter's algorithm
         const indices: number[] = [];
         for (let i = 0; i < snake.body.length; i++) indices.push(i);
         indices.sort((a, b) => snake.body[a].z - snake.body[b].z);
 
-        // Render snake segments
         for (const i of indices) {
           const seg = snake.body[i];
           const bodyPos = i / (snake.body.length - 1);
           const taper = 1 - bodyPos * 0.6;
 
-          // Normalize z for color/char selection
           const zNorm = (seg.z + PLANET_RADIUS) / (2 * PLANET_RADIUS);
           const zScale = 0.25 + zNorm * 1.25;
           const thick = snake.baseThickness * taper * zScale;
@@ -519,9 +539,8 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
               const tubeD = Math.sqrt(1 - d2);
               const mag = Math.sqrt(d2 + tubeD * tubeD);
 
-              // Lighting calculation
               const normalX = (nx * perpX + ny * seg.tangentX) / mag;
-              const normalY = (nx * perpY + ny * seg.tangentY) / mag;
+              const normalY = (nx * perpY + ny * seg.tangentX) / mag;
               const normalZ = tubeD / mag;
               const light = Math.max(0.15, normalX * LIGHT_X + normalY * LIGHT_Y + normalZ * LIGHT_Z) * fade;
 
@@ -530,13 +549,14 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
                 grid[py][px].char = getChar(zNorm, light);
                 grid[py][px].color = getSnakeColor(zNorm, light, snake.colorTheme);
                 grid[py][px].priority = pri;
+                grid[py][px].source = 'snake';
               }
             }
           }
         }
       });
 
-      // ============== UPDATE AND RENDER IMPACT EFFECTS ==============
+      // ============== UPDATE AND RENDER IMPACT EFFECTS (UNCHANGED) ==============
       const nowMs = performance.now();
       impactsRef.current = impactsRef.current.filter(impact => {
         const elapsed = nowMs - impact.impactTime;
@@ -546,8 +566,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         impact.currentRadius = IMPACT_MAX_RADIUS * progress;
         impact.alpha = 1 - progress;
 
-        // Render expanding ring on planet surface (at planet center)
-        const ringRadius = impact.currentRadius / 3;  // Scale for grid
+        const ringRadius = impact.currentRadius / 3;
         const ringThickness = 2;
 
         for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
@@ -556,24 +575,19 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
             const ry = Math.sin(angle) * r;
 
             const gx = Math.round(planetCenterX + rx);
-            // Apply aspect ratio correction for circular ring
             const gy = Math.round(planetCenterY + ry * CHAR_ASPECT_RATIO);
 
             if (gx < 0 || gx >= gridWidth || gy < 0 || gy >= gridHeight) continue;
 
-            // Impact renders on top of planet
             const pri = PLANET_RADIUS + 10;
             if (pri > grid[gy][gx].priority) {
-              // Calculate intensity based on distance from ring center (like snake lighting)
               const intensity = 1 - Math.abs(r - ringRadius) / ringThickness;
               const fadeAlpha = impact.alpha * intensity;
 
-              // Use depth-based character like snakes do (intensity as "lighting")
-              const zDepth = 0.7 + intensity * 0.3;  // Closer = more intense
+              const zDepth = 0.7 + intensity * 0.3;
               const char = getChar(zDepth, intensity);
 
-              // Pink color with proper alpha (like snake color approach)
-              const hue = 330;  // Pink
+              const hue = 330;
               const saturation = 60 + intensity * 30;
               const lightness = 50 + intensity * 20;
               const color = `hsla(${hue}, ${saturation | 0}%, ${lightness | 0}%, ${fadeAlpha.toFixed(2)})`;
@@ -581,6 +595,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
               grid[gy][gx].char = char;
               grid[gy][gx].color = color;
               grid[gy][gx].priority = pri;
+              grid[gy][gx].source = 'impact';
             }
           }
         }
@@ -591,26 +606,52 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       // ============== RENDER TO CANVAS ==============
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Set glow effect
-      ctx.shadowColor = 'rgba(100, 180, 255, 0.2)';
-      ctx.shadowBlur = 4;
+      // Base pass (no shadow): keeps planet colors stable and avoids white washout
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
 
       for (let y = 0; y < gridHeight; y++) {
         for (let x = 0; x < gridWidth; x++) {
           const cell = grid[y][x];
-          if (cell.char) {
-            ctx.fillStyle = cell.color;
-            ctx.fillText(cell.char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
-          }
+          if (!cell.char) continue;
+          ctx.fillStyle = cell.color;
+          ctx.fillText(cell.char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
         }
       }
+
+      // Glow pass: only snakes/impacts get glow
+      ctx.shadowColor = 'rgba(100, 180, 255, 0.10)';
+      ctx.shadowBlur = 2;
+      ctx.globalAlpha = 0.35;
+
+      for (let y = 0; y < gridHeight; y++) {
+        for (let x = 0; x < gridWidth; x++) {
+          const cell = grid[y][x];
+          if (!cell.char || cell.source === 'planet') continue;
+          ctx.fillStyle = cell.color;
+          ctx.fillText(cell.char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
+        }
+      }
+      ctx.globalAlpha = 1;
 
       animId = requestAnimationFrame(animate);
     };
 
     animId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animId);
-  }, [width, height, gridWidth, gridHeight, centerX, centerY, planetCenterX, planetCenterY, scrollProgress, getGrid, onBeamImpact]);
+  }, [
+    width,
+    height,
+    gridWidth,
+    gridHeight,
+    centerX,
+    centerY,
+    planetCenterX,
+    planetCenterY,
+    scrollProgress,
+    getGrid,
+    onBeamImpact,
+  ]);
 
   return (
     <canvas

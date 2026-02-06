@@ -1,10 +1,11 @@
 // src/pages/landing/LandingPage.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import Hero from './sections/Hero';
 import WorkExperience from './sections/WorkExperience';
 import AStarCreativity from './sections/AStarCreativity';
 import Projects from './sections/Projects';
-import AsciiOrb from './components/AsciiOrb';
+import { AsciiPlanetSystem } from './components/AsciiPlanetSystem';
+import { ScanBeam } from '../../types';
 
 // NEW: ensure landing animations only run when we're actually on this page
 import { useLandingAnimationGate } from './utils/landingAnimationGate.ts';
@@ -15,67 +16,76 @@ function LandingPage() {
   // Even if you don't use the return value here, the side-effects guard all animations app-wide.
   useLandingAnimationGate();
 
-  // Track when neural net has faded so we can show the ASCII orbs
-  const [showOrbs, setShowOrbs] = useState(false);
-
   // Refs for section boundaries
   const heroRef = useRef<HTMLDivElement>(null);
   const workExperienceRef = useRef<HTMLDivElement>(null);
-  const orbContainerRef = useRef<HTMLDivElement>(null);
+  const planetContainerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll target for snakes (0 = top of container, 1 = bottom)
-  const [scrollTargetY, setScrollTargetY] = useState(0.5);
+  // Scroll progress for snake orbital -> free-roaming transition (0 = orbital, >0.3 = free)
+  const [scrollProgress, setScrollProgress] = useState(0);
 
-  // Calculate scroll target based on viewport position within Hero + WorkExperience
-  const updateScrollTarget = useCallback(() => {
-    if (!heroRef.current || !workExperienceRef.current) return;
+  // Container dimensions for planet system
+  const [containerDims, setContainerDims] = useState({ width: 800, height: 1400 });
+
+  // Beams passed up from Hero for planet impacts
+  const [activeBeams, setActiveBeams] = useState<ScanBeam[]>([]);
+
+  // Calculate scroll progress based on viewport position within Hero section
+  const updateScrollProgress = useCallback(() => {
+    if (!heroRef.current) return;
 
     const heroRect = heroRef.current.getBoundingClientRect();
-    const workRect = workExperienceRef.current.getBoundingClientRect();
+    const heroHeight = heroRect.height;
 
-    // Total scrollable area is from Hero top to WorkExperience bottom
-    const totalTop = heroRect.top;
-    const totalBottom = workRect.bottom;
-    const totalHeight = totalBottom - totalTop;
+    if (heroHeight <= 0) return;
 
-    if (totalHeight <= 0) return;
+    // Calculate how much of the hero has scrolled past the top of the viewport
+    // scrollProgress = 0 when hero top is at viewport top
+    // scrollProgress = 1 when hero bottom is at viewport top
+    const scrolled = -heroRect.top;
+    const progress = Math.max(0, Math.min(1, scrolled / heroHeight));
 
-    // Calculate where the viewport center is within this range
-    const viewportCenter = window.innerHeight / 2;
-
-    // How far down is the viewport center from the top of the scrollable area?
-    // When hero top is at viewport center, target = 0
-    // When work experience bottom is at viewport center, target = 1
-    const scrollProgress = (viewportCenter - totalTop) / totalHeight;
-
-    // Clamp to 0-1 range
-    const clamped = Math.max(0, Math.min(1, scrollProgress));
-    setScrollTargetY(clamped);
+    setScrollProgress(progress);
   }, []);
 
   // Listen to scroll events
   useEffect(() => {
-    updateScrollTarget();
-    window.addEventListener('scroll', updateScrollTarget, { passive: true });
-    window.addEventListener('resize', updateScrollTarget, { passive: true });
+    updateScrollProgress();
+    window.addEventListener('scroll', updateScrollProgress, { passive: true });
+    window.addEventListener('resize', updateScrollProgress, { passive: true });
     return () => {
-      window.removeEventListener('scroll', updateScrollTarget);
-      window.removeEventListener('resize', updateScrollTarget);
+      window.removeEventListener('scroll', updateScrollProgress);
+      window.removeEventListener('resize', updateScrollProgress);
     };
-  }, [updateScrollTarget]);
+  }, [updateScrollProgress]);
 
-  // Callback for when neural net fades in Hero
-  const handleNeuralNetFaded = useCallback(() => {
-    setShowOrbs(true);
+  // Measure container for planet system
+  useEffect(() => {
+    const measure = () => {
+      if (planetContainerRef.current) {
+        const rect = planetContainerRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setContainerDims({ width: rect.width, height: rect.height });
+        }
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  // Callback for Hero to update beams
+  const handleBeamsUpdate = useCallback((beams: ScanBeam[]) => {
+    setActiveBeams(beams);
   }, []);
 
   return (
     <>
-      {/* Wrapper for Hero and WorkExperience - allows orbs to span both sections */}
+      {/* Wrapper for Hero and WorkExperience */}
       <div style={{ position: 'relative' }}>
-        {/* ASCII Orb container - spans Hero + WorkExperience */}
+        {/* ASCII Planet System overlay - spans Hero + WorkExperience */}
         <div
-          ref={orbContainerRef}
+          ref={planetContainerRef}
           style={{
             position: 'absolute',
             top: 0,
@@ -87,36 +97,16 @@ function LandingPage() {
             overflow: 'hidden',
           }}
         >
-          <AsciiOrb
-            show={showOrbs}
-            bodyLength={45}
-            speed={0.7}
-            baseThickness={6}
-            minZ={0.15}
-            maxZ={1.0}
-            colorTheme="green"
-            seed={42}
-            followScroll={true}
-            scrollTargetY={scrollTargetY}
-            scrollInfluence={0.4}
-          />
-          <AsciiOrb
-            show={showOrbs}
-            bodyLength={40}
-            speed={0.8}
-            baseThickness={5}
-            minZ={0.2}
-            maxZ={0.95}
-            colorTheme="pink"
-            seed={137}
-            followScroll={true}
-            scrollTargetY={scrollTargetY}
-            scrollInfluence={0.35}
+          <AsciiPlanetSystem
+            scrollProgress={scrollProgress}
+            activeBeams={activeBeams}
+            width={containerDims.width}
+            height={containerDims.height}
           />
         </div>
 
         <div ref={heroRef}>
-          <Hero onNeuralNetFaded={handleNeuralNetFaded} />
+          <Hero onBeamsUpdate={handleBeamsUpdate} />
         </div>
         <div ref={workExperienceRef}>
           <WorkExperience />

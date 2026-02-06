@@ -4,15 +4,13 @@ import '../styles/HeroLayout.css';
 import gsap from 'gsap';
 import OcrOverlay from "../components/OcrOverlay";
 import useOcrProcessing from '../hooks/useOcrProcessing';
-import { AnimationWave, ScanBeam, Point } from '../../../types';
+import { ScanBeam, Point } from '../../../types';
 import { processOcrText, CorrectedTextPart } from '../utils/correctionData';
-import { NetworkGraphViz3D } from '../components/NetworkGraphViz3D';
 import AnimatedTypoText from '../components/AnimatedTypoText';
 import {
     EMNIST_MODEL_URL,
     ACTIVATION_LAYER_NAMES,
     CONV_LAYER_WEIGHT_NAMES,
-    FINAL_LAYER_NAME,
     TEXT_SCREENSHOT_GRADIENTS,
     HELLO_WELCOME_GRADIENTS,
     OCR_START_DELAY_MS,
@@ -23,7 +21,6 @@ import { useTfModel } from '../../../utils/useTfModel';
 import { PathManager } from '../utils/path';
 import { WhiteToAlphaCanvas } from '../components/WhiteToAlphaCanvas';
 import ScanBeamViz from '../components/ScanBeamViz';
-import { getInputNode2DPosition } from '../utils/math3d';
 
 const GRAPH_CANVAS_HEIGHT = 700;
 const BOTTOM_Y_LIFT_PX = 30;
@@ -32,10 +29,10 @@ type OcrSourceIndex = 0 | 1;
 
 type HeroProps = {
     onNeuralNetFaded?: () => void;
+    onBeamsUpdate?: (beams: ScanBeam[]) => void;  // Pass beams up for planet system
 };
 
-const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
-    const [networkWaves, setNetworkWaves] = useState<AnimationWave[]>([]);
+const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
 
     const gradientIndex1Ref = useRef(0);
     const gradientIndex2Ref = useRef(0);
@@ -80,8 +77,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
     const [typoAnimationComplete1, setTypoAnimationComplete1] = useState(false);
     const [typoAnimationComplete2, setTypoAnimationComplete2] = useState(false);
 
-    // === Gate ASCII orb appearance until the neural viz has faded away ===
-    const [hasFadedNeuralNet, setHasFadedNeuralNet] = useState(false);
+    // Container refs for layout
     const neuralContainerRef = useRef<HTMLDivElement>(null);
     const hasTriggeredFadeRef = useRef(false);
 
@@ -171,12 +167,9 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
         tfReady,
     } = useTfModel(EMNIST_MODEL_URL, ACTIVATION_LAYER_NAMES, CONV_LAYER_WEIGHT_NAMES);
 
-    const commonSetNetworkWaves = useCallback((updater: React.SetStateAction<AnimationWave[]>) => {
-        setNetworkWaves(prev => typeof updater === 'function' ? updater(prev) : updater);
-    }, []);
-
-    const ocrProcess1 = useOcrProcessing({ imageRef: imageRef1, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
-    const ocrProcess2 = useOcrProcessing({ imageRef: imageRef2, setNetworkWaves: commonSetNetworkWaves, model, visModel, tfReady, isLoadingModel });
+    // OCR processing - no longer using network waves (planet system handles impacts)
+    const ocrProcess1 = useOcrProcessing({ imageRef: imageRef1, model, visModel, tfReady, isLoadingModel });
+    const ocrProcess2 = useOcrProcessing({ imageRef: imageRef2, model, visModel, tfReady, isLoadingModel });
 
     const lockAndSwapToTypos = useCallback((sourceIndex: OcrSourceIndex) => {
         const outRef = sourceIndex === 0 ? ocrOutputRef1 : ocrOutputRef2;
@@ -334,17 +327,11 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
         };
     }, [typoAnimationComplete1]);
 
-    /** ===== Network entry point (single source of truth) ===== */
-    const calcInputPoint = useCallback((w: number, h: number): Point => {
-        // Calculate the exact 2D position where the input node is rendered
-        // in the 3D neural network visualization using the same projection math
-        const pos = getInputNode2DPosition(w, h);
-        return { x: Math.floor(pos.x), y: Math.floor(pos.y) };
+    /** ===== Planet center point for beam targeting ===== */
+    const calcPlanetCenter = useCallback((w: number, h: number): Point => {
+        // Target the center of the planet (where beams create impact effects)
+        return { x: Math.floor(w / 2), y: Math.floor(h / 2) };
     }, []);
-    const networkCanvasSize = useMemo(() => ({
-        width: networkContainerRef.current?.clientWidth ?? 800,
-        height: GRAPH_CANVAS_HEIGHT
-    }), [networkContainerRef.current?.clientWidth]);
 
     // keep viewport (fixed) overlay size in sync
     const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
@@ -372,7 +359,12 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
         setBeams(prev => prev.filter(b => b.id !== id));
     }, []);
 
-    // Helper: spawn a beam using a given origin (viewport px)
+    // Notify parent of beam updates for planet system
+    useEffect(() => {
+        onBeamsUpdate?.(beams);
+    }, [beams, onBeamsUpdate]);
+
+    // Helper: spawn a beam using a given origin (viewport px) - targets planet center
     const addBeamFromScanner = useCallback((
         originViewport: Point | null,
         gradientSet: string[],
@@ -383,16 +375,17 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
 
         const netRect = networkContainerRef.current.getBoundingClientRect();
         const netW = networkContainerRef.current.clientWidth || 800;
-        const localInput = calcInputPoint(netW, GRAPH_CANVAS_HEIGHT);
+        // Target planet center instead of input node
+        const planetCenter = calcPlanetCenter(netW, GRAPH_CANVAS_HEIGHT);
 
-        // Compute *viewport* entry point for the graph, then convert to document space
-        const netEntryViewport = { x: Math.round(netRect.left + localInput.x), y: Math.round(netRect.top + localInput.y) };
+        // Compute *viewport* entry point for the planet, then convert to document space
+        const planetEntryViewport = { x: Math.round(netRect.left + planetCenter.x), y: Math.round(netRect.top + planetCenter.y) };
 
         // Convert origin + entry to *document* space so the path stays stable while scrolling
         const sx = window.scrollX || 0;
         const sy = window.scrollY || 0;
         const originDoc = { x: originViewport.x + sx, y: originViewport.y + sy };
-        const targetDoc = { x: netEntryViewport.x + sx, y: netEntryViewport.y + sy };
+        const targetDoc = { x: planetEntryViewport.x + sx, y: planetEntryViewport.y + sy };
 
         // Curved path geometry
         const verticalKick = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120);
@@ -421,7 +414,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
                 arcRadius,
             }
         ]));
-    }, [calcInputPoint]);
+    }, [calcPlanetCenter]);
 
     useEffect(() => {
         if (ocrProcess1.currentChar) {
@@ -449,9 +442,6 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
         }
     }, [ocrProcess2.currentChar, ocrProcess2.onCharAnimationFinished, addBeamFromScanner]);
 
-    const onNetworkWaveFinishedApp = useCallback((waveId: string) => {
-        setNetworkWaves(prev => prev.filter(w => w.id !== waveId));
-    }, []);
 
     // Only compute aspect ratio on load
     const handleImageOnLoad = (sourceIndex: OcrSourceIndex) => {
@@ -567,54 +557,25 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
     // Was a no-op; now we only use the granular flags below.
     const typoAnimationsDone = typoAnimationComplete1 && typoAnimationComplete2;
 
-    // === NEW: when *everything* is finished (OCR, beams, network waves, typo animations),
-    // fade & scale the neural viz to 0, THEN allow the showcase to snap into its final layout.
-    const allOcrAndNetworkFinished = useMemo(() => {
+    // === When OCR and typo animations are finished, notify parent
+    // (Planet system stays visible with snakes, so no fade needed)
+    const allOcrFinished = useMemo(() => {
         const noBeams = beams.length === 0;
-        const noWaves = networkWaves.length === 0;
         const ocrIdle = !ocrProcess1.isProcessingOCR && !ocrProcess2.isProcessingOCR;
-        return typoAnimationsDone && noBeams && noWaves && ocrIdle;
-    }, [typoAnimationsDone, beams.length, networkWaves.length, ocrProcess1.isProcessingOCR, ocrProcess2.isProcessingOCR]);
+        return typoAnimationsDone && noBeams && ocrIdle;
+    }, [typoAnimationsDone, beams.length, ocrProcess1.isProcessingOCR, ocrProcess2.isProcessingOCR]);
 
+    // Notify parent when OCR is complete (planet stays visible, snakes transition to free-roam)
     useEffect(() => {
-        if (!allOcrAndNetworkFinished) return;
-        if (hasFadedNeuralNet || hasTriggeredFadeRef.current) return;
+        if (!allOcrFinished) return;
+        if (hasTriggeredFadeRef.current) return;
 
         hasTriggeredFadeRef.current = true;
-
-        const el = neuralContainerRef.current;
-        if (!el) {
-            // If for some reason the ref is missing, just allow the showcase to proceed.
-            setHasFadedNeuralNet(true);
-            onNeuralNetFaded?.();
-            return;
-        }
-
-        // Ensure transform origin centers for a clean shrink
-        gsap.set(el, { transformOrigin: 'center center' });
-        gsap.to(el, {
-            opacity: 0,
-            scale: 0,
-            duration: 0.6,
-            ease: 'power2.inOut',
-            onComplete: () => {
-                // Let the showcase know it can move into place now
-                setHasFadedNeuralNet(true);
-                // Notify parent that neural net has faded (for ASCII orb display)
-                onNeuralNetFaded?.();
-                // Optionally collapse pointer-events after fade
-                gsap.set(el, { pointerEvents: 'none', visibility: 'hidden' });
-            }
-        });
-    }, [allOcrAndNetworkFinished, hasFadedNeuralNet, onNeuralNetFaded]);
+        onNeuralNetFaded?.();
+    }, [allOcrFinished, onNeuralNetFaded]);
 
     const ACCENT_COLOR_1 = TEXT_SCREENSHOT_GRADIENTS[0][0];
     const ACCENT_COLOR_2 = HELLO_WELCOME_GRADIENTS[0][0];
-
-    const inputPointForGraph = useMemo(
-        () => calcInputPoint(networkCanvasSize.width, networkCanvasSize.height),
-        [calcInputPoint, networkCanvasSize.width, networkCanvasSize.height]
-    );
 
     return (
         <>
@@ -889,28 +850,16 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded }) => {
                         </div>
                     </div>
 
-                    {/* Right column — Neural Network + ASCII Orb */}
+                    {/* Right column — placeholder for beam targeting (planet system rendered in LandingPage overlay) */}
                     <div className="right-column" style={{ position: 'relative' }}>
                         <div
                             ref={neuralContainerRef}
                             className="steps-extra-info-container"
                             style={{ minHeight: `${GRAPH_CANVAS_HEIGHT}px`, width: '100%', position: 'relative' }}
                         >
-                            <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }}>
-                                {networkContainerRef.current && (
-                                    <NetworkGraphViz3D
-                                        waves={networkWaves}
-                                        onWaveFinished={onNetworkWaveFinishedApp}
-                                        hiddenDenseLayerName="dense"
-                                        outputLayerName={FINAL_LAYER_NAME}
-                                        width={networkContainerRef.current.clientWidth}
-                                        height={GRAPH_CANVAS_HEIGHT}
-                                        inputConnectionPoint={inputPointForGraph}
-                                    />
-                                )}
-                            </div>
+                            {/* networkContainerRef used for beam targeting calculations */}
+                            <div ref={networkContainerRef} style={{ position: 'relative', width: '100%', height: `${GRAPH_CANVAS_HEIGHT}px` }} />
                         </div>
-
                     </div>
                 </div>
 

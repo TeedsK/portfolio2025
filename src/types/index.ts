@@ -136,3 +136,12 @@ export interface StaticLine3D {
     nodeId1: string;
 }
 
+// Impact effect for ASCII planet system
+export interface ImpactEffect {
+    id: string;
+    surfacePoint: Point3D;       // 3D position on planet surface
+    currentRadius: number;       // expands from 0 to ~80px
+    alpha: number;               // fades from 1.0 to 0.0
+    impactTime: number;          // performance.now() when impact started
+}
+

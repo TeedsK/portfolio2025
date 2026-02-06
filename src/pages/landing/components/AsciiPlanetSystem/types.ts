@@ -1,0 +1,82 @@
+// src/pages/landing/components/AsciiPlanetSystem/types.ts
+
+import { Point3D } from '../../../../types';
+
+export type ColorTheme = 'green' | 'pink' | 'blue';
+
+export interface BodySegment {
+  x: number;
+  y: number;
+  z: number;
+  tangentX: number;
+  tangentY: number;
+}
+
+export interface Snake {
+  id: string;
+  body: BodySegment[];
+  colorTheme: ColorTheme;
+  orbitalInclination: number;  // radians, tilt of orbital plane
+  orbitalPhase: number;        // current position on orbit (0 to 2π)
+  orbitSpeed: number;          // radians per second
+  orbitDirection: 1 | -1;      // clockwise or counter-clockwise
+  bodyLength: number;
+  baseThickness: number;
+  seed: { x: number; y: number; z: number };
+}
+
+export interface ImpactEffect {
+  id: string;
+  surfacePoint: Point3D;       // 3D position on planet surface
+  currentRadius: number;       // expands from 0 to ~80px
+  alpha: number;               // fades from 1.0 to 0.0
+  impactTime: number;          // performance.now() when impact started
+}
+
+export interface GridCell {
+  char: string;
+  color: string;
+  priority: number;  // z-depth for painter's algorithm
+}
+
+// Planet surface point for rendering
+export interface PlanetPoint {
+  x: number;       // screen x
+  y: number;       // screen y
+  z: number;       // depth (for sorting)
+  char: string;    // ASCII character
+  color: string;   // HSL color string
+}
+
+// Renderable item for unified depth sorting
+export interface Renderable {
+  type: 'planet' | 'snake' | 'impact';
+  x: number;
+  y: number;
+  z: number;       // depth for sorting (higher = closer)
+  char: string;
+  color: string;
+}
+
+// Color theme configurations
+export interface ThemeConfig {
+  hueStart: number;
+  hueEnd: number;
+  glowColor: string;
+}
+
+export const COLOR_THEMES: Record<ColorTheme, ThemeConfig> = {
+  green: { hueStart: 190, hueEnd: 90, glowColor: 'rgba(100, 255, 100,' },
+  pink: { hueStart: 330, hueEnd: 300, glowColor: 'rgba(255, 100, 180,' },
+  blue: { hueStart: 220, hueEnd: 200, glowColor: 'rgba(100, 180, 255,' },
+};
+
+// Planet color theme (blue) - keep saturation high to avoid white appearance
+export const PLANET_THEME = {
+  hueStart: 220,  // Deep blue (far)
+  hueEnd: 200,    // Lighter blue (close)
+  saturationMin: 60,
+  saturationMax: 85,
+  lightnessMin: 25,
+  lightnessMax: 50,  // Capped lower to prevent white/washed out colors
+};

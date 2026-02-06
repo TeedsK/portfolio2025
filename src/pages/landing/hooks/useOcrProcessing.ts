@@ -39,7 +39,7 @@ interface PendingNetworkAnimationData {
 
 interface UseOcrProcessingOptions {
   imageRef: React.RefObject<HTMLImageElement>;
-  setNetworkWaves: React.Dispatch<React.SetStateAction<AnimationWave[]>>;
+  setNetworkWaves?: React.Dispatch<React.SetStateAction<AnimationWave[]>>;
   model: tf.LayersModel | null;
   visModel: tf.LayersModel | null;
   tfReady: boolean;
@@ -280,15 +280,18 @@ export default function useOcrProcessing({
   const onCharAnimationFinished = useCallback((processedCharString: string, gradientSetForWave: string[]) => {
     const pendingData = pendingNetworkDataRef.current[processedCharString];
     if (pendingData) {
-      setNetworkWaves(prev => [
-        ...prev,
-        {
-          id: `wave-${Date.now()}-${Math.random()}`,
-          activations: pendingData.activations,
-          softmaxProbabilities: pendingData.softmaxProbabilities,
-          gradientSet: gradientSetForWave
-        }
-      ]);
+      // Only add network waves if the callback is provided
+      if (setNetworkWaves) {
+        setNetworkWaves(prev => [
+          ...prev,
+          {
+            id: `wave-${Date.now()}-${Math.random()}`,
+            activations: pendingData.activations,
+            softmaxProbabilities: pendingData.softmaxProbabilities,
+            gradientSet: gradientSetForWave
+          }
+        ]);
+      }
       delete pendingNetworkDataRef.current[processedCharString];
     }
   }, [setNetworkWaves]);

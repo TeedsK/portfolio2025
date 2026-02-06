@@ -38,11 +38,11 @@ export const NET_ALPHA_INACTIVE_LINE = 1.0;          // Alpha for lines below ac
 
 // Activation threshold: nodes with activation below this won't show animated connections
 // Higher = fewer connections shown = less busy. Range: 0.0 to 1.0
-export const NET_ACTIVATION_THRESHOLD = 0.9;
+export const NET_ACTIVATION_THRESHOLD = 0.3;
 
-// Skeleton line alpha: opacity of the static grey connection lines
-// Lower = more subtle/faint lines. Range: 0.0 to 1.0
-export const NET_SKELETON_LINE_ALPHA = 0.00;
+// Skeleton line alpha: opacity of the static connection lines
+// Set to 0 to hide skeleton lines (only show activated connections)
+export const NET_SKELETON_LINE_ALPHA = 0.0;
 
 
 // --- OcrOverlay Timings (in milliseconds) ---

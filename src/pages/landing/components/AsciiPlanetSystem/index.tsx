@@ -21,30 +21,30 @@ import {
 
 // Orb (noise-based animated sphere, replaces old 3D planet)
 const PLANET_RADIUS = 90;  // kept for snake z-depth compatibility
-const ORB_RADIUS = 28;     // grid units - visual radius of the orb
-const ORB_NOISE_SCALE = 20; // larger = bigger, smoother noise blobs
+const ORB_RADIUS = 55;     // grid units - visual radius of the orb (~2x original)
+const ORB_NOISE_SCALE = 35; // larger = bigger, smoother noise blobs (scaled with size)
 const ORB_GLYPHS = ' .:-=+*#%@';
 const ORB_Y_ASPECT = 0.625; // = CHAR_WIDTH / CHAR_HEIGHT, compensate for tall characters
 
-// Orb colors (blue theme)
-const ORB_PRIMARY_RGB = { r: 0, g: 40, b: 140 };    // deep blue (dark regions)
-const ORB_SECONDARY_RGB = { r: 80, g: 180, b: 255 }; // bright cyan-blue (bright regions)
+// Orb colors (vibrant blue theme for visibility on white bg)
+const ORB_PRIMARY_RGB = { r: 20, g: 60, b: 220 };    // vibrant deep blue (dark regions)
+const ORB_SECONDARY_RGB = { r: 40, g: 140, b: 255 };  // vivid bright blue (bright regions)
 
 // Shockwave tunables (triggered by beam impacts)
 const SHOCKWAVE_DURATION_S = 1.0;   // seconds
 const SHOCKWAVE_SPEED = 25;         // grid units per second
 const SHOCKWAVE_WIDTH = 3;          // grid units thickness of the ring
 
-// Snake orbits - tighter to stay within bounds
-const ORBIT_RADIUS = 140;  // distance from planet center
+// Snake orbits - scaled for larger orb
+const ORBIT_RADIUS = 200;  // distance from planet center (tighter to orb)
 const SNAKE_1_INCLINATION = Math.PI * 0.25;   // ~45 degrees
 const SNAKE_2_INCLINATION = -Math.PI * 0.15;  // ~-27 degrees
-const SNAKE_1_ORBIT_SPEED = 0.3;   // radians per second
-const SNAKE_2_ORBIT_SPEED = 0.35;  // radians per second
+const SNAKE_1_ORBIT_SPEED = 0.85;   // radians per second (faster to match free-roam pace)
+const SNAKE_2_ORBIT_SPEED = 0.95;   // radians per second
 
-// Snake body
-const SNAKE_1_BODY_LENGTH = 45;
-const SNAKE_2_BODY_LENGTH = 40;
+// Snake body (longer for more dramatic orbiting)
+const SNAKE_1_BODY_LENGTH = 75;
+const SNAKE_2_BODY_LENGTH = 65;
 const SNAKE_1_THICKNESS = 5;
 const SNAKE_2_THICKNESS = 4;
 
@@ -126,8 +126,8 @@ const getOrbColor = (v: number): string => {
   const r = Math.round(ORB_PRIMARY_RGB.r + (ORB_SECONDARY_RGB.r - ORB_PRIMARY_RGB.r) * t);
   const g = Math.round(ORB_PRIMARY_RGB.g + (ORB_SECONDARY_RGB.g - ORB_PRIMARY_RGB.g) * t);
   const b = Math.round(ORB_PRIMARY_RGB.b + (ORB_SECONDARY_RGB.b - ORB_PRIMARY_RGB.b) * t);
-  // Alpha ramps with intensity for soft, glowing edges
-  const alpha = 0.55 + t * 0.45;
+  // Higher base alpha for better visibility on white backgrounds
+  const alpha = 0.78 + t * 0.22;
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 };
 
@@ -201,8 +201,8 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   onBeamImpact,
   width,
   height,
-  planetXOffset = 0.75,  // Default: planet in right area (3/4 across)
-  planetYOffset = 0.18,  // Default: planet near top
+  planetXOffset = 0.7,  // Default: closer to text, with right-side padding for snake orbits
+  planetYOffset = 0.18,  // Default: vertically centered
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -390,7 +390,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         return elapsed <= SHOCKWAVE_DURATION_S * 1000;
       });
 
-      // ============== RENDER ORB (noise-based animated sphere) ==============
+      // ============== RENDER ORB (spherical globe with noise texture) ==============
       const noise2D = noise2DRef.current;
 
       // Bounding box in grid coordinates
@@ -408,14 +408,17 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           const norm = dist / ORB_RADIUS;
           if (norm >= 1) continue;
 
-          // Radial falloff: soft edges, bright center
-          const radial = 1 - norm * norm;
+          // Normalized distance from edge (0 at edge, 1 at center)
+          const distNorm = 1 - norm;
+
+          // Density-boosted radial falloff (0.15 floor keeps interior more filled)
+          const radial = 0.15 + distNorm * 0.85;
 
           // Simplex noise sampling with time advection (pattern drifts each frame)
           const n = noise2D(x / ORB_NOISE_SCALE, y / ORB_NOISE_SCALE + t);
           const nNorm = (n + 1) * 0.5; // normalize to 0..1
 
-          let v = nNorm * radial;
+          let v = clamp01(nNorm * radial * 1.4);
 
           // Apply shockwaves from beam impacts
           for (const impact of impactsRef.current) {
@@ -447,7 +450,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           const color = getOrbColor(v);
 
           // Priority: center is closest to viewer, edges further away
-          const priority = (1 - norm) * PLANET_RADIUS;
+          const priority = distNorm * PLANET_RADIUS;
 
           if (priority > grid[y][x].priority) {
             grid[y][x].char = glyph;

@@ -370,8 +370,8 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       const freeTarget = smoothstep(0, DETACH_END, p); // 0..1 (eased)
       const orbitTarget = 1 - freeTarget;
 
-      // Exponential smoothing to remove scroll-step jitter
-      const FOLLOW_SPEED = 8.0; // higher = more responsive, lower = floatier
+      // Exponential smoothing — low value for a graceful ~3 second transition
+      const FOLLOW_SPEED = 1.5; // higher = more responsive, lower = floatier
       const follow = 1 - Math.exp(-FOLLOW_SPEED * dt);
 
       orbitInfluenceRef.current += (orbitTarget - orbitInfluenceRef.current) * follow;
@@ -503,7 +503,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         } else {
           // As it detaches, let freePos smoothly chase the noise target.
           // Speed increases with freeBlend, so it "loosens" gradually.
-          const freeFollowSpeed = 0.7 + 5.0 * freeBlend; // 0.7..5.7
+          const freeFollowSpeed = 0.4 + 2.0 * freeBlend; // 0.4..2.4 (gentle ramp)
           const sFree = 1 - Math.exp(-freeFollowSpeed * dt);
 
           snake.freePos.x += (freeXTarget - snake.freePos.x) * sFree;

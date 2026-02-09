@@ -17,6 +17,7 @@
     "diff-match-patch": "^1.0.5",
     "gsap": "^3.13.0",
     "lottie-react": "^2.4.1",
+    "open-simplex-noise": "^2.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.6.2",

@@ -1,14 +1,13 @@
 // src/pages/landing/components/AsciiPlanetSystem/index.tsx
-// ASCII 3D Planet with orbiting snake "rings" that detach on scroll
+// Noise-based animated ASCII orb with orbiting snake "rings" that detach on scroll
 //
-// Key fixes in this version:
-// 1) The RAF loop no longer restarts when scrollProgress changes (huge stutter fix).
-// 2) Orbit → free-roam uses a smoothed influence ref + eased blend.
-// 3) Snakes use a "freePos" follower that starts at orbital position, then drifts away.
-//    This makes detachment look like a natural glide away from orbit (not a mode switch).
-// 4) Impact effects do NOT replace ASCII; they tint the planet surface via an overlay mask.
+// The orb is a circular mask filled with simplex-noise-driven intensity.
+// Radial falloff gives soft edges, noise advection makes it swirl internally.
+// Beam impacts trigger expanding shockwave ripples inside the orb.
+// Two ASCII snakes orbit the orb and smoothly transition to free-roam on scroll.
 
 import React, { useEffect, useRef, useCallback, useMemo } from 'react';
+import { makeNoise2D } from 'open-simplex-noise';
 import { ScanBeam, Point3D } from '../../../../types';
 import {
   Snake,
@@ -20,9 +19,21 @@ import {
 
 // ============== CONSTANTS ==============
 
-// Planet - smaller to fit within canvas with margin
-const PLANET_RADIUS = 90;
-const PLANET_ROTATION_SPEED = 0.1;  // radians per second
+// Orb (noise-based animated sphere, replaces old 3D planet)
+const PLANET_RADIUS = 90;  // kept for snake z-depth compatibility
+const ORB_RADIUS = 28;     // grid units - visual radius of the orb
+const ORB_NOISE_SCALE = 20; // larger = bigger, smoother noise blobs
+const ORB_GLYPHS = ' .:-=+*#%@';
+const ORB_Y_ASPECT = 0.625; // = CHAR_WIDTH / CHAR_HEIGHT, compensate for tall characters
+
+// Orb colors (blue theme)
+const ORB_PRIMARY_RGB = { r: 0, g: 40, b: 140 };    // deep blue (dark regions)
+const ORB_SECONDARY_RGB = { r: 80, g: 180, b: 255 }; // bright cyan-blue (bright regions)
+
+// Shockwave tunables (triggered by beam impacts)
+const SHOCKWAVE_DURATION_S = 1.0;   // seconds
+const SHOCKWAVE_SPEED = 25;         // grid units per second
+const SHOCKWAVE_WIDTH = 3;          // grid units thickness of the ring
 
 // Snake orbits - tighter to stay within bounds
 const ORBIT_RADIUS = 140;  // distance from planet center
@@ -37,9 +48,6 @@ const SNAKE_2_BODY_LENGTH = 40;
 const SNAKE_1_THICKNESS = 5;
 const SNAKE_2_THICKNESS = 4;
 
-// Impact effects
-const IMPACT_MAX_RADIUS = 40;
-const IMPACT_DURATION_MS = 800;
 
 // Character dimensions
 const CHAR_WIDTH = 5;
@@ -62,9 +70,6 @@ const DEPTH_CHARS = {
 const LIGHT_X = -0.408;
 const LIGHT_Y = -0.572;
 const LIGHT_Z = 0.408;
-
-// Planet base color (requested): rgb(0, 120, 255)
-const PLANET_BASE_RGB = { r: 0, g: 120, b: 255 };
 
 // ============== HELPER FUNCTIONS ==============
 
@@ -115,25 +120,15 @@ const getSnakeColor = (zDepth: number, lighting: number, theme: ColorTheme): str
   return colorLUTs[theme][zIdx * 10 + lIdx];
 };
 
-// Planet color: keep RGB constant, shade via alpha (so it never goes "dark blue").
-// Brighter side is higher alpha, darker side is lower alpha.
-const getPlanetColor = (zDepth: number, lighting: number): string => {
-  const l = clamp01(lighting);
-
-  // Tuning knobs (feel free to tweak):
-  // - Raise minAlpha if the planet still feels too dark on white backgrounds.
-  // - Lower gamma to keep more of the planet near maxAlpha.
-  const minAlpha = 0.62;
-  const maxAlpha = 1.0;
-  const gamma = 0.65;
-
-  const eased = Math.pow(l, gamma);
-
-  // Slightly boost nearer-facing cells (small, helps depth without darkening RGB)
-  const depthBoost = 0.90 + 0.10 * clamp01(zDepth);
-
-  const a = clamp01((minAlpha + (maxAlpha - minAlpha) * eased) * depthBoost);
-  return `rgba(${PLANET_BASE_RGB.r}, ${PLANET_BASE_RGB.g}, ${PLANET_BASE_RGB.b}, ${a.toFixed(3)})`;
+// Orb color: interpolate between primary and secondary based on noise intensity
+const getOrbColor = (v: number): string => {
+  const t = clamp01(v);
+  const r = Math.round(ORB_PRIMARY_RGB.r + (ORB_SECONDARY_RGB.r - ORB_PRIMARY_RGB.r) * t);
+  const g = Math.round(ORB_PRIMARY_RGB.g + (ORB_SECONDARY_RGB.g - ORB_PRIMARY_RGB.g) * t);
+  const b = Math.round(ORB_PRIMARY_RGB.b + (ORB_SECONDARY_RGB.b - ORB_PRIMARY_RGB.b) * t);
+  // Alpha ramps with intensity for soft, glowing edges
+  const alpha = 0.55 + t * 0.45;
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 };
 
 // Noise functions for organic movement
@@ -214,8 +209,10 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   // Animation state refs
   const timeRef = useRef(0);
   const lastFrameRef = useRef(0);
-  const planetRotationRef = useRef(0);
   const isPageVisibleRef = useRef(true);
+
+  // Simplex noise for orb texture
+  const noise2DRef = useRef(makeNoise2D(Date.now()));
 
   // Smooth scroll→orbit influence without restarting RAF loop
   const scrollProgressRef = useRef(scrollProgress);
@@ -349,9 +346,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
     ctx.font = `bold ${CHAR_HEIGHT - 1}px "SF Mono", Monaco, Consolas, monospace`;
     ctx.textBaseline = 'top';
 
-    // NEW: Impact tint mask (alpha per cell). Lives for the duration of this effect instance.
-    const impactTint = new Float32Array(gridWidth * gridHeight);
-
     let animId: number;
     let prevTime = performance.now();
 
@@ -367,9 +361,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       prevTime = now;
       timeRef.current += dt;
       const t = timeRef.current;
-
-      // Update planet rotation
-      planetRotationRef.current += PLANET_ROTATION_SPEED * dt;
 
       // ================= ORBIT → FREE BLEND (SMOOTH) =================
       // Keep your original "0..0.3 detaches" behavior, but smooth it so it glides.
@@ -391,62 +382,78 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
 
       // Get grid buffer
       const grid = getGrid(gridWidth, gridHeight);
+      const nowMs = performance.now();
 
-      // Clear tint mask each frame
-      impactTint.fill(0);
+      // Clean up expired impacts early so orb rendering can use the filtered list
+      impactsRef.current = impactsRef.current.filter((impact) => {
+        const elapsed = nowMs - impact.impactTime;
+        return elapsed <= SHOCKWAVE_DURATION_S * 1000;
+      });
 
-      // ============== RENDER PLANET ==============
-      const planetRotation = planetRotationRef.current;
+      // ============== RENDER ORB (noise-based animated sphere) ==============
+      const noise2D = noise2DRef.current;
 
-      // Pixel-to-grid scaling factor
-      const pixelScale = 3;
+      // Bounding box in grid coordinates
+      const orbYExtent = Math.ceil(ORB_RADIUS * ORB_Y_ASPECT);
+      const minOrbX = Math.max(0, planetCenterX - ORB_RADIUS);
+      const maxOrbX = Math.min(gridWidth - 1, planetCenterX + ORB_RADIUS);
+      const minOrbY = Math.max(0, planetCenterY - orbYExtent);
+      const maxOrbY = Math.min(gridHeight - 1, planetCenterY + orbYExtent);
 
-      // Sample planet surface points - render at planet center position
-      // NOTE: If you ever want fewer "holes", reduce step from 3 → 2 (costs more CPU).
-      for (let py = -PLANET_RADIUS; py <= PLANET_RADIUS; py += 3) {
-        for (let px = -PLANET_RADIUS; px <= PLANET_RADIUS; px += 3) {
-          const d2 = px * px + py * py;
-          if (d2 > PLANET_RADIUS * PLANET_RADIUS) continue;
+      for (let y = minOrbY; y <= maxOrbY; y++) {
+        for (let x = minOrbX; x <= maxOrbX; x++) {
+          const dx = x - planetCenterX;
+          const dy = (y - planetCenterY) / ORB_Y_ASPECT;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const norm = dist / ORB_RADIUS;
+          if (norm >= 1) continue;
 
-          // Calculate z on sphere surface
-          const pz = Math.sqrt(PLANET_RADIUS * PLANET_RADIUS - d2);
+          // Radial falloff: soft edges, bright center
+          const radial = 1 - norm * norm;
 
-          // Apply planet rotation (around Y axis)
-          const rotatedPx = px * Math.cos(planetRotation) + pz * Math.sin(planetRotation);
-          const rotatedPz = -px * Math.sin(planetRotation) + pz * Math.cos(planetRotation);
+          // Simplex noise sampling with time advection (pattern drifts each frame)
+          const n = noise2D(x / ORB_NOISE_SCALE, y / ORB_NOISE_SCALE + t);
+          const nNorm = (n + 1) * 0.5; // normalize to 0..1
 
-          // Back-face culling
-          if (rotatedPz < -PLANET_RADIUS * 0.1) continue;
+          let v = nNorm * radial;
 
-          // Calculate normal for lighting
-          const normalX = rotatedPx / PLANET_RADIUS;
-          const normalY = py / PLANET_RADIUS;
-          const normalZ = rotatedPz / PLANET_RADIUS;
+          // Apply shockwaves from beam impacts
+          for (const impact of impactsRef.current) {
+            const elapsed = (nowMs - impact.impactTime) / 1000;
+            if (elapsed < 0 || elapsed > SHOCKWAVE_DURATION_S) continue;
 
-          // Lambertian lighting with cap (we shade via alpha anyway)
-          const rawLighting = Math.max(0.15, normalX * LIGHT_X + normalY * LIGHT_Y + normalZ * LIGHT_Z);
+            const swDx = x - impact.surfacePoint.x;
+            const swDy = (y - impact.surfacePoint.y) / ORB_Y_ASPECT;
+            const swDist = Math.sqrt(swDx * swDx + swDy * swDy);
+            const waveRadius = elapsed * SHOCKWAVE_SPEED;
+            const distFromWave = Math.abs(swDist - waveRadius);
 
-          // Fade edges a bit so it feels rounded
-          const edgeFactor = Math.abs(rotatedPz) / PLANET_RADIUS;  // 0 at edge, 1 at center
-          const edgeFade = 0.55 + edgeFactor * 0.45;               // 0.55..1.0
+            if (distFromWave < SHOCKWAVE_WIDTH && norm < 0.95) {
+              const waveFade = 1 - elapsed / SHOCKWAVE_DURATION_S;
+              const waveIntensity = (1 - distFromWave / SHOCKWAVE_WIDTH) * waveFade;
+              const edgeFade = 1 - Math.pow(norm, 3);
+              v = Math.min(1, v + waveIntensity * 0.8 * edgeFade);
+            }
+          }
 
-          const lighting = Math.min(0.90, rawLighting) * edgeFade;
+          v = clamp01(v);
 
-          // Normalize depth (0 = far, 1 = close)
-          const zDepth = (rotatedPz + PLANET_RADIUS) / (2 * PLANET_RADIUS);
+          // Glyph selection from intensity
+          const glyphIdx = Math.min(ORB_GLYPHS.length - 1, Math.floor(v * (ORB_GLYPHS.length - 1)));
+          const glyph = ORB_GLYPHS[glyphIdx];
+          if (glyph === ' ') continue; // skip empty cells
 
-          // Convert to grid coordinates - apply aspect ratio correction to Y for circular appearance
-          const gridX = Math.round(planetCenterX + rotatedPx / pixelScale);
-          const gridY = Math.round(planetCenterY + (py / pixelScale) * CHAR_ASPECT_RATIO);
+          // Color: interpolate primary → secondary based on intensity
+          const color = getOrbColor(v);
 
-          if (gridX < 0 || gridX >= gridWidth || gridY < 0 || gridY >= gridHeight) continue;
+          // Priority: center is closest to viewer, edges further away
+          const priority = (1 - norm) * PLANET_RADIUS;
 
-          const priority = rotatedPz;
-          if (priority > grid[gridY][gridX].priority) {
-            grid[gridY][gridX].char = getChar(zDepth, lighting);
-            grid[gridY][gridX].color = getPlanetColor(zDepth, lighting);
-            grid[gridY][gridX].priority = priority;
-            grid[gridY][gridX].source = 'planet';
+          if (priority > grid[y][x].priority) {
+            grid[y][x].char = glyph;
+            grid[y][x].color = color;
+            grid[y][x].priority = priority;
+            grid[y][x].source = 'planet'; // keep 'planet' for impact tint compatibility
           }
         }
       }
@@ -590,60 +597,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         }
       });
 
-      // ============== UPDATE IMPACT EFFECTS (build tint mask, do NOT overwrite grid) ==============
-      const nowMs = performance.now();
-
-      impactsRef.current = impactsRef.current.filter((impact) => {
-        const elapsed = nowMs - impact.impactTime;
-        if (elapsed > IMPACT_DURATION_MS) return false;
-
-        const progress = elapsed / IMPACT_DURATION_MS; // 0..1
-        impact.currentRadius = IMPACT_MAX_RADIUS * progress;
-        impact.alpha = 1 - progress;
-
-        // Grid-space radii
-        const maxR = IMPACT_MAX_RADIUS / 3;  // influence radius in grid units
-        const ringR = maxR * progress;       // expanding ripple radius
-
-        // Shape controls
-        const coreSigma = 2.4;               // center glow size
-        const ringSigma = 1.2;               // ripple thickness
-        const ringOn = smoothstep(0.08, 0.28, progress); // ring ramps in after initial hit
-
-        const cx = impact.surfacePoint.x;
-        const cy = impact.surfacePoint.y;
-
-        // Bounding box
-        const pad = 2;
-        const minX = Math.max(0, Math.floor(cx - maxR - pad));
-        const maxX = Math.min(gridWidth - 1, Math.ceil(cx + maxR + pad));
-        const minY = Math.max(0, Math.floor(cy - maxR - pad));
-        const maxY = Math.min(gridHeight - 1, Math.ceil(cy + maxR + pad));
-
-        for (let y = minY; y <= maxY; y++) {
-          // Adjust for aspect correction so mask looks circular
-          const dy = (y - cy) / CHAR_ASPECT_RATIO;
-
-          for (let x = minX; x <= maxX; x++) {
-            const dx = x - cx;
-            const d = Math.sqrt(dx * dx + dy * dy);
-            if (d > maxR) continue;
-
-            const core = Math.exp(-(d * d) / (2 * coreSigma * coreSigma));
-            const dr = d - ringR;
-            const ring = Math.exp(-(dr * dr) / (2 * ringSigma * ringSigma));
-
-            const strength = Math.min(1, core * 0.85 + ring * ringOn * 0.80);
-            const a = strength * impact.alpha;
-
-            const idx = y * gridWidth + x;
-            if (a > impactTint[idx]) impactTint[idx] = a;
-          }
-        }
-
-        return true;
-      });
-
       // ============== RENDER TO CANVAS ==============
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -661,35 +614,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         }
       }
 
-      // Impact tint pass: tint existing planet glyphs (no replacement).
-      const IMPACT_TINT_MAX_ALPHA = 0.75; // cap so it feels like hue shift, not recolor
-      const PINK = { r: 255, g: 70, b: 190 };
-
-      ctx.save();
-      ctx.shadowColor = 'rgba(255, 70, 190, 0.25)';
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = `rgb(${PINK.r}, ${PINK.g}, ${PINK.b})`;
-
-      for (let y = 0; y < gridHeight; y++) {
-        for (let x = 0; x < gridWidth; x++) {
-          const a = impactTint[y * gridWidth + x];
-          if (a <= 0.001) continue;
-
-          const cell = grid[y][x];
-          if (!cell.char) continue;
-
-          // Only tint the planet surface
-          if (cell.source !== 'planet') continue;
-
-          ctx.globalAlpha = Math.min(1, a * IMPACT_TINT_MAX_ALPHA);
-          ctx.fillText(cell.char, x * CHAR_WIDTH, y * CHAR_HEIGHT);
-        }
-      }
-
-      ctx.restore();
-      ctx.globalAlpha = 1;
-
-      // Glow pass: only snakes get glow so dense planet regions never wash out.
+      // Glow pass: snakes get glow so they pop against the orb.
       ctx.shadowColor = 'rgba(100, 180, 255, 0.10)';
       ctx.shadowBlur = 2;
       ctx.globalAlpha = 0.35;

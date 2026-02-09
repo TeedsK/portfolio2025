@@ -67,7 +67,7 @@ export interface ThemeConfig {
 }
 
 export const COLOR_THEMES: Record<ColorTheme, ThemeConfig> = {
-  green: { hueStart: 190, hueEnd: 90, glowColor: 'rgba(100, 255, 100,' },
+  green: { hueStart: 225, hueEnd: 215, glowColor: 'rgba(20, 100, 245,' },
   pink: { hueStart: 330, hueEnd: 300, glowColor: 'rgba(255, 100, 180,' },
   blue: { hueStart: 220, hueEnd: 200, glowColor: 'rgba(100, 180, 255,' },
 };

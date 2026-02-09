@@ -26,9 +26,9 @@ const ORB_NOISE_SCALE = 35; // larger = bigger, smoother noise blobs (scaled wit
 const ORB_GLYPHS = ' .:-=+*#%@';
 const ORB_Y_ASPECT = 0.625; // = CHAR_WIDTH / CHAR_HEIGHT, compensate for tall characters
 
-// Orb colors (vibrant blue theme for visibility on white bg)
-const ORB_PRIMARY_RGB = { r: 20, g: 60, b: 220 };    // vibrant deep blue (dark regions)
-const ORB_SECONDARY_RGB = { r: 40, g: 140, b: 255 };  // vivid bright blue (bright regions)
+// Orb colors (black theme for contrast on white bg)
+const ORB_PRIMARY_RGB = { r: 0, g: 0, b: 0 };        // pure black (dark regions)
+const ORB_SECONDARY_RGB = { r: 50, g: 50, b: 50 };    // dark gray (bright regions)
 
 // Shockwave tunables (triggered by beam impacts)
 const SHOCKWAVE_DURATION_S = 1.0;   // seconds

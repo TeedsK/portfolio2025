@@ -1,0 +1,423 @@
+/* src/pages/landing/styles/Projects.css */
+
+/* ========== Global guide variables ========== */
+:root {
+    --guide-color: #e0dcf1;
+    /* darker than #f2f0f9 */
+    --guide-width: 1px;
+    --guide-dash: 24px;
+    --projects-dash-offset: 0px;
+
+    --see-more-accent: #2563eb;
+}
+
+/* Section frame */
+.projects-section {
+    --section-pad: clamp(40px, 6vh, 80px);
+    position: relative;
+    width: 100%;
+    padding-block: var(--section-pad);
+    background: #f9f8fc;
+}
+
+.projects-inner {
+    position: relative;
+    /* for full-height right guide */
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(24px, 4vw, 48px);
+    align-items: start;
+    width: min(1200px, 92vw);
+    margin-inline: auto;
+}
+
+/* Full-height solid guide on the far right of the projects area (no gaps) */
+.projects-inner::after {
+    content: "";
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    bottom: calc(-1 * var(--section-pad));
+    right: 0;
+    width: var(--guide-width);
+    background: var(--guide-color);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ---------- Left column ---------- */
+.projects-left {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(16px, 2vh, 24px);
+    z-index: 0;
+    padding-left: 20px;
+    /* requested 20px padding on left */
+}
+
+/* Solid guide at far left of text column — full section height with negative offsets */
+.projects-left::before {
+    content: "";
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    bottom: calc(-1 * var(--section-pad));
+    left: 0;
+    width: var(--guide-width);
+    background: var(--guide-color);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Dashed guides overlay — full section height (no gaps) */
+.column-guides {
+    position: absolute;
+    top: calc(-1 * var(--section-pad));
+    bottom: calc(-1 * var(--section-pad));
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.column-guides .guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--guide-width);
+}
+
+.dash-line {
+    background-image: linear-gradient(to bottom,
+            var(--guide-color) 0,
+            var(--guide-color) calc(var(--guide-dash) / 2),
+            transparent calc(var(--guide-dash) / 2),
+            transparent var(--guide-dash));
+    background-size: var(--guide-width) var(--guide-dash);
+    background-repeat: repeat-y;
+    background-position: center calc(-1 * var(--projects-dash-offset));
+}
+
+.guide-center {
+    left: 50%;
+    transform: translateX(-0.5px);
+}
+
+.guide-right {
+    right: 0;
+}
+
+/* Content */
+.project-list {
+    margin-top: clamp(16px, 2vh, 24px);
+}
+
+/* Spacious project blocks to drive the focus band logic */
+.project-block {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: clamp(16px, 2vw, 24px);
+    align-items: center;
+    min-height: clamp(520px, 70vh, 780px);
+    margin-block: 18vh;
+    scroll-margin-top: 18vh;
+    z-index: 1;
+}
+
+.project-copy {
+    max-width: 54ch;
+}
+
+/* Meta row: logo + small project name */
+.project-meta {
+    display: flex;
+    align-items: center;
+    /* vertical align with the logo */
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.project-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    display: inline-block;
+}
+
+.project-name {
+    color: #000;
+    font-size: 16px;
+    line-height: 28px;
+    /* align visually with 28px logo height */
+    font-weight: 700;
+}
+
+/* Hide the old big title; keep for a11y/anchors */
+.sr-only {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Uniform spacing helper */
+.spaced {
+    margin: 20px 0;
+}
+
+/* Headline-like project description */
+.project-desc {
+    color: color-mix(in oklab, CanvasText 78%, transparent);
+    font-weight: 800;
+    /* requested 800 */
+    font-size: 30px;
+    /* requested 30px */
+}
+
+/* High‑level bullets — color & size per request */
+.project-bullets {
+    padding-left: 18px;
+    color: #425466;
+    /* requested color */
+    font-size: 17px;
+}
+
+.project-bullets li {
+    margin: 6px 0;
+}
+
+/* ---------- Actions ---------- */
+.project-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* See more */
+.see-more-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, CanvasText 55%, transparent);
+    margin: 20px 0 10px 0;
+    /* requested top/bottom spacing */
+}
+
+.see-more-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.see-more-line {
+    font-size: 14px;
+    color: color-mix(in oklab, CanvasText 80%, transparent);
+}
+
+.see-more-anchor {
+    color: var(--see-more-accent);
+    font-weight: 400;
+    /* requested 400 for links */
+    text-decoration: none;
+}
+
+.see-more-anchor:hover {
+    text-decoration: underline;
+}
+
+.see-more-sep {
+    color: #000;
+}
+
+.see-more-desc {
+    color: #000;
+    /* keep black per prior request */
+    font-weight: 500;
+}
+
+/* Tech chips — under see more. May be collapsed to a single row. */
+.project-tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.project-tech.is-collapsed {
+    max-height: var(--tech-collapsed-h, 32px);
+    overflow: hidden;
+}
+
+.project-tech.is-collapsed.spaced {
+    margin-bottom: 0;
+}
+
+/* pull the toggle closer */
+.project-tech.is-expanded {
+    max-height: none;
+}
+
+.tech-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: #f8fafc;
+    line-height: 1;
+}
+
+.tech-chip__icon {
+    width: 14px;
+    height: 14px;
+    display: block;
+    object-fit: contain;
+}
+
+/* Toggle button (outline removed on focus/active) */
+.view-all-tech {
+    background: transparent;
+    border: none;
+    color: var(--see-more-accent);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+    align-self: flex-start;
+    margin-top: 0;
+    outline: none;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.view-all-tech:focus,
+.view-all-tech:focus-visible,
+.view-all-tech:active {
+    outline: none;
+    box-shadow: none;
+    border: none;
+}
+
+/* Flip-word label styling */
+.toggle-label {
+    display: inline-flex;
+    align-items: baseline;
+}
+
+.label-prefix,
+.label-suffix {
+    display: inline-block;
+}
+
+.label-wordflip {
+    display: inline-block;
+    position: relative;
+    height: 1em;
+    line-height: 1em;
+    overflow: hidden;
+    vertical-align: baseline;
+    /* width is set via JS to the max of the two words to avoid layout jump */
+}
+
+.label-wordflip .word {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translateY(0%);
+    will-change: transform;
+}
+
+/* ---------- Right column (sticky animation pane) ---------- */
+.projects-right {
+    position: sticky;
+    top: clamp(24px, 10vh, 96px);
+    align-self: start;
+    height: 84vh;
+    min-height: 560px;
+    padding: 0;
+    background: transparent;
+    outline: none;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+    z-index: 5;
+}
+
+.viz-switcher {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    border-radius: 0;
+}
+
+/* Each viz is layered; only .is-active is visible */
+.viz-layer {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 360ms ease, transform 420ms cubic-bezier(.22, 1, .36, 1);
+    display: grid;
+    place-items: stretch;
+    padding: 0;
+    background: transparent;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.viz-layer.is-active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+/* Give HoloClean room on the right for popovers */
+.viz-layer[data-viz="holoclean"] .holo-root-split {
+    margin-right: clamp(25px, 4vw, 50px);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 980px) {
+    .projects-inner {
+        grid-template-columns: 1fr;
+    }
+
+    .projects-right {
+        position: relative;
+        top: 0;
+        height: auto;
+        min-height: 420px;
+    }
+
+    .viz-switcher {
+        min-height: 420px;
+    }
+
+    .project-block {
+        grid-template-columns: 1fr;
+    }
+
+    .viz-layer[data-viz="holoclean"] .holo-root-split {
+        margin-right: 12px;
+    }
+
+    /* Hide extra guides on narrow screens */
+    .column-guides {
+        display: none;
+    }
+
+    .projects-left::before {
+        opacity: 0.8;
+    }
+}

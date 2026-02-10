@@ -1,0 +1,219 @@
+/* SmartLinked showcase */
+
+.sl-root {
+    inline-size: 100%;
+    block-size: 100%;
+    display: grid;
+    place-items: center;
+}
+
+.sl-card {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+/* Profile stack = the white profile container */
+.sl-stack {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+    min-block-size: 420px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+    transform-origin: 50% 50%;
+}
+
+.sl-layer {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+}
+
+/* Profile layout */
+.sl-profile {
+    position: relative;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 96px 1fr;
+}
+
+.sl-banner {
+    block-size: 96px;
+    inline-size: 100%;
+}
+
+.sl-avatar {
+    position: absolute;
+    top: 56px;
+    left: 24px;
+    inline-size: 96px;
+    block-size: 96px;
+}
+
+.sl-avatar-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: color-mix(in oklab, Canvas 98%, transparent);
+}
+
+.sl-avatar-inner {
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+}
+
+.sl-content {
+    padding: 56px 24px 18px 24px;
+}
+
+.sl-name {
+    margin: 0 0 6px 0;
+    font-size: clamp(18px, 2.2vw, 20px);
+    color: color-mix(in oklab, CanvasText 88%, transparent);
+}
+
+.sl-headline {
+    margin: 0 0 10px 0;
+    font-weight: 600;
+    font-size: clamp(14px, 1.8vw, 16px);
+    color: color-mix(in oklab, CanvasText 74%, transparent);
+}
+
+.sl-bio {
+    color: color-mix(in oklab, CanvasText 70%, transparent);
+}
+
+.sl-bio p {
+    margin: 8px 0;
+    line-height: 1.55;
+}
+
+/* Prompt stays above overlay */
+.sl-prompt-float {
+    position: absolute;
+    z-index: 7;
+    width: min(560px, 92%);
+}
+
+.sl-prompt-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, CanvasText 58%, transparent);
+}
+
+.sl-prompt-input .ant-input {
+    padding: 12px 14px;
+    border-radius: 10px;
+}
+
+/* Skeleton overlay
+   - FULL WHITE BACKDROP ensures nothing shows through (even if a block is off by 1px)
+   - Blocks are rendered on top by AntD Skeletons
+*/
+.sl-skeletons {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 8;
+    /* above profile, below prompt (7) was too low; keep prompt above via z-index on prompt */
+    opacity: 0;
+    /* GSAP fades in */
+    background: #fff;
+    /* ← full mask eliminating any show-through */
+}
+
+/* Individual skeleton blocks sit on the white canvas; let AntD render the gray shimmer */
+.sl-skel-rect {
+    position: absolute;
+    background: transparent;
+    /* transparent here—white is already provided by .sl-skeletons */
+}
+
+/* Make AntD skeleton fill exactly and respect our border radius */
+.sl-skel-rect .ant-skeleton-element,
+.sl-skel-rect .ant-skeleton-button {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: inherit !important;
+    background-clip: padding-box !important;
+    display: block !important;
+}
+
+/* Icon transfer overlay */
+.sl-xfer-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+}
+
+/* behind skeletons */
+.sl-xfer-svg {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+.sl-xfer-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.sl-xfer-squares {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+}
+
+.sl-xfer-square {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+    box-shadow: 0 8px 24px color-mix(in oklab, CanvasText 10%, transparent);
+    transform-origin: 50% 50%;
+    transform: scale(0);
+    opacity: 0;
+}
+
+/* Icon base size */
+.sl-xfer-icon {
+    inline-size: 28px;
+    block-size: 28px;
+}
+
+/* Masked gradient icon for peripheral squares (NOT for smartLinked logo) */
+.sl-xfer-icon--masked {
+    inline-size: 28px;
+    block-size: 28px;
+    background: linear-gradient(90deg, #227de6, #d40b8a, #227de6);
+    background-size: 200% 100%;
+}
+
+/* Centered labels */
+.sl-xfer-label {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 12px;
+    line-height: 1.1;
+    color: color-mix(in oklab, CanvasText 60%, transparent);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/* Respect transparent panel background in the code panel wrapper */
+:where(.code-panel[data-panel="smartlinked"]) .sl-card {
+    background: transparent;
+}

@@ -1,0 +1,138 @@
+/* Root container */
+.kudo-root {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: stretch;
+    position: relative;
+    perspective: 1000px;
+}
+
+/* Grid */
+.kudo-grid {
+    position: relative;
+    inset: 0;
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: minmax(50px, 1fr);
+    z-index: 1;
+    /* Grid sits below overlay */
+}
+
+/* Tiles */
+.kudo-tile {
+    position: relative;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    will-change: transform, opacity;
+
+    /* Hidden by default for Phase 1 intro */
+    opacity: 0;
+    transform: scale(0);
+}
+
+/* Active state: raised, but still below overlay (overlay is z-index 100) */
+.kudo-tile.is-active {
+    z-index: 10;
+    border-color: rgba(15, 23, 42, 0.15);
+}
+
+/* Grid Spans */
+.tile-inventory {
+    grid-column: 1 / span 3;
+    grid-row: 1 / span 3;
+}
+
+.tile-captcha {
+    grid-column: 4 / span 3;
+    grid-row: 1 / span 2;
+}
+
+.tile-spoof {
+    grid-column: 5 / span 2;
+    grid-row: 3 / span 3;
+}
+
+.tile-servers {
+    grid-column: 1 / span 2;
+    grid-row: 4 / span 2;
+}
+
+.tile-converter {
+    grid-column: 3 / span 2;
+    grid-row: 4 / span 2;
+}
+
+/* Badge & Label */
+.kudo-tile__badge {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #db2777);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    display: grid;
+    place-items: center;
+    color: white;
+    font-weight: 800;
+    font-family: ui-monospace, monospace;
+    font-size: 16px;
+}
+
+.kudo-tile__label {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+}
+
+/* Overlay for Sub-Animations */
+.kudo-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    /* Strictly above all tiles */
+}
+
+@media (max-width: 980px) {
+    .kudo-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .tile-inventory {
+        grid-column: 1 / span 4;
+        grid-row: 1 / span 3;
+    }
+
+    .tile-captcha {
+        grid-column: 1 / span 2;
+        grid-row: 4 / span 2;
+    }
+
+    .tile-servers {
+        grid-column: 3 / span 2;
+        grid-row: 4 / span 2;
+    }
+
+    .tile-converter {
+        grid-column: 1 / span 2;
+        grid-row: 6 / span 2;
+    }
+
+    .tile-spoof {
+        grid-column: 3 / span 2;
+        grid-row: 6 / span 2;
+    }
+}

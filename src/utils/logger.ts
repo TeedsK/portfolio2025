@@ -1,6 +1,5 @@
 // src/utils/logger.ts
 
-/* eslint-disable no-console */
 
 const LOG_PREFIX = '[Portfolio2025]';
 
@@ -41,7 +40,5 @@ export const error = (message: string, errorContext?: unknown): void => {
         }
     }
 };
-
-/* eslint-enable no-console */
 
 // TODO: Enhance logger later if needed (e.g., different levels, conditional logging based on environment)

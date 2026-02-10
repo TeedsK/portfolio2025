@@ -1,66 +1,33 @@
 // src/types/index.ts
+import React from 'react';
+import { PathManager } from '../pages/landing/utils/path';
 
-/**
- * Type for activation data extracted from tensors.
- * Allows for scalars (number) and nested arrays up to 4 dimensions.
- */
+export interface Point {
+    x: number;
+    y: number;
+}
+
 export type ActivationDataValue = number | number[] | number[][] | number[][][] | number[][][][];
-
-/**
- * Structure for storing activation data, keyed by layer name.
- */
 export type ActivationData = Record<string, ActivationDataValue>;
 
-/**
- * Structure for storing extracted weights (example for Conv2D).
- */
 export interface Conv2DWeights {
     kernel: number[][][][]; // [h, w, in_channels, out_channels]
     bias: number[];         // [out_channels]
 }
 
-/**
- * Represents the bounding box data for a detected character.
- */
 export type BoundingBoxData = [number, number, number, number]; // x, y, w, h
-
-/**
- * Represents an item detected by segmentation - either a character box or a space (null).
- */
 export type ProcessableBox = BoundingBoxData | null;
-
-/**
- * Represents a single line of detected items (characters and spaces).
- */
 export type ProcessableLine = ProcessableBox[];
 
-/**
- * Structure for storing all extracted model weights, keyed by layer name.
- */
-export type ModelWeights = Record<string, Conv2DWeights /* | DenseWeights | ... */ >;
+export type ModelWeights = Record<string, Conv2DWeights>;
 
-// --- New Types for Typo Correction Backend ---
-
-/**
- * Represents the probability distribution for a single token's predicted tags.
- * Key is the tag name (e.g., "KEEP", "DELETE", "REPLACE_word"), value is the probability.
- */
-export interface TagProbabilities {
-    [tag: string]: number;
-}
-
-/**
- * Represents the detailed information for a single token from the typo correction backend.
- */
+export interface TagProbabilities { [tag: string]: number; }
 export interface TokenTypoDetail {
-    token: string;         // The original token
-    pred_tag: string;      // The predicted tag (e.g., "KEEP", "DELETE", "REPLACE_correctedword")
-    top_probs: TagProbabilities; // Top-k predicted tags and their probabilities
+    token: string;
+    pred_tag: string;
+    top_probs: TagProbabilities;
 }
 
-/**
- * Represents the overall response from the typo correction backend.
- */
 export interface TypoCorrectionResponse {
     original_sentence: string;
     corrected_sentence: string;
@@ -71,15 +38,113 @@ export interface TypoCorrectionResponse {
     message: string;
 }
 
-/**
- * Represents a part of the text to be displayed, including correction info for popovers.
- * This will be used to render the sentence with popovers on flagged words.
- */
 export interface DisplayTextPart {
-    text: string;          // The word or whitespace to display
+    text: string;
     isWhitespace: boolean;
-    isFlagged: boolean;    // True if the original token was changed or flagged by the model
-    originalToken?: string; // The original token if different from displayed text or if flagged
-    predictions?: TagProbabilities; // Predictions to show in the popover
-    predictedTag?: string; // The primary predicted tag for this token
+    isFlagged: boolean;
+    originalToken?: string;
+    predictions?: TagProbabilities;
+    predictedTag?: string;
+}
+
+export interface OcrDisplayLinePart {
+    id: string;
+    text: string;
+    isWhitespace: boolean;
+    isFlagged?: boolean;
+    ref: React.RefObject<HTMLSpanElement>;
+}
+
+export interface OcrDisplayLine {
+    id: string;
+    textDuringOcr: string;
+    parts: OcrDisplayLinePart[];
+    y: number;
+}
+
+/** Legacy stream character (not used in new flow, kept for compatibility) */
+export interface StreamCharacter {
+    id: string;
+    charImage: ImageData;
+    startX: number;
+    startY: number;
+    path: PathManager;
+    animationState: 'appearing' | 'traveling' | 'fading' | 'finished';
+    alpha: number;
+    scale: number;
+    gradientSet: string[];
+    headProgress: number;
+    tailProgress: number;
+    isRetractingColorOverride: boolean;
+    onFinished: () => void;
+}
+
+export interface AnimationWave {
+    id: string;
+    activations: ActivationData;
+    softmaxProbabilities: number[];
+    gradientSet: string[];
+}
+
+/** Beam used by ScanBeamViz in viewport pixels */
+// ...
+export interface ScanBeam {
+    id: string;
+    path: PathManager;
+    gradientSet: string[];
+    headProgress: number;
+    tailProgress: number;
+    alpha: number;
+    onFinished?: () => void;
+
+    /** NEW: document-anchored points so we can rebuild a scroll-safe path each frame */
+    docOrigin?: Point;
+    docElbow?: Point;
+    docTarget?: Point;
+    /** NEW: rounded corner radius for this path */
+    arcRadius?: number;
+    /** Normalized offset [-1,1] within the orb for impact position */
+    impactOffset?: { x: number; y: number };
+    /** Hue key used by orb ripples when the beam lands */
+    impactHue?: 'blue' | 'pink';
+}
+
+
+/** A recognized character (for placing under the scanned bounding box). */
+export interface RecognizedCharResult {
+    id: string;
+    box: BoundingBoxData;   // original image coords
+    char: string;           // predicted letter
+}
+
+// ---- 3D Neural Network Visualization Types ----
+
+export interface Point3D {
+    x: number;
+    y: number;
+    z: number;
+}
+
+export interface StaticNode3D {
+    id: string;
+    position: Point3D;
+    label?: string;
+    layer: 'input' | 'hidden' | 'output';
+}
+
+export interface StaticLine3D {
+    p0: Point3D;
+    p1: Point3D;
+    totalLength: number;
+    nodeId0: string;
+    nodeId1: string;
+}
+
+// Impact effect for ASCII planet system
+export interface ImpactEffect {
+    id: string;
+    surfacePoint: Point3D;       // 3D position on planet surface
+    currentRadius: number;       // expands from 0 to ~80px
+    alpha: number;               // fades from 1.0 to 0.0
+    impactTime: number;          // performance.now() when impact started
 }

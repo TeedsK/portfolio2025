@@ -2,6 +2,7 @@
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+  --header-height: 64px; 
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
@@ -24,10 +25,12 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  display: block;           /* reset Vite demo centering */
   min-width: 320px;
+  /* Full-viewport height with mobile-safe fallbacks */
   min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
 }
 
 h1 {

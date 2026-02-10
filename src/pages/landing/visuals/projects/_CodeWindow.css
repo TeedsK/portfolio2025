@@ -1,0 +1,155 @@
+/* Generic styles for the code-window look */
+.codewin {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    min-height: 0;
+    /* prevent grid/flex clamp surprises */
+}
+
+/* Dark terminal look (black body, blacker header) */
+.codewin--terminal {
+    background: #0b0b0f;
+    border: 1px solid #111215;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+}
+
+.codewin--terminal .codewin-head {
+    background: #07080b;
+    border-bottom: 1px solid #121319;
+}
+
+.codewin--terminal .codewin-dot:nth-child(1) {
+    color: #ef4444;
+}
+
+/* red */
+.codewin--terminal .codewin-dot:nth-child(2) {
+    color: #f59e0b;
+}
+
+/* yellow */
+.codewin--terminal .codewin-dot:nth-child(3) {
+    color: #22c55e;
+}
+
+/* green */
+
+.codewin-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: color-mix(in oklab, CanvasText 8%, transparent);
+    border-bottom: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
+}
+
+.codewin-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .9;
+}
+
+.codewin-title {
+    margin-left: 6px;
+    font-size: 12px;
+    letter-spacing: .02em;
+    color: color-mix(in oklab, CanvasText 70%, transparent);
+}
+
+/* Terminal body: fixed viewport, content anchored bottom */
+.codewin-body {
+    padding: 12px 14px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 4px;
+    overflow: hidden;
+    /* never grow; we collapse old lines */
+    min-height: 0;
+}
+
+/* Syntax-ish colors */
+:root {
+    --c-fg: color-mix(in oklab, CanvasText 82%, transparent);
+    --c-sub: color-mix(in oklab, CanvasText 62%, transparent);
+    --c-accent: #4ade80;
+    --c-purple: #a78bfa;
+    --c-blue: #60a5fa;
+    --c-orange: #fb923c;
+    --c-pink: #f472b6;
+}
+
+/* Each terminal row wrapper (we collapse its height to animate removal) */
+.term-line {
+    overflow: hidden;
+    transition: height 0.32s ease, opacity 0.24s ease;
+    will-change: height, opacity;
+}
+
+/* Rendered text line (wrapping enabled) */
+.type-line {
+    white-space: pre-wrap;
+    /* wrap long commands to multiple lines */
+    word-break: break-word;
+    /* break long tokens if needed */
+    overflow-wrap: anywhere;
+    color: rgba(255,255,255,.6);
+    line-height: 1.5;
+    font-size: 13px;
+}
+
+/* Dim previous blocks */
+.type-line.dim {
+    color: var(--c-sub);
+    color: rgba(255,255,255,.6);
+}
+
+/* Active typing line highlight */
+.type-line.active {
+    color: #e5e7eb;
+    /* brighter while typing */
+}
+
+/* caret */
+.caret {
+    display: inline-block;
+    width: 9px;
+    height: 1.1em;
+    translate: 0 .2em;
+    background: currentColor;
+    animation: blink 1s steps(1) infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* HoloClean split:
+   The terminal (row 1) is now locked to a pixel height set by --holo-term-h.
+   We compute and update that value from HoloCleanCode via ResizeObserver. */
+.holo-root-split {
+    display: grid;
+    grid-template-rows: var(--holo-term-h, 40%) 1fr;
+    /* px when set, % fallback */
+    height: 100%;
+    gap: 12px;
+    overflow: visible;
+    min-height: 0;
+}
+
+@media (max-width: 980px) {
+    .holo-root-split {
+        grid-template-rows: var(--holo-term-h, 45%) 1fr;
+        gap: 10px;
+    }
+}

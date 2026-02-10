@@ -1,0 +1,380 @@
+/* src/pages/landing/styles/HeroLayout.css */
+
+/* =========================
+   Full-screen hero wrapper
+   ========================= */
+.hero {
+    min-height: calc(95vh - var(--header-height));
+    min-height: calc(95svh - var(--header-height));
+    min-height: calc(95dvh - var(--header-height));
+    height: calc(100vh - var(--header-height));
+    height: calc(100svh - var(--header-height));
+    height: calc(100dvh - var(--header-height));
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: clamp(12px, 3vh, 28px) clamp(16px, 4vw, 40px);
+    box-sizing: border-box;
+    position: relative;
+    isolation: isolate;
+}
+
+.split-layout {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+    width: 100%;
+    align-items: center;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.left-column {
+    flex: 0 0 40%;
+    min-width: 40%;
+    max-width: 40%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    position: relative;
+    z-index: 2;
+}
+
+.right-column {
+    flex: 0 0 60%;
+    min-width: 60%;
+    max-width: 60%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 2;
+}
+
+.media-column {
+    width: min(650px, 100%);
+    padding: 15px 15px 0 15px;
+    margin: 0;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.media-container {
+    position: relative;
+    display: block;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    background: transparent;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.media-container img,
+.media-container video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    object-fit: contain;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.screenshot-underlay {
+    position: absolute;
+    inset: 0;
+    object-fit: contain;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.media-container video {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+
+.ocr-output-container,
+.ocr-output-container--below {
+    width: 100%;
+    padding: 10px 15px;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left;
+}
+
+.ocr-output-container--below {
+    margin-top: 12px;
+}
+
+/* Unified OCR typography */
+:root {
+    --ocr-font-family: "Inter", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+    --ocr-font-size: 18px;
+    --ocr-line-height: 1.35;
+    --ocr-letter-spacing: 0;
+}
+
+.ocr-typography {
+    font-family: var(--ocr-font-family);
+    font-size: var(--ocr-font-size);
+    line-height: var(--ocr-line-height);
+    letter-spacing: var(--ocr-letter-spacing);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "liga" 0, "kern" 1;
+    /* keep metrics stable */
+    font-variant-ligatures: none;
+}
+
+.ocr-output-scale-shell {
+    transform-origin: left top;
+    will-change: transform;
+}
+
+.ocr-output-body {
+    position: relative;
+    /* helps the height-lock + smooth release */
+    display: block;
+    width: 100%;
+}
+
+/* EXACTLY the same wrapper is used for both typed and animated states */
+.ocr-output-text {
+    display: block;
+    width: 100%;
+    margin: 0;
+    /* avoid <p> default margins causing a nudge */
+    white-space: pre-wrap;
+    min-height: 1.5em;
+    font-size: inherit;
+    color: #333;
+    line-height: inherit;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+}
+
+/* Cursor no longer affects layout width */
+.blinking-cursor {
+    display: inline-block;
+    width: 0;
+    /* don't push text to a new line */
+    height: 0.95em;
+    vertical-align: -0.1em;
+    border-left: 2px solid currentColor;
+    animation: blink 1s step-start 0s infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Title */
+h1 {
+    font-size: 3.2em;
+    line-height: 1.1;
+    margin: 0;
+}
+
+.portfolio-title {
+    text-align: left;
+    margin: 0;
+    font-size: 5em;
+    margin-left: 30px;
+    font-weight: 700;
+}
+
+/* Right column container remains chrome-free */
+.steps-extra-info-container {
+    border: none;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+/* Media collapse effect */
+.shrink-vertical {
+    transform-origin: top center;
+    animation: shrinkVertical 0.45s ease-in forwards;
+}
+
+@keyframes shrinkVertical {
+    to {
+        transform: scaleY(0);
+        opacity: 0;
+    }
+}
+
+/* Character beams overlay (fixed to viewport) */
+.character-overlay {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 1;
+    /* below the columns (z=2), above page background */
+    overflow: visible;
+}
+
+.character-stream-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* =========================
+   ASCII Snake Glow Effect
+   ========================= */
+.ascii-snake-glow {
+    filter:
+        drop-shadow(0 0 4px rgba(100, 255, 150, 0.35))
+        drop-shadow(0 0 12px rgba(100, 255, 150, 0.25))
+        drop-shadow(0 0 24px rgba(100, 255, 150, 0.15));
+    transition: filter 0.3s ease;
+}
+
+/* Subtle pulsing glow animation */
+@keyframes snakeGlowPulse {
+    0%, 100% {
+        filter:
+            drop-shadow(0 0 4px rgba(100, 255, 150, 0.35))
+            drop-shadow(0 0 12px rgba(100, 255, 150, 0.25))
+            drop-shadow(0 0 24px rgba(100, 255, 150, 0.15));
+    }
+    50% {
+        filter:
+            drop-shadow(0 0 6px rgba(100, 255, 150, 0.4))
+            drop-shadow(0 0 16px rgba(100, 255, 150, 0.3))
+            drop-shadow(0 0 32px rgba(100, 255, 150, 0.2));
+    }
+}
+
+.ascii-snake-glow--animated {
+    animation: snakeGlowPulse 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ascii-snake-glow--animated {
+        animation: none;
+    }
+}
+
+/* =========================
+   Responsive adjustments
+   ========================= */
+@media (max-width: 1024px) {
+    .split-layout {
+        flex-direction: column;
+        gap: 1.5rem;
+        align-items: stretch;
+    }
+
+    .left-column,
+    .right-column {
+        min-width: 100%;
+        max-width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .portfolio-title {
+        margin-left: 0;
+        font-size: clamp(2.2rem, 6.5vw, 3.2rem);
+    }
+}
+
+/* ===== Link reveal (animate like Role/Team labels) ===== */
+.impact-link-reveal {
+    /* JS sets overflow + max-height for the reveal */
+    margin-top: 8px;
+}
+
+.impact-link {
+    display: inline-block;
+    font-size: 0.95rem;
+    color: #aeb0b4;
+    /* required */
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(174, 176, 180, 0.6);
+    transition: color 0.2s ease, border-color 0.2s ease;
+    will-change: opacity, transform, max-height;
+}
+
+.impact-link:hover,
+.impact-link:focus {
+    color: #5f94ff;
+    border-bottom-color: #5f94ff;
+}
+
+.impact-link:focus-visible {
+    outline: 2px solid #79b8ff;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* ===== Social icons row ===== */
+.impact-socials {
+    --impact-icon-size: 28px;
+    /* tweak if needed */
+    margin-top: 10px;
+    display: inline-flex;
+    gap: 12px;
+    margin-top: 20px;
+    align-items: center;
+    /* JS animates max-height/opacity/y to match label style */
+    will-change: opacity, transform, max-height;
+}
+
+.impact-social {
+    position: relative;
+    width: var(--impact-icon-size);
+    height: var(--impact-icon-size);
+    aspect-ratio: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    cursor: pointer;
+    /* JS sets opacity/y for each child during stagger */
+}
+
+.impact-social__img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* Tint layer uses a mask (generated at runtime) that excludes pure/near white */
+.impact-social__tint {
+    position: absolute;
+    inset: 0;
+    background-color: #aeb0b4;
+    /* text color spec */
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+}
+
+/* On hover, fade the tint so original PNG colors show through */
+.impact-social:hover .impact-social__tint,
+.impact-social:focus .impact-social__tint {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .impact-link,
+    .impact-socials {
+        transition: none;
+    }
+}

@@ -103,6 +103,10 @@ export interface ScanBeam {
     docTarget?: Point;
     /** NEW: rounded corner radius for this path */
     arcRadius?: number;
+    /** Normalized offset [-1,1] within the orb for impact position */
+    impactOffset?: { x: number; y: number };
+    /** Hue key used by orb ripples when the beam lands */
+    impactHue?: 'blue' | 'pink';
 }
 
 
@@ -144,4 +148,3 @@ export interface ImpactEffect {
     alpha: number;               // fades from 1.0 to 0.0
     impactTime: number;          // performance.now() when impact started
 }
-

@@ -31,9 +31,9 @@ const ORB_PRIMARY_RGB = { r: 0, g: 0, b: 0 };        // pure black (dark regions
 const ORB_SECONDARY_RGB = { r: 50, g: 50, b: 50 };    // dark gray (bright regions)
 
 // Shockwave tunables (triggered by beam impacts)
-const SHOCKWAVE_DURATION_S = 1.0;   // seconds
-const SHOCKWAVE_SPEED = 25;         // grid units per second
-const SHOCKWAVE_WIDTH = 3;          // grid units thickness of the ring
+const SHOCKWAVE_DURATION_S = 0.55;  // seconds
+const SHOCKWAVE_SPEED = 18;         // grid units per second
+const SHOCKWAVE_WIDTH = 1.4;        // grid units thickness of the ring
 
 // Snake orbits - scaled for larger orb
 const ORBIT_RADIUS = 200;  // distance from planet center (tighter to orb)
@@ -78,6 +78,89 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   const t = clamp01((x - edge0) / (edge1 - edge0 || 1));
   return t * t * (3 - 2 * t);
+};
+
+type RippleHue = NonNullable<ImpactEffect['hue']>;
+const RIPPLE_HUE_BY_KEY: Record<RippleHue, number> = {
+  blue: 200,
+  pink: 330,
+};
+
+const parseRgba = (value: string): { r: number; g: number; b: number; a: number } | null => {
+  const m = value.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/i);
+  if (!m) return null;
+  return {
+    r: Math.round(Math.max(0, Math.min(255, Number(m[1])))),
+    g: Math.round(Math.max(0, Math.min(255, Number(m[2])))),
+    b: Math.round(Math.max(0, Math.min(255, Number(m[3])))),
+    a: clamp01(m[4] === undefined ? 1 : Number(m[4])),
+  };
+};
+
+const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: number } => {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  const l = (max + min) / 2;
+  let h = 0;
+
+  if (d !== 0) {
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  return { h, s: s * 100, l: l * 100 };
+};
+
+const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: number } => {
+  const hn = ((h % 360) + 360) % 360;
+  const sn = clamp01(s / 100);
+  const ln = clamp01(l / 100);
+  const c = (1 - Math.abs(2 * ln - 1)) * sn;
+  const x = c * (1 - Math.abs((hn / 60) % 2 - 1));
+  const m = ln - c / 2;
+
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (hn < 60) [r1, g1, b1] = [c, x, 0];
+  else if (hn < 120) [r1, g1, b1] = [x, c, 0];
+  else if (hn < 180) [r1, g1, b1] = [0, c, x];
+  else if (hn < 240) [r1, g1, b1] = [0, x, c];
+  else if (hn < 300) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
+
+  return {
+    r: Math.round((r1 + m) * 255),
+    g: Math.round((g1 + m) * 255),
+    b: Math.round((b1 + m) * 255),
+  };
+};
+
+const applyHueOverlay = (baseColor: string, targetHue: RippleHue, strength: number): string => {
+  const parsed = parseRgba(baseColor);
+  if (!parsed) return baseColor;
+
+  const overlayStrength = clamp01(strength * 1.45 + 0.12);
+  const { s, l } = rgbToHsl(parsed.r, parsed.g, parsed.b);
+  const boostedSaturation = Math.min(98, Math.max(68, s + 40 + overlayStrength * 35));
+  const boostedLightness = Math.min(78, Math.max(l + 8, 30 + overlayStrength * 26));
+  const tintRgb = hslToRgb(RIPPLE_HUE_BY_KEY[targetHue], boostedSaturation, boostedLightness);
+  const blend = clamp01(0.35 + overlayStrength * 0.45);
+  const r = Math.round(parsed.r + (tintRgb.r - parsed.r) * blend);
+  const g = Math.round(parsed.g + (tintRgb.g - parsed.g) * blend);
+  const b = Math.round(parsed.b + (tintRgb.b - parsed.b) * blend);
+  const a = Math.min(1, parsed.a + overlayStrength * 0.08);
+
+  return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
 };
 
 // Get ASCII character based on depth and lighting
@@ -314,12 +397,19 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
       if (!impactedBeamIdsRef.current.has(beam.id)) {
         impactedBeamIdsRef.current.add(beam.id);
 
+        // Position impact at beam's offset within the orb
+        const ox = beam.impactOffset?.x ?? 0;
+        const oy = beam.impactOffset?.y ?? 0;
+        const impactX = planetCenterX + ox * ORB_RADIUS * 0.7;
+        const impactY = planetCenterY + oy * ORB_RADIUS * ORB_Y_ASPECT * 0.7;
+
         const impact: ImpactEffect = {
           id: `impact-${Date.now()}-${Math.random()}`,
-          surfacePoint: { x: planetCenterX, y: planetCenterY, z: PLANET_RADIUS * 0.8 },
+          surfacePoint: { x: impactX, y: impactY, z: PLANET_RADIUS * 0.8 },
           currentRadius: 0,
           alpha: 1,
           impactTime: performance.now(),
+          hue: beam.impactHue,
         };
         impactsRef.current.push(impact);
         onBeamImpact?.(impact.surfacePoint);
@@ -418,9 +508,11 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
           const n = noise2D(x / ORB_NOISE_SCALE, y / ORB_NOISE_SCALE + t);
           const nNorm = (n + 1) * 0.5; // normalize to 0..1
 
-          let v = clamp01(nNorm * radial * 1.4);
+          const baseV = clamp01(nNorm * radial * 1.4);
 
-          // Apply shockwaves from beam impacts
+          // Apply shockwaves as hue overlays on top of existing orb ASCII.
+          let rippleStrength = 0;
+          let rippleHue: RippleHue | null = null;
           for (const impact of impactsRef.current) {
             const elapsed = (nowMs - impact.impactTime) / 1000;
             if (elapsed < 0 || elapsed > SHOCKWAVE_DURATION_S) continue;
@@ -435,19 +527,22 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
               const waveFade = 1 - elapsed / SHOCKWAVE_DURATION_S;
               const waveIntensity = (1 - distFromWave / SHOCKWAVE_WIDTH) * waveFade;
               const edgeFade = 1 - Math.pow(norm, 3);
-              v = Math.min(1, v + waveIntensity * 0.8 * edgeFade);
+              const ringStrength = Math.min(1, waveIntensity * edgeFade * 1.35);
+              if (impact.hue && ringStrength > rippleStrength) {
+                rippleStrength = ringStrength;
+                rippleHue = impact.hue;
+              }
             }
           }
 
-          v = clamp01(v);
-
-          // Glyph selection from intensity
-          const glyphIdx = Math.min(ORB_GLYPHS.length - 1, Math.floor(v * (ORB_GLYPHS.length - 1)));
+          // Glyph selection stays tied to base orb intensity only.
+          const glyphIdx = Math.min(ORB_GLYPHS.length - 1, Math.floor(baseV * (ORB_GLYPHS.length - 1)));
           const glyph = ORB_GLYPHS[glyphIdx];
           if (glyph === ' ') continue; // skip empty cells
 
-          // Color: interpolate primary → secondary based on intensity
-          const color = getOrbColor(v);
+          // Color: preserve base orb color and apply a hue-only ripple overlay when needed.
+          const baseColor = getOrbColor(baseV);
+          const color = rippleHue ? applyHueOverlay(baseColor, rippleHue, rippleStrength) : baseColor;
 
           // Priority: center is closest to viewer, edges further away
           const priority = distNorm * PLANET_RADIUS;
@@ -512,9 +607,9 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
         }
 
         // Final head position: smoothly blend orbital → freePos
-        let headX = orbitalPos.x + (snake.freePos.x - orbitalPos.x) * freeBlend;
-        let headY = orbitalPos.y + (snake.freePos.y - orbitalPos.y) * freeBlend;
-        let headZ = orbitalPos.z + (snake.freePos.z - orbitalPos.z) * freeBlend;
+        const headX = orbitalPos.x + (snake.freePos.x - orbitalPos.x) * freeBlend;
+        const headY = orbitalPos.y + (snake.freePos.y - orbitalPos.y) * freeBlend;
+        const headZ = orbitalPos.z + (snake.freePos.z - orbitalPos.z) * freeBlend;
 
         // Calculate tangent
         let tangentX = 1, tangentY = 0;
@@ -640,7 +735,6 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
     return () => cancelAnimationFrame(animId);
 
     // IMPORTANT: scrollProgress is intentionally NOT in deps to prevent RAF teardown/restart.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [width, height, gridWidth, gridHeight, centerX, centerY, planetCenterX, planetCenterY, getGrid, onBeamImpact]);
 
   return (

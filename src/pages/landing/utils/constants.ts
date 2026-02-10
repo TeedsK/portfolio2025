@@ -23,17 +23,13 @@ export const OCR_PROCESSING_DELAY_MS = 150;
 
 // New Gradient Sets for specific OCR sources
 export const TEXT_SCREENSHOT_GRADIENTS: string[][] = [
-    ['#5a10b5', '#5a10b5'], // Original Set 1: Blue to Purple
-    ['#227de6', '#227de6'], // Original Set 2: Pink to Cyan
-    ['#12dea7', '#12dea7'], // Purple to Dark Purple
-    ['#d40b8a', '#d40b8a']
+    // Bottom scanned text: fixed light pink
+    ['#F9A8D4', '#F9A8D4']
 ];
 
 export const HELLO_WELCOME_GRADIENTS: string[][] = [
-    ['#7020e8', '#7020e8'], // Orange to Yellow
-    ['#227de6', '#227de6'], // Original Set 2: Pink to Cyan
-    ['#12dea7', '#12dea7'],  // Purple to Dark Purple
-    ['#d40b8a', '#d40b8a']
+    // Top scanned text: fixed light blue
+    ['#7DD3FC', '#7DD3FC']
 ];
 
 // Fallback if needed, or can be removed if new ones cover all cases.

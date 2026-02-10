@@ -26,6 +26,7 @@ const GRAPH_CANVAS_HEIGHT = 700;
 const BOTTOM_Y_LIFT_PX = 30;
 
 type OcrSourceIndex = 0 | 1;
+type ImpactHue = 'blue' | 'pink';
 
 type HeroProps = {
     onNeuralNetFaded?: () => void;
@@ -80,6 +81,16 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
     // Container refs for layout
     const neuralContainerRef = useRef<HTMLDivElement>(null);
     const hasTriggeredFadeRef = useRef(false);
+
+    // Fast-refresh-safe reset: ensure scan media starts visible after code updates/remounts.
+    useEffect(() => {
+        setHasCollapsedMedia1(false);
+        setHasCollapsedMedia2(false);
+        setCollapseImage1(false);
+        setCollapseImage2(false);
+        setIsVideoPlaying1(true);
+        setIsVideoPlaying2(true);
+    }, []);
 
     // --- Link + Icons (masking + reveal) ---
     const aiImpactLinkRef = useRef<HTMLAnchorElement | null>(null);
@@ -368,6 +379,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
     const addBeamFromScanner = useCallback((
         originViewport: Point | null,
         gradientSet: string[],
+        impactHue: ImpactHue,
         onAnimFinishedCallback: (processedCharString: string, gradientSet: string[]) => void,
         processedChar: string
     ) => {
@@ -378,8 +390,19 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
         // Target planet center instead of input node
         const planetCenter = calcPlanetCenter(netW, GRAPH_CANVAS_HEIGHT);
 
-        // Compute *viewport* entry point for the planet, then convert to document space
-        const planetEntryViewport = { x: Math.round(netRect.left + planetCenter.x), y: Math.round(netRect.top + planetCenter.y) };
+        // Random offset within the orb so beams hit different spots
+        const impactAngle = Math.random() * Math.PI * 2;
+        const impactR = Math.sqrt(Math.random()) * 0.7; // uniform distribution, stay within 70%
+        const impactOffsetNorm = { x: Math.cos(impactAngle) * impactR, y: Math.sin(impactAngle) * impactR };
+        const impactPixelRadius = 120; // approximate orb pixel radius for beam targeting
+        const pixelOffsetX = impactOffsetNorm.x * impactPixelRadius;
+        const pixelOffsetY = impactOffsetNorm.y * impactPixelRadius;
+
+        // Compute *viewport* entry point for the planet (with random offset), then convert to document space
+        const planetEntryViewport = {
+            x: Math.round(netRect.left + planetCenter.x + pixelOffsetX),
+            y: Math.round(netRect.top + planetCenter.y + pixelOffsetY),
+        };
 
         // Convert origin + entry to *document* space so the path stays stable while scrolling
         const sx = window.scrollX || 0;
@@ -397,21 +420,24 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
         const p1 = { x: elbowDoc.x - sx, y: elbowDoc.y - sy };
         const p2 = { x: targetDoc.x - sx, y: targetDoc.y - sy };
         const path = new PathManager(p0, p1, p2, arcRadius);
+        const beamGradient = [...gradientSet];
 
         setBeams(prev => ([
             ...prev,
             {
                 id: `beam-${Date.now()}-${Math.random()}`,
                 path,
-                gradientSet,
+                gradientSet: beamGradient,
                 headProgress: 0,
                 tailProgress: 0,
                 alpha: 1,
-                onFinished: () => onAnimFinishedCallback(processedChar, gradientSet),
+                onFinished: () => onAnimFinishedCallback(processedChar, beamGradient),
                 docOrigin: originDoc,
                 docElbow: elbowDoc,
                 docTarget: targetDoc,
                 arcRadius,
+                impactOffset: impactOffsetNorm,
+                impactHue,
             }
         ]));
     }, [calcPlanetCenter]);
@@ -422,6 +448,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
             addBeamFromScanner(
                 scanAnchorViewportRef1.current,
                 TEXT_SCREENSHOT_GRADIENTS[idx],
+                'pink',
                 ocrProcess1.onCharAnimationFinished,
                 ocrProcess1.currentChar
             );
@@ -435,6 +462,7 @@ const Hero: React.FC<HeroProps> = ({ onNeuralNetFaded, onBeamsUpdate }) => {
             addBeamFromScanner(
                 scanAnchorViewportRef2.current,
                 HELLO_WELCOME_GRADIENTS[idx],
+                'blue',
                 ocrProcess2.onCharAnimationFinished,
                 ocrProcess2.currentChar
             );

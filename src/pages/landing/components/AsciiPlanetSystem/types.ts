@@ -31,6 +31,7 @@ export interface ImpactEffect {
   currentRadius: number;       // expands from 0 to ~80px
   alpha: number;               // fades from 1.0 to 0.0
   impactTime: number;          // performance.now() when impact started
+  hue?: 'blue' | 'pink';       // hue overlay key for the ripple
 }
 
 export interface GridCell {

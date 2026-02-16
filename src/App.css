@@ -174,8 +174,7 @@
   margin: 0;
   /* Removed default margin, handled by media-wrapper */
   max-width: 100%;
-  background-color: #f0f0f0;
-  /* Fallback background if media doesn't cover */
+  background-color: transparent;
   padding: 4px;
   /* Padding to hide black lines */
   box-sizing: border-box;
@@ -245,9 +244,6 @@
 .steps-extra-info-container {
   margin-top: 20px;
   padding: 15px;
-  border: 1px solid #f0f0f0;
-  border-radius: 8px;
-  background-color: #fdfdfd;
   min-height: 150px;
 }
 

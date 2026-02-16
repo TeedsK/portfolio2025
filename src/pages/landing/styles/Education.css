@@ -1,0 +1,196 @@
+/* src/pages/landing/styles/Education.css */
+
+/* ========== Education Section ========== */
+.edu-section {
+    --edu-pad: clamp(48px, 8vh, 96px);
+    position: relative;
+    width: 100%;
+    padding-block: var(--edu-pad);
+    background: #ffffff;
+}
+
+.edu-inner {
+    width: min(1200px, 92vw);
+    margin-inline: auto;
+}
+
+/* ---------- Section header ---------- */
+.edu-header {
+    text-align: center;
+    margin-bottom: clamp(32px, 5vh, 56px);
+}
+
+.edu-title {
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+}
+
+.edu-subtitle {
+    font-size: clamp(15px, 1.6vw, 18px);
+    color: #64748b;
+    margin: 0;
+    font-weight: 400;
+}
+
+/* ---------- Unified timeline + course grid ---------- */
+.edu-timeline-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0;
+    margin-bottom: clamp(40px, 6vh, 72px);
+}
+
+/* Horizontal track line spanning all columns */
+.edu-track {
+    position: absolute;
+    top: 18px; /* vertically centered on the dots */
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #e2e8f0;
+    transform-origin: left center;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Each semester column */
+.edu-sem {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0 6px;
+}
+
+/* Vertical dash on the track (replaces dot) */
+.edu-tick {
+    width: 2px;
+    height: 14px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+    margin-bottom: 12px;
+    position: relative;
+    top: 11px; /* center on track line */
+}
+
+/* University logo badge — replaces the tick where present */
+.edu-logo-badge {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    position: relative;
+    top: 5px;
+}
+
+/* Semester label */
+.edu-sem-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #0f172a;
+    text-align: left;
+    margin-top: 16px;
+    margin-bottom: 10px;
+    line-height: 1.3;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+}
+
+/* Course list under each semester */
+.edu-courses {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 8px;
+}
+
+.edu-course {
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.4;
+    text-align: left;
+    padding: 3px 0;
+}
+
+.edu-course-code {
+    display: block;
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 11px;
+}
+
+.edu-course-name {
+    display: block;
+    font-weight: 400;
+    color: #64748b;
+    font-size: 11px;
+}
+
+/* ---------- Neural net section ---------- */
+.edu-nn-heading {
+    font-size: clamp(20px, 2.5vw, 26px);
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+}
+
+.edu-nn-subtitle {
+    font-size: 14px;
+    color: #64748b;
+    margin: 0 0 clamp(16px, 2vh, 24px);
+}
+
+.edu-nn-wrapper {
+    width: 100%;
+    min-height: 280px;
+    border-radius: 12px;
+    background: #0f172a;
+    overflow: hidden;
+}
+
+/* ---------- Responsive: tablet (4-col, 2 rows) ---------- */
+@media (max-width: 900px) {
+    .edu-timeline-grid {
+        grid-template-columns: repeat(4, 1fr);
+        row-gap: 32px;
+    }
+
+    /* Hide the continuous track on wrapped layouts */
+    .edu-track {
+        display: none;
+    }
+
+    .edu-dot {
+        top: 0;
+    }
+}
+
+/* ---------- Responsive: mobile (2-col) ---------- */
+@media (max-width: 600px) {
+    .edu-timeline-grid {
+        grid-template-columns: repeat(2, 1fr);
+        row-gap: 28px;
+    }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .edu-track,
+    .edu-sem,
+    .edu-nn-wrapper {
+        animation: none !important;
+        transition: none !important;
+    }
+}

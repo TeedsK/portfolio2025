@@ -4,6 +4,7 @@ import Hero from './sections/Hero';
 import WorkExperience from './sections/WorkExperience';
 import AStarCreativity from './sections/AStarCreativity';
 import Projects from './sections/Projects';
+import Education from './sections/Education';
 import { AsciiPlanetSystem } from './components/AsciiPlanetSystem';
 import { ScanBeam } from '../../types';
 
@@ -115,6 +116,7 @@ function LandingPage() {
       {/* Height now randomizes on mount & animates with GSAP */}
       <AStarCreativity />
       <Projects />
+      <Education />
     </>
   );
 }

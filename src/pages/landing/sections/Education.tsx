@@ -2,7 +2,7 @@
 import React, { useRef, useLayoutEffect, useState, useEffect, useCallback } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import EducationNeuralNet from '../visuals/EducationNeuralNet';
+import EducationRLDrift from '../visuals/EducationRLDrift';
 import '../styles/Education.css';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -89,29 +89,33 @@ const Education: React.FC = () => {
     const sectionRef = useRef<HTMLElement>(null);
     const trackRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<HTMLDivElement>(null);
-    const nnWrapperRef = useRef<HTMLDivElement>(null);
+    const rlWrapperRef = useRef<HTMLDivElement>(null);
 
-    // Neural net responsive sizing
-    const [nnSize, setNnSize] = useState({ width: 800, height: 340 });
+    // RL visual responsive sizing
+    const [rlSize, setRlSize] = useState({ width: 900, height: 620 });
 
-    const measureNn = useCallback(() => {
-        if (nnWrapperRef.current) {
-            const rect = nnWrapperRef.current.getBoundingClientRect();
+    const measureRl = useCallback(() => {
+        if (rlWrapperRef.current) {
+            const rect = rlWrapperRef.current.getBoundingClientRect();
             if (rect.width > 0) {
-                setNnSize({
-                    width: Math.floor(rect.width),
-                    height: Math.max(280, Math.floor(rect.width * 0.36)),
-                });
+                const w = Math.floor(rect.width);
+
+                // Give the RL viz enough vertical space for sim + telemetry + charts.
+                // Clamp so it doesn’t become huge on very large screens.
+                const desired = Math.floor(w * 0.58);
+                const h = Math.max(520, Math.min(720, desired));
+
+                setRlSize({ width: w, height: h });
             }
         }
     }, []);
 
     useEffect(() => {
-        measureNn();
-        const ro = new ResizeObserver(measureNn);
-        if (nnWrapperRef.current) ro.observe(nnWrapperRef.current);
+        measureRl();
+        const ro = new ResizeObserver(measureRl);
+        if (rlWrapperRef.current) ro.observe(rlWrapperRef.current);
         return () => ro.disconnect();
-    }, [measureNn]);
+    }, [measureRl]);
 
     // GSAP entrance animations
     useLayoutEffect(() => {
@@ -155,10 +159,10 @@ const Education: React.FC = () => {
                 });
             }
 
-            // Neural net wrapper: fade in
-            if (nnWrapperRef.current) {
+            // RL wrapper: fade in
+            if (rlWrapperRef.current) {
                 gsap.fromTo(
-                    nnWrapperRef.current,
+                    rlWrapperRef.current,
                     { opacity: 0, y: 20 },
                     {
                         opacity: 1,
@@ -166,7 +170,7 @@ const Education: React.FC = () => {
                         duration: 0.7,
                         ease: 'power2.out',
                         scrollTrigger: {
-                            trigger: nnWrapperRef.current,
+                            trigger: rlWrapperRef.current,
                             start: 'top 85%',
                             toggleActions: 'play none none none',
                         },
@@ -179,16 +183,13 @@ const Education: React.FC = () => {
     }, []);
 
     return (
-        <section
-            id="education"
-            className="edu-section"
-            aria-labelledby="edu-title"
-            ref={sectionRef}
-        >
+        <section id="education" className="edu-section" aria-labelledby="edu-title" ref={sectionRef}>
             <div className="edu-inner">
                 {/* Header */}
                 <div className="edu-header">
-                    <h2 id="edu-title" className="edu-title">Education</h2>
+                    <h2 id="edu-title" className="edu-title">
+                        Education
+                    </h2>
                     <p className="edu-subtitle">
                         B.S. Computer Science — University of Utah, with exchange at UNSW Sydney
                     </p>
@@ -222,20 +223,16 @@ const Education: React.FC = () => {
                     ))}
                 </div>
 
-                {/* Neural Network Visualization */}
-                <h3 className="edu-nn-heading">Neural Network</h3>
-                <p className="edu-nn-subtitle">
-                    A feedforward classifier trained on handwritten digits — 784 pixel inputs, two hidden layers, 10 output classes.
+                {/* Reinforcement Learning Visualization */}
+                <h3 className="edu-rl-heading">Reinforcement Learning</h3>
+                <p className="edu-rl-subtitle">
+                    A top-down drift-training simulator (RWD) with dense telemetry and live training curves.
+                    The agent learns smooth, planned drifts—initiating at corner entry, holding controlled slip,
+                    then cleanly exiting.
                 </p>
-                <div
-                    className="edu-nn-wrapper"
-                    ref={nnWrapperRef}
-                    style={{ height: nnSize.height }}
-                >
-                    <EducationNeuralNet
-                        width={nnSize.width}
-                        height={nnSize.height}
-                    />
+
+                <div className="edu-rl-wrapper" ref={rlWrapperRef} style={{ height: rlSize.height }}>
+                    <EducationRLDrift width={rlSize.width} height={rlSize.height} />
                 </div>
             </div>
         </section>

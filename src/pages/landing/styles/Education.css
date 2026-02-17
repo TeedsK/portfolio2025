@@ -47,7 +47,8 @@
 /* Horizontal track line spanning all columns */
 .edu-track {
     position: absolute;
-    top: 18px; /* vertically centered on the dots */
+    top: 18px;
+    /* vertically centered on the dots */
     left: 0;
     right: 0;
     height: 2px;
@@ -75,7 +76,8 @@
     flex-shrink: 0;
     margin-bottom: 12px;
     position: relative;
-    top: 11px; /* center on track line */
+    top: 11px;
+    /* center on track line */
 }
 
 /* University logo badge — replaces the tick where present */
@@ -137,8 +139,8 @@
     font-size: 11px;
 }
 
-/* ---------- Neural net section ---------- */
-.edu-nn-heading {
+/* ---------- RL section ---------- */
+.edu-rl-heading {
     font-size: clamp(20px, 2.5vw, 26px);
     font-weight: 700;
     color: #0f172a;
@@ -146,17 +148,17 @@
     letter-spacing: -0.01em;
 }
 
-.edu-nn-subtitle {
+.edu-rl-subtitle {
     font-size: 14px;
     color: #64748b;
     margin: 0 0 clamp(16px, 2vh, 24px);
 }
 
-.edu-nn-wrapper {
+.edu-rl-wrapper {
     width: 100%;
-    min-height: 280px;
+    min-height: 520px;
     border-radius: 12px;
-    background: #0f172a;
+    background: #ffffff;
     overflow: hidden;
 }
 
@@ -187,9 +189,10 @@
 
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
+
     .edu-track,
     .edu-sem,
-    .edu-nn-wrapper {
+    .edu-rl-wrapper {
         animation: none !important;
         transition: none !important;
     }

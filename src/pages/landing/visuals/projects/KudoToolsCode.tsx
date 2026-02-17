@@ -18,14 +18,15 @@ type TileDef = {
     label: string;
     mono: string;
     className: string; // mapped to CSS grid placement
+    img: string;
 };
 
 const TILES: TileDef[] = [
-    { key: 'inventory', label: 'inventory', mono: 'I', className: 'tile-inventory' },
-    { key: 'captcha', label: 'CAPTCHA harvesters', mono: 'C', className: 'tile-captcha' },
-    { key: 'servers', label: 'server management', mono: 'S', className: 'tile-servers' },
-    { key: 'converter', label: 'profile converter', mono: 'P', className: 'tile-converter' },
-    { key: 'spoof', label: 'browser spoof', mono: 'B', className: 'tile-spoof' },
+    { key: 'inventory', label: 'inventory', mono: 'I', className: 'tile-inventory', img: '/images/kudo/items/tool_inventory.png' },
+    { key: 'captcha', label: 'CAPTCHA harvesters', mono: 'C', className: 'tile-captcha', img: '/images/kudo/items/tool_captcha.png' },
+    { key: 'servers', label: 'server management', mono: 'S', className: 'tile-servers', img: '/images/kudo/items/tool_server.png' },
+    { key: 'converter', label: 'profile converter', mono: 'P', className: 'tile-converter', img: '/images/kudo/items/tool_profile_converter.png' },
+    { key: 'spoof', label: 'browser spoof', mono: 'B', className: 'tile-spoof', img: '/images/kudo/items/tool_proxy.png' },
 ];
 
 // Randomize array order
@@ -276,6 +277,7 @@ const KudoToolsCode: React.FC<{ play: boolean }> = ({ play }) => {
                         aria-label={`${t.label} tile`}
                     >
                         <div className="kudo-tile__badge" aria-hidden><span className="mono">{t.mono}</span></div>
+                        <img className="kudo-tile__img" src={t.img} alt={t.label} draggable={false} />
                         <div className="kudo-tile__label">{t.label}</div>
                     </div>
                 ))}

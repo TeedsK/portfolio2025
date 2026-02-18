@@ -41,7 +41,7 @@
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     gap: 0;
-    margin-bottom: clamp(40px, 6vh, 72px);
+    margin-bottom: clamp(20px, 3vh, 36px);
 }
 
 /* Horizontal track line spanning all columns */
@@ -139,27 +139,14 @@
     font-size: 11px;
 }
 
-/* ---------- RL section ---------- */
-.edu-rl-heading {
-    font-size: clamp(20px, 2.5vw, 26px);
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0 0 8px;
-    letter-spacing: -0.01em;
-}
-
-.edu-rl-subtitle {
-    font-size: 14px;
-    color: #64748b;
-    margin: 0 0 clamp(16px, 2vh, 24px);
+/* ---------- Full-width RL section - sits outside edu-inner ---------- */
+.edu-rl-section {
+    width: 100%;
+    padding-top: clamp(14px, 2.5vh, 26px);
 }
 
 .edu-rl-wrapper {
     width: 100%;
-    min-height: 520px;
-    border-radius: 12px;
-    background: #ffffff;
-    overflow: hidden;
 }
 
 /* ---------- Responsive: tablet (4-col, 2 rows) ---------- */
@@ -192,7 +179,7 @@
 
     .edu-track,
     .edu-sem,
-    .edu-rl-wrapper {
+    .edu-rl-section {
         animation: none !important;
         transition: none !important;
     }

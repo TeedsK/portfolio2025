@@ -35,7 +35,7 @@ type SmokePuff = {
     circles: { ox: number; oy: number; r: number }[];
 };
 
-type SkidPt = { lx: number; ly: number; rx: number; ry: number; alpha: number; gap: boolean };
+type SkidPt = { lx: number; ly: number; rx: number; ry: number; alpha: number; gap: boolean; time: number };
 
 type UiSnapshot = {
     generation: number;
@@ -213,7 +213,7 @@ class NeuralNet {
 /** =========================
  *  Track: rounded-rect centerline (supports multiple shapes)
  *  ========================= */
-type TrackType = 'oval' | 'chicane' | 'circuit';
+type TrackType = 'oval' | 'chicane' | 'circuit' | 'infinity';
 
 class Track {
     points: Vec2[] = [];
@@ -231,11 +231,12 @@ class Track {
 
     build(w: number, h: number, type: TrackType = 'oval'): void {
         const base = Math.min(w, h);
-        this.roadWidth = clamp(base * 0.22, 76, 136);
+        this.roadWidth = clamp(base * 0.165, 58, 102);
 
         let rawPts: Vec2[];
         if (type === 'chicane') rawPts = this._buildChicane(w, h, base);
         else if (type === 'circuit') rawPts = this._buildCircuit(w, h, base);
+        else if (type === 'infinity') rawPts = this._buildInfinity(w, h);
         else rawPts = this._buildOval(w, h, base);
 
         // Remove near-duplicates
@@ -359,6 +360,30 @@ class Track {
         // Top-left corner
         arcPoints(L + r1, T + r1, r1, Math.PI, (3 * Math.PI) / 2, cs, pts);
 
+        return pts;
+    }
+
+    private _buildInfinity(w: number, h: number): Vec2[] {
+        const cx = w / 2;
+        const cy = h / 2;
+        // Lemniscate of Bernoulli: x = a√2·cos(t)/(1+sin²(t)), y = a√2·sin(t)cos(t)/(1+sin²(t))
+        // x-range = [-a√2, a√2], y-range ≈ [-a√2·0.5, a√2·0.5]
+        const pad = 48;
+        const halfW = (w - pad * 2) / 2;
+        const halfH = (h - pad * 2) / 2;
+        const a = halfW / Math.SQRT2;                           // x-range exactly fills canvas
+        const yStretch = Math.min(halfH / (a * 0.5), 1.6);    // stretch y to use height
+
+        const steps = 240;
+        const pts: Vec2[] = [];
+        for (let i = 0; i < steps; i++) {
+            const t = (i / steps) * Math.PI * 2;
+            const denom = 1 + Math.sin(t) * Math.sin(t);
+            pts.push({
+                x: cx + a * Math.SQRT2 * Math.cos(t) / denom,
+                y: cy + a * Math.SQRT2 * Math.sin(t) * Math.cos(t) / denom * yStretch,
+            });
+        }
         return pts;
     }
 
@@ -728,18 +753,38 @@ class Agent {
                 this.skidPts.push({
                     lx: lrx, ly: lry, rx: rrx, ry: rry,
                     alpha: clamp01(driftIntensity * 1.6) * 0.55,
-                    gap: false
+                    gap: false,
+                    time: performance.now()
                 });
             }
         } else {
             // Add gap marker so lines don't connect across non-drifting gaps
             const last = this.skidPts[this.skidPts.length - 1];
             if (last && !last.gap) {
-                this.skidPts.push({ lx: last.lx, ly: last.ly, rx: last.rx, ry: last.ry, alpha: 0, gap: true });
+                this.skidPts.push({ lx: last.lx, ly: last.ly, rx: last.rx, ry: last.ry, alpha: 0, gap: true, time: performance.now() });
             }
         }
 
-        // Cap skid trail length
+        // Remove fully aged-out points from front (time-based)
+        const EXPIRE_MS = 3400;
+        const now2 = performance.now();
+        while (this.skidPts.length > 1) {
+            const front = this.skidPts[0]!;
+            if (!front.gap && now2 - front.time > EXPIRE_MS) {
+                this.skidPts.shift();
+            } else if (front.gap) {
+                // Remove gap markers at front only if the next real point is also expired
+                const next = this.skidPts[1];
+                if (next && !next.gap && now2 - next.time > EXPIRE_MS) {
+                    this.skidPts.shift();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        // Hard cap as safety net
         if (this.skidPts.length > 900) this.skidPts.splice(0, 80);
 
         // Drift hold for heavy smoke
@@ -748,8 +793,8 @@ class Agent {
 
         // Spawn smoke on heavy drifts
         this.smokeTimer += dt;
-        const heavy = driftIntensity > 0.72 && this.driftHold > 0.5 && (hb > 0.2 || speed > 120);
-        if (heavy && this.smokeTimer > 0.09) {
+        const heavy = driftIntensity > 0.38 && this.driftHold > 0.18 && (hb > 0.06 || speed > 65);
+        if (heavy && this.smokeTimer > 0.06) {
             this.smokeTimer = 0;
             const sp = Math.max(1, speed);
             spawnSmoke(this.smoke, rng, lrx, lry, -this.car.vx / sp, -this.car.vy / sp);
@@ -825,8 +870,8 @@ class GeneticDriftTrainer {
 
     private _resizeCar(w: number, h: number): void {
         const base = Math.min(w, h);
-        this.carLength = clamp(base * 0.085, 42, 56);
-        this.carWidth = clamp(base * 0.044, 20, 30);
+        this.carLength = clamp(base * 0.064, 32, 42);
+        this.carWidth = clamp(base * 0.033, 15, 22);
         this.wheelbase = this.carLength * 0.62;
     }
 
@@ -992,15 +1037,15 @@ class GeneticDriftTrainer {
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
-        drawFaintGrid(ctx, w, h);
         drawTrack(ctx, this.track);
 
         // Sort by fitness: champion first
         const sorted = [...this.pop].sort((a, b) => b.fitness - a.fitness);
 
         // Draw skid marks for all agents (under cars)
+        const skidNow = performance.now();
         for (const a of this.pop) {
-            if (a.skidPts.length > 1) drawSkidMarks(ctx, a.skidPts);
+            if (a.skidPts.length > 1) drawSkidMarks(ctx, a.skidPts, skidNow);
         }
 
         // Draw smoke
@@ -1091,16 +1136,6 @@ class GeneticDriftTrainer {
 /** =========================
  *  Rendering helpers
  *  ========================= */
-function drawFaintGrid(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const sp = 34;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15,23,42,0.042)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= w; x += sp) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); }
-    for (let y = 0; y <= h; y += sp) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); }
-    ctx.restore();
-}
-
 function drawTrack(ctx: CanvasRenderingContext2D, track: Track): void {
     const pts = track.points;
     if (pts.length < 2) return;
@@ -1116,21 +1151,23 @@ function drawTrack(ctx: CanvasRenderingContext2D, track: Track): void {
     };
 
     // Outer border
-    drawPath(); ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = track.roadWidth + 12; ctx.stroke();
+    drawPath(); ctx.strokeStyle = 'rgba(226,232,240,1)'; ctx.lineWidth = track.roadWidth + 12; ctx.stroke();
     // Road surface
-    drawPath(); ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = track.roadWidth; ctx.stroke();
+    drawPath(); ctx.strokeStyle = 'rgba(226,232,240,0.35)'; ctx.lineWidth = track.roadWidth; ctx.stroke();
     // Centerline dashes
-    drawPath(); ctx.strokeStyle = 'rgba(100,116,139,0.32)'; ctx.setLineDash([7, 11]); ctx.lineWidth = 1.2; ctx.stroke();
+    drawPath(); ctx.strokeStyle = 'rgba(226,232,240,0.65)'; ctx.setLineDash([7, 11]); ctx.lineWidth = 1.2; ctx.stroke();
     ctx.setLineDash([]);
 
     ctx.restore();
 }
 
-function drawSkidMarks(ctx: CanvasRenderingContext2D, pts: SkidPt[]): void {
+function drawSkidMarks(ctx: CanvasRenderingContext2D, pts: SkidPt[], now: number): void {
     if (pts.length < 2) return;
     ctx.save();
     ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
+
+    const FADE_MS = 3200;   // full fade duration in ms
 
     const n = pts.length;
     for (let i = 0; i < n - 1; i++) {
@@ -1138,14 +1175,22 @@ function drawSkidMarks(ctx: CanvasRenderingContext2D, pts: SkidPt[]): void {
         const b = pts[i + 1]!;
         if (a.gap || b.gap) continue;
 
-        // Fade older marks toward transparent
-        const ageFrac = i / n;
-        const alpha = a.alpha * (0.15 + 0.85 * (1 - ageFrac * ageFrac));
-        ctx.strokeStyle = `rgba(148,163,184,${alpha})`;
+        // Age-based fade: oldest (front) fades first
+        const age = now - a.time; // ms since this point was created
+        if (age > FADE_MS) continue; // fully faded, skip
 
-        // Left tire
+        // normalizedAge: 0 = just created, 1 = fully faded
+        const ageFade = clamp01(1 - age / FADE_MS);
+
+        // Also apply position-based fade (newer segments still visible even if nearby old ones faded)
+        // This creates the sequential "head disappears first" look
+        const posFade = clamp01((i + 1) / Math.max(1, n));
+
+        const alpha = a.alpha * ageFade * (0.4 + 0.6 * posFade);
+        if (alpha < 0.005) continue;
+
+        ctx.strokeStyle = `rgba(148,163,184,${alpha})`;
         ctx.beginPath(); ctx.moveTo(a.lx, a.ly); ctx.lineTo(b.lx, b.ly); ctx.stroke();
-        // Right tire
         ctx.beginPath(); ctx.moveTo(a.rx, a.ry); ctx.lineTo(b.rx, b.ry); ctx.stroke();
     }
     ctx.restore();
@@ -1157,7 +1202,7 @@ function drawSmoke(ctx: CanvasRenderingContext2D, smoke: SmokePuff[]): void {
         const t = clamp01(p.age / p.life);
         const scale = lerp(0.7, 1.8, smoothstep(0, 1, t));
         const alpha = Math.pow(1 - t, 1.8) * 0.22;
-        ctx.fillStyle = `rgba(148,163,184,${alpha})`;
+        ctx.fillStyle = `rgba(226,232,240,${alpha})`;
         for (const c of p.circles) {
             ctx.beginPath();
             ctx.arc(p.x + c.ox * scale, p.y + c.oy * scale, c.r * scale, 0, TAU);
@@ -1285,12 +1330,15 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 }
 
 function drawSimOverlay(ctx: CanvasRenderingContext2D, _w: number, gen: number, alive: number, total: number, bestFit: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    const w = ctx.canvas.width / dpr;
+    const h = ctx.canvas.height / dpr;
     ctx.save();
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    ctx.fillStyle = 'rgba(15,23,42,0.65)';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`GEN ${gen}   ALIVE ${alive}/${total}   BEST FIT ${bestFit > -Infinity ? bestFit.toFixed(1) : '—'}`, 10, 10);
+    ctx.fillStyle = 'rgba(148,163,184,0.8)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`GEN ${gen}   ALIVE ${alive}/${total}   BEST FIT ${bestFit > -Infinity ? bestFit.toFixed(1) : '—'}`, w / 2, h - 10);
     ctx.restore();
 }
 
@@ -1452,8 +1500,8 @@ function fmt(x: number, d = 2): string { return x.toFixed(d); }
 /** =========================
  *  React Component
  *  ========================= */
-const TRACK_TYPES: TrackType[] = ['oval', 'chicane', 'circuit'];
-const TRACK_LABELS: Record<TrackType, string> = { oval: 'Oval', chicane: 'Chicane', circuit: 'Circuit' };
+const TRACK_TYPES: TrackType[] = ['oval', 'chicane', 'circuit', 'infinity'];
+const TRACK_LABELS: Record<TrackType, string> = { oval: 'Oval', chicane: 'Chicane', circuit: 'Circuit', infinity: '∞ Infinity' };
 
 const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1496,11 +1544,10 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
         steer: 0, throttle: 0, handbrake: 0, reward: 0, fitness: 0,
     }));
 
-    const compact = width < 840;
-
-    const rootStyle = useMemo<React.CSSProperties>(() => ({
-        width, height, flexDirection: compact ? 'column' : 'row',
-    }), [width, height, compact]);
+    // Root is full-width column; only the sim canvas needs an explicit height
+    const simStyle = useMemo<React.CSSProperties>(() => ({
+        height,
+    }), [height]);
 
     // Ensure trainer is created
     const ensureTrainer = useCallback((w: number, h: number) => {
@@ -1624,17 +1671,30 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     const status = running ? 'TRAINING' : 'PAUSED';
 
     return (
-        <div className="rl-root" ref={rootRef} style={rootStyle}>
-            {/* Simulation canvas */}
-            <div className="rl-sim" ref={simWrapRef}>
+        <div className="rl-root" ref={rootRef}>
+            {/* Simulation canvas — full width, fixed height */}
+            <div className="rl-sim" ref={simWrapRef} style={simStyle}>
                 <canvas ref={simCanvasRef} className="rl-sim-canvas" />
             </div>
 
-            {/* Right panel */}
+            {/* Bottom row: description left, stats hub right */}
+            <div className="rl-bottom">
+                <div className="rl-info">
+                    <h3 className="rl-info-heading">Reinforcement Learning</h3>
+                    <p className="rl-info-body">
+                        A neuroevolution drift trainer where eight neural-network agents compete
+                        each generation on a rear-wheel-drive track. Top performers survive,
+                        recombine, and mutate—progressively learning to initiate controlled
+                        oversteer at corner entry, sustain a precise slip angle through the apex,
+                        and exit cleanly without spinning out. Use the jump buttons to
+                        fast-forward through generations and watch the skill evolve in real time.
+                    </p>
+                </div>
+
+            {/* Stats hub */}
             <div className="rl-panel">
                 <div className="rl-controls">
                     <div className="rl-controls-top">
-                        <div className="rl-title">RL DRIFT — NEUROEVOLUTION</div>
                         <div className="rl-status">
                             <span className={`rl-dot ${running ? 'is-on' : ''}`} />
                             {status}
@@ -1742,6 +1802,7 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                     </div>
                 </div>
             </div>
+            </div>{/* /rl-bottom */}
         </div>
     );
 };

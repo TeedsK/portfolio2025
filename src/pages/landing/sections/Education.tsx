@@ -92,19 +92,15 @@ const Education: React.FC = () => {
     const rlWrapperRef = useRef<HTMLDivElement>(null);
 
     // RL visual responsive sizing
-    const [rlSize, setRlSize] = useState({ width: 900, height: 620 });
+    const [rlSize, setRlSize] = useState({ width: 900, height: 420 });
 
     const measureRl = useCallback(() => {
         if (rlWrapperRef.current) {
             const rect = rlWrapperRef.current.getBoundingClientRect();
             if (rect.width > 0) {
                 const w = Math.floor(rect.width);
-
-                // Give the RL viz enough vertical space for sim + telemetry + charts.
-                // Clamp so it doesn’t become huge on very large screens.
-                const desired = Math.floor(w * 0.58);
-                const h = Math.max(520, Math.min(720, desired));
-
+                // Sim is full-width now; use a shallower aspect ratio
+                const h = Math.max(300, Math.min(440, Math.floor(w * 0.3)));
                 setRlSize({ width: w, height: h });
             }
         }
@@ -159,7 +155,7 @@ const Education: React.FC = () => {
                 });
             }
 
-            // RL wrapper: fade in
+            // RL section: fade in
             if (rlWrapperRef.current) {
                 gsap.fromTo(
                     rlWrapperRef.current,
@@ -222,18 +218,11 @@ const Education: React.FC = () => {
                         </div>
                     ))}
                 </div>
+            </div>
 
-                {/* Reinforcement Learning Visualization */}
-                <h3 className="edu-rl-heading">Reinforcement Learning</h3>
-                <p className="edu-rl-subtitle">
-                    A top-down drift-training simulator (RWD) with dense telemetry and live training curves.
-                    The agent learns smooth, planned drifts—initiating at corner entry, holding controlled slip,
-                    then cleanly exiting.
-                </p>
-
-                <div className="edu-rl-wrapper" ref={rlWrapperRef} style={{ height: rlSize.height }}>
-                    <EducationRLDrift width={rlSize.width} height={rlSize.height} />
-                </div>
+            {/* Full-width RL section - outside edu-inner */}
+            <div className="edu-rl-section" ref={rlWrapperRef}>
+                <EducationRLDrift width={rlSize.width} height={rlSize.height} />
             </div>
         </section>
     );

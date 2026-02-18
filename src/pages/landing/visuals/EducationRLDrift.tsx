@@ -2,28 +2,79 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import '../styles/EducationRLDrift.css';
 
-type Props = {
-    width: number;
-    height: number;
+/** =========================
+ *  Types
+ *  ========================= */
+type Props = { width: number; height: number };
+type Vec2 = { x: number; y: number };
+
+type TrackSample = {
+    px: number; py: number;
+    tx: number; ty: number;
+    nx: number; ny: number;
+    signedDist: number;
+    dist: number;
+    progress: number;
+    curvature: number;
+    turnSign: number;
+};
+
+type CarState = {
+    x: number; y: number;
+    vx: number; vy: number;
+    heading: number;
+    omega: number;       // yaw rate (rad/s) — gives inertia to drifts
+    steerAngle: number;
+    wheelSpin: number;
+};
+
+type SmokePuff = {
+    x: number; y: number;
+    vx: number; vy: number;
+    age: number; life: number;
+    circles: { ox: number; oy: number; r: number }[];
+};
+
+type SkidPt = { lx: number; ly: number; rx: number; ry: number; alpha: number; gap: boolean };
+
+type UiSnapshot = {
+    generation: number;
+    totalSteps: number;
+    aliveAgents: number;
+    populationSize: number;
+
+    bestFitness: number;
+    currentBestFitness: number;
+    avgFitness: number;
+
+    skill: number;
+    mutSigma: number;
+
+    speed: number;
+    slipDeg: number;
+    headingErrDeg: number;
+    trackError: number;
+    driftIntensity: number;
+    yawRate: number;
+
+    steer: number;
+    throttle: number;
+    handbrake: number;
+    reward: number;
+    fitness: number;
 };
 
 /** =========================
- *  Small math helpers
+ *  Math helpers
  *  ========================= */
 const TAU = Math.PI * 2;
 const FIXED_DT = 1 / 60;
 
-function clamp(x: number, a: number, b: number): number {
-    return Math.max(a, Math.min(b, x));
-}
-function clamp01(x: number): number {
-    return clamp(x, 0, 1);
-}
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t;
-}
-function smoothstep(edge0: number, edge1: number, x: number): number {
-    const t = clamp01((x - edge0) / (edge1 - edge0));
+function clamp(x: number, a: number, b: number): number { return Math.max(a, Math.min(b, x)); }
+function clamp01(x: number): number { return clamp(x, 0, 1); }
+function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
+function smoothstep(e0: number, e1: number, x: number): number {
+    const t = clamp01((x - e0) / (e1 - e0));
     return t * t * (3 - 2 * t);
 }
 function wrapAngle(rad: number): number {
@@ -32,126 +83,138 @@ function wrapAngle(rad: number): number {
     while (a < -Math.PI) a += TAU;
     return a;
 }
-function radToDeg(r: number): number {
-    return (r * 180) / Math.PI;
-}
-function degToRad(d: number): number {
-    return (d * Math.PI) / 180;
-}
-function hypot(x: number, y: number): number {
-    return Math.sqrt(x * x + y * y);
-}
-function signNonZero(x: number): number {
-    return x === 0 ? 1 : Math.sign(x);
-}
+function radToDeg(r: number): number { return (r * 180) / Math.PI; }
+function degToRad(d: number): number { return (d * Math.PI) / 180; }
+function hypot(x: number, y: number): number { return Math.sqrt(x * x + y * y); }
 
-type Vec2 = { x: number; y: number };
-
-type TrackSample = {
-    // closest point on centerline
-    px: number;
-    py: number;
-    // tangent (unit)
-    tx: number;
-    ty: number;
-    // normal (unit, left of tangent)
-    nx: number;
-    ny: number;
-    // signed distance from centerline
-    signedDist: number;
-    // absolute distance
-    dist: number;
-    // progress along centerline [0..totalLength)
-    progress: number;
-    // curvature estimate at this location
-    curvature: number;
-    // sign of turn at this location (-1, 0, +1)
-    turnSign: number;
-};
-
+/** =========================
+ *  RNG (Mulberry32)
+ *  ========================= */
 class RNG {
     private seed: number;
     private spare: number | null = null;
-
-    constructor(seed = 0x12345678) {
-        this.seed = seed >>> 0;
-    }
-
-    /** Mulberry32 */
+    constructor(seed = 0x12345678) { this.seed = seed >>> 0; }
     next(): number {
         let t = (this.seed += 0x6d2b79f5);
         t = Math.imul(t ^ (t >>> 15), t | 1);
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
-
     normal(mean = 0, std = 1): number {
-        // Box–Muller with cached spare
-        if (this.spare !== null) {
-            const z = this.spare;
-            this.spare = null;
-            return mean + z * std;
-        }
-        let u = 0;
-        let v = 0;
-        // avoid 0
+        if (this.spare !== null) { const z = this.spare; this.spare = null; return mean + z * std; }
+        let u = 0, v = 0;
         while (u === 0) u = this.next();
         while (v === 0) v = this.next();
         const mag = Math.sqrt(-2.0 * Math.log(u));
         const z0 = mag * Math.cos(TAU * v);
-        const z1 = mag * Math.sin(TAU * v);
-        this.spare = z1;
+        this.spare = mag * Math.sin(TAU * v);
         return mean + z0 * std;
     }
 }
 
 /** =========================
- *  Ring buffer for step traces
+ *  RingBuffer
  *  ========================= */
 class RingBuffer {
     private buf: number[];
     private idx = 0;
     private filled = false;
-
-    constructor(private capacity: number) {
-        this.buf = new Array(capacity).fill(0);
-    }
-
-    clear(): void {
-        this.idx = 0;
-        this.filled = false;
-        this.buf.fill(0);
-    }
-
+    constructor(private capacity: number) { this.buf = new Array(capacity).fill(0); }
+    clear(): void { this.idx = 0; this.filled = false; this.buf.fill(0); }
     push(v: number): void {
         this.buf[this.idx] = v;
         this.idx = (this.idx + 1) % this.capacity;
         if (this.idx === 0) this.filled = true;
     }
-
-    size(): number {
-        return this.filled ? this.capacity : this.idx;
-    }
-
-    /** i=0 oldest ... i=size-1 newest */
+    size(): number { return this.filled ? this.capacity : this.idx; }
     at(i: number): number {
         const size = this.size();
         if (size === 0) return 0;
-        const start = this.filled ? this.idx : 0;
-        const j = (start + i) % this.capacity;
-        return this.buf[j] ?? 0;
+        return this.buf[((this.filled ? this.idx : 0) + i) % this.capacity] ?? 0;
     }
-
-    latest(): number {
-        const size = this.size();
-        if (size === 0) return 0;
-        return this.at(size - 1);
-    }
+    latest(): number { return this.size() === 0 ? 0 : this.at(this.size() - 1); }
 }
 
 /** =========================
- *  Track: rounded-rect centerline
+ *  Neural Network  (9 → 16 → 16 → 3)
  *  ========================= */
+const NN_ARCH = [9, 16, 16, 3] as const;
+
+function nnWeightCount(arch: readonly number[]): number {
+    let n = 0;
+    for (let l = 0; l < arch.length - 1; l++) n += arch[l] * arch[l + 1] + arch[l + 1];
+    return n;
+}
+
+class NeuralNet {
+    readonly arch: readonly number[];
+    readonly w: Float32Array;
+
+    constructor(arch: readonly number[], rng?: RNG) {
+        this.arch = arch;
+        this.w = new Float32Array(nnWeightCount(arch));
+        if (rng) this._initXavier(rng);
+    }
+
+    private _initXavier(rng: RNG): void {
+        let off = 0;
+        for (let l = 0; l < this.arch.length - 1; l++) {
+            const n_in = this.arch[l];
+            const n_out = this.arch[l + 1];
+            const std = Math.sqrt(2.0 / n_in);
+            for (let i = 0; i < n_in * n_out; i++) this.w[off + i] = rng.normal(0, std);
+            off += n_in * n_out + n_out;
+        }
+    }
+
+    forward(input: Float32Array): Float32Array {
+        let cur = input;
+        let off = 0;
+        for (let l = 0; l < this.arch.length - 1; l++) {
+            const n_in = this.arch[l];
+            const n_out = this.arch[l + 1];
+            const nxt = new Float32Array(n_out);
+            const bOff = off + n_in * n_out;
+            for (let j = 0; j < n_out; j++) {
+                let s = this.w[bOff + j];
+                for (let i = 0; i < n_in; i++) s += cur[i] * this.w[off + i * n_out + j];
+                nxt[j] = Math.tanh(s);
+            }
+            cur = nxt;
+            off += n_in * n_out + n_out;
+        }
+        return cur;
+    }
+
+    static clone(net: NeuralNet): NeuralNet {
+        const r = new NeuralNet(net.arch);
+        r.w.set(net.w);
+        return r;
+    }
+
+    static mutate(net: NeuralNet, sigma: number, rng: RNG, rate = 0.12): NeuralNet {
+        const r = NeuralNet.clone(net);
+        for (let i = 0; i < r.w.length; i++) {
+            if (rng.next() < rate) r.w[i] += rng.normal(0, sigma);
+            if (rng.next() < 0.02) r.w[i] = rng.normal(0, 1.0); // random reset
+        }
+        return r;
+    }
+
+    static crossover(a: NeuralNet, b: NeuralNet, rng: RNG): NeuralNet {
+        const r = NeuralNet.clone(a);
+        for (let i = 0; i < r.w.length; i++) if (rng.next() < 0.5) r.w[i] = b.w[i];
+        return r;
+    }
+
+    static random(rng: RNG): NeuralNet { return new NeuralNet(NN_ARCH, rng); }
+}
+
+/** =========================
+ *  Track: rounded-rect centerline (supports multiple shapes)
+ *  ========================= */
+type TrackType = 'oval' | 'chicane' | 'circuit';
+
 class Track {
     points: Vec2[] = [];
     tangents: Vec2[] = [];
@@ -160,115 +223,34 @@ class Track {
     curvature: number[] = [];
     turnSign: number[] = [];
     totalLength = 1;
+    roadWidth = 120;
 
-    roadWidth = 120; // in px, tuned on build()
-
-    private tmpPointOut: Vec2 = { x: 0, y: 0 };
-
-    constructor(w: number, h: number) {
-        this.build(w, h);
+    constructor(w: number, h: number, type: TrackType = 'oval') {
+        this.build(w, h, type);
     }
 
-    build(w: number, h: number): void {
+    build(w: number, h: number, type: TrackType = 'oval'): void {
         const base = Math.min(w, h);
+        this.roadWidth = clamp(base * 0.22, 76, 136);
 
-        // Corridor width around centerline (visual + off-track detection)
-        this.roadWidth = clamp(base * 0.23, 78, 140);
-
-        // Centerline rounded-rect bounds
-        const pad = clamp(base * 0.18, 46, 86);
-        const rect = {
-            x: pad,
-            y: pad,
-            w: w - 2 * pad,
-            h: h - 2 * pad,
-        };
-
-        const r = Math.min(base * 0.20, rect.w / 2 - 2, rect.h / 2 - 2);
-        const cornerSteps = clamp(Math.floor(base / 14), 10, 22);
-        const edgeSteps = clamp(Math.floor(base / 18), 10, 20);
-
-        const pts: Vec2[] = [];
-
-        const push = (x: number, y: number) => pts.push({ x, y });
-
-        // Top edge (left->right)
-        for (let i = 0; i <= edgeSteps; i++) {
-            const t = i / edgeSteps;
-            push(lerp(rect.x + r, rect.x + rect.w - r, t), rect.y);
-        }
-        // Top-right arc (-90..0)
-        arcPoints(
-            rect.x + rect.w - r,
-            rect.y + r,
-            r,
-            -Math.PI / 2,
-            0,
-            cornerSteps,
-            pts
-        );
-        // Right edge (top->bottom)
-        for (let i = 0; i <= edgeSteps; i++) {
-            const t = i / edgeSteps;
-            push(rect.x + rect.w, lerp(rect.y + r, rect.y + rect.h - r, t));
-        }
-        // Bottom-right arc (0..90)
-        arcPoints(
-            rect.x + rect.w - r,
-            rect.y + rect.h - r,
-            r,
-            0,
-            Math.PI / 2,
-            cornerSteps,
-            pts
-        );
-        // Bottom edge (right->left)
-        for (let i = 0; i <= edgeSteps; i++) {
-            const t = i / edgeSteps;
-            push(lerp(rect.x + rect.w - r, rect.x + r, t), rect.y + rect.h);
-        }
-        // Bottom-left arc (90..180)
-        arcPoints(
-            rect.x + r,
-            rect.y + rect.h - r,
-            r,
-            Math.PI / 2,
-            Math.PI,
-            cornerSteps,
-            pts
-        );
-        // Left edge (bottom->top)
-        for (let i = 0; i <= edgeSteps; i++) {
-            const t = i / edgeSteps;
-            push(rect.x, lerp(rect.y + rect.h - r, rect.y + r, t));
-        }
-        // Top-left arc (180..270)
-        arcPoints(
-            rect.x + r,
-            rect.y + r,
-            r,
-            Math.PI,
-            (3 * Math.PI) / 2,
-            cornerSteps,
-            pts
-        );
+        let rawPts: Vec2[];
+        if (type === 'chicane') rawPts = this._buildChicane(w, h, base);
+        else if (type === 'circuit') rawPts = this._buildCircuit(w, h, base);
+        else rawPts = this._buildOval(w, h, base);
 
         // Remove near-duplicates
         const cleaned: Vec2[] = [];
-        const eps = 0.3;
-        for (let i = 0; i < pts.length; i++) {
-            const p = pts[i];
+        const eps = 0.4;
+        for (const p of rawPts) {
             const prev = cleaned[cleaned.length - 1];
             if (!prev || hypot(p.x - prev.x, p.y - prev.y) > eps) cleaned.push(p);
         }
-        // Ensure closed by not duplicating first point at end.
         this.points = cleaned;
 
-        // Compute segments, tangents, cumulative
         const n = this.points.length;
         this.segLen = new Array(n).fill(0);
         this.cumLen = new Array(n).fill(0);
-        this.tangents = new Array(n).fill(0).map(() => ({ x: 1, y: 0 }));
+        this.tangents = new Array(n).fill(null).map(() => ({ x: 1, y: 0 }));
 
         let total = 0;
         for (let i = 0; i < n; i++) {
@@ -284,7 +266,6 @@ class Track {
         }
         this.totalLength = Math.max(1e-6, total);
 
-        // Curvature estimate per vertex
         this.curvature = new Array(n).fill(0);
         this.turnSign = new Array(n).fill(0);
         for (let i = 0; i < n; i++) {
@@ -292,7 +273,7 @@ class Track {
             const next = this.tangents[i];
             const cross = prev.x * next.y - prev.y * next.x;
             const dot = prev.x * next.x + prev.y * next.y;
-            const ang = Math.atan2(cross, dot); // signed
+            const ang = Math.atan2(cross, dot);
             const avgL = (this.segLen[(i - 1 + n) % n] + this.segLen[i]) * 0.5;
             const kappa = avgL > 1e-6 ? ang / avgL : 0;
             this.curvature[i] = kappa;
@@ -300,1118 +281,873 @@ class Track {
         }
     }
 
-    /** Find closest point on polyline centerline, return track sample. */
+    private _buildOval(w: number, h: number, base: number): Vec2[] {
+        const pad = clamp(base * 0.18, 46, 86);
+        const rect = { x: pad, y: pad, w: w - 2 * pad, h: h - 2 * pad };
+        const r = Math.min(base * 0.20, rect.w / 2 - 2, rect.h / 2 - 2);
+        const cs = clamp(Math.floor(base / 14), 10, 22);
+        const es = clamp(Math.floor(base / 18), 10, 20);
+        const pts: Vec2[] = [];
+        const push = (x: number, y: number) => pts.push({ x, y });
+
+        for (let i = 0; i <= es; i++) push(lerp(rect.x + r, rect.x + rect.w - r, i / es), rect.y);
+        arcPoints(rect.x + rect.w - r, rect.y + r, r, -Math.PI / 2, 0, cs, pts);
+        for (let i = 0; i <= es; i++) push(rect.x + rect.w, lerp(rect.y + r, rect.y + rect.h - r, i / es));
+        arcPoints(rect.x + rect.w - r, rect.y + rect.h - r, r, 0, Math.PI / 2, cs, pts);
+        for (let i = 0; i <= es; i++) push(lerp(rect.x + rect.w - r, rect.x + r, i / es), rect.y + rect.h);
+        arcPoints(rect.x + r, rect.y + rect.h - r, r, Math.PI / 2, Math.PI, cs, pts);
+        for (let i = 0; i <= es; i++) push(rect.x, lerp(rect.y + rect.h - r, rect.y + r, i / es));
+        arcPoints(rect.x + r, rect.y + r, r, Math.PI, (3 * Math.PI) / 2, cs, pts);
+        return pts;
+    }
+
+    private _buildChicane(w: number, h: number, base: number): Vec2[] {
+        // Oval base with S-curve perturbations on the straights
+        const pts = this._buildOval(w, h, base);
+        const cx = w / 2;
+        const cy = h / 2;
+        const amp = base * 0.07; // chicane amplitude
+
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            // Detect straight sections (left/right or top/bottom) and add S-curve
+            const dx = p.x - cx;
+            const dy = p.y - cy;
+            const isTopBottom = Math.abs(dy) > Math.abs(dx) * 0.8;
+            if (isTopBottom) {
+                // S-curve along horizontal straights
+                const t = (p.x - cx) / (w / 2);
+                pts[i] = { x: p.x, y: p.y + Math.sin(t * Math.PI * 1.8) * amp * Math.sign(dy) };
+            }
+        }
+        return pts;
+    }
+
+    private _buildCircuit(w: number, h: number, base: number): Vec2[] {
+        // Custom circuit with varied corner radii and a hairpin
+        const pad = clamp(base * 0.14, 36, 70);
+        const r1 = Math.min(base * 0.22, (w - 2 * pad) / 2);
+        const r2 = Math.min(base * 0.10, r1 * 0.45); // tight hairpin
+        const pts: Vec2[] = [];
+        const cs = clamp(Math.floor(base / 14), 10, 22);
+        const es = clamp(Math.floor(base / 18), 8, 18);
+
+        const L = pad;
+        const T = pad;
+        const R = w - pad;
+        const B = h - pad;
+        const mx = (L + R) / 2;
+
+        // Top straight (left to right)
+        for (let i = 0; i <= es; i++) pts.push({ x: lerp(L + r1, R - r1, i / es), y: T });
+        // Top-right long sweeper
+        arcPoints(R - r1, T + r1, r1, -Math.PI / 2, 0, cs, pts);
+        // Right side down to hairpin
+        for (let i = 0; i <= es; i++) pts.push({ x: R, y: lerp(T + r1, B - r2 * 2 - r2, i / es) });
+        // Hairpin (tight bottom-right)
+        arcPoints(R - r2, B - r2 * 2, r2, 0, Math.PI / 2, cs, pts);
+        // Bottom of hairpin going back left
+        for (let i = 0; i <= Math.floor(es * 0.6); i++) pts.push({ x: lerp(R - r2, mx + r2, i / Math.floor(es * 0.6)), y: B - r2 });
+        // Inner bottom loop around hairpin
+        arcPoints(mx, B - r2, r2, 0, -Math.PI / 2, cs, pts);
+        // Left infield straight to bottom-left corner
+        for (let i = 0; i <= Math.floor(es * 0.8); i++) pts.push({ x: mx - r2, y: lerp(B - r2, B - r1, i / Math.floor(es * 0.8)) });
+        // Bottom-left corner
+        arcPoints(L + r1, B - r1, r1, Math.PI / 2, Math.PI, cs, pts);
+        // Left straight back up
+        for (let i = 0; i <= es; i++) pts.push({ x: L, y: lerp(B - r1, T + r1, i / es) });
+        // Top-left corner
+        arcPoints(L + r1, T + r1, r1, Math.PI, (3 * Math.PI) / 2, cs, pts);
+
+        return pts;
+    }
+
     closestSample(x: number, y: number, out: TrackSample): void {
         const n = this.points.length;
-        let bestD2 = Number.POSITIVE_INFINITY;
+        let bestD2 = Infinity;
         let bestI = 0;
         let bestT = 0;
 
         for (let i = 0; i < n; i++) {
             const a = this.points[i];
             const b = this.points[(i + 1) % n];
-            const abx = b.x - a.x;
-            const aby = b.y - a.y;
-            const apx = x - a.x;
-            const apy = y - a.y;
+            const abx = b.x - a.x, aby = b.y - a.y;
+            const apx = x - a.x, apy = y - a.y;
             const denom = abx * abx + aby * aby;
             const t = denom > 1e-6 ? clamp01((apx * abx + apy * aby) / denom) : 0;
-            const px = a.x + abx * t;
-            const py = a.y + aby * t;
-            const dx = x - px;
-            const dy = y - py;
+            const px = a.x + abx * t, py = a.y + aby * t;
+            const dx = x - px, dy = y - py;
             const d2 = dx * dx + dy * dy;
-            if (d2 < bestD2) {
-                bestD2 = d2;
-                bestI = i;
-                bestT = t;
-            }
+            if (d2 < bestD2) { bestD2 = d2; bestI = i; bestT = t; }
         }
 
         const a = this.points[bestI];
         const b = this.points[(bestI + 1) % n];
-        const abx = b.x - a.x;
-        const aby = b.y - a.y;
-        const px = a.x + abx * bestT;
-        const py = a.y + aby * bestT;
-
-        const tx = this.tangents[bestI].x;
-        const ty = this.tangents[bestI].y;
-        // left normal (perp)
-        const nx = -ty;
-        const ny = tx;
-
-        const dx = x - px;
-        const dy = y - py;
+        const abx = b.x - a.x, aby = b.y - a.y;
+        const px = a.x + abx * bestT, py = a.y + aby * bestT;
+        const tx = this.tangents[bestI].x, ty = this.tangents[bestI].y;
+        const nx = -ty, ny = tx;
+        const dx = x - px, dy = y - py;
         const dist = Math.sqrt(bestD2);
-
-        // signed distance via normal
         const signed = dx * nx + dy * ny;
-
         const progress = (this.cumLen[bestI] + this.segLen[bestI] * bestT) % this.totalLength;
-
-        // blend curvature and turn sign between vertex i and i+1
         const k0 = this.curvature[bestI];
         const k1 = this.curvature[(bestI + 1) % n];
         const kappa = lerp(k0, k1, bestT);
-
         const s0 = this.turnSign[bestI];
         const s1 = this.turnSign[(bestI + 1) % n];
-        const ts = Math.abs(lerp(s0, s1, bestT)) < 0.2 ? 0 : signNonZero(lerp(s0, s1, bestT));
+        const ts_raw = lerp(s0, s1, bestT);
+        const ts = Math.abs(ts_raw) < 0.2 ? 0 : Math.sign(ts_raw);
 
-        out.px = px;
-        out.py = py;
-        out.tx = tx;
-        out.ty = ty;
-        out.nx = nx;
-        out.ny = ny;
-        out.dist = dist;
-        out.signedDist = signed;
-        out.progress = progress;
-        out.curvature = kappa;
-        out.turnSign = ts;
+        out.px = px; out.py = py; out.tx = tx; out.ty = ty;
+        out.nx = nx; out.ny = ny; out.dist = dist; out.signedDist = signed;
+        out.progress = progress; out.curvature = kappa; out.turnSign = ts;
     }
 
-    /** Get point on centerline at distance s (wraps). */
     pointAtDistance(s: number, out: Vec2): void {
-        let d = s % this.totalLength;
-        if (d < 0) d += this.totalLength;
-
+        let d = ((s % this.totalLength) + this.totalLength) % this.totalLength;
         const n = this.points.length;
-        // linear scan (n is small ~200)
         for (let i = n - 1; i >= 0; i--) {
             if (this.cumLen[i] <= d) {
                 const a = this.points[i];
                 const b = this.points[(i + 1) % n];
-                const seg = this.segLen[i];
-                const t = seg > 1e-6 ? (d - this.cumLen[i]) / seg : 0;
+                const t = this.segLen[i] > 1e-6 ? (d - this.cumLen[i]) / this.segLen[i] : 0;
                 out.x = lerp(a.x, b.x, t);
                 out.y = lerp(a.y, b.y, t);
                 return;
             }
         }
-
-        // fallback
-        const p0 = this.points[0];
-        out.x = p0.x;
-        out.y = p0.y;
+        out.x = this.points[0].x; out.y = this.points[0].y;
     }
 
     tangentAtDistance(s: number, out: Vec2): void {
-        let d = s % this.totalLength;
-        if (d < 0) d += this.totalLength;
-
+        let d = ((s % this.totalLength) + this.totalLength) % this.totalLength;
         const n = this.points.length;
         for (let i = n - 1; i >= 0; i--) {
-            if (this.cumLen[i] <= d) {
-                out.x = this.tangents[i].x;
-                out.y = this.tangents[i].y;
-                return;
-            }
+            if (this.cumLen[i] <= d) { out.x = this.tangents[i].x; out.y = this.tangents[i].y; return; }
         }
-        out.x = 1;
-        out.y = 0;
+        out.x = 1; out.y = 0;
+    }
+
+    curvatureAtDistance(s: number): number {
+        let d = ((s % this.totalLength) + this.totalLength) % this.totalLength;
+        const n = this.points.length;
+        for (let i = n - 1; i >= 0; i--) {
+            if (this.cumLen[i] <= d) return this.curvature[i];
+        }
+        return 0;
     }
 }
 
-function arcPoints(
-    cx: number,
-    cy: number,
-    r: number,
-    a0: number,
-    a1: number,
-    steps: number,
-    out: Vec2[]
-): void {
+function arcPoints(cx: number, cy: number, r: number, a0: number, a1: number, steps: number, out: Vec2[]): void {
     for (let i = 1; i <= steps; i++) {
-        const t = i / steps;
-        const a = lerp(a0, a1, t);
+        const a = lerp(a0, a1, i / steps);
         out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
     }
 }
 
 /** =========================
- *  Visual trail primitives
+ *  Physics constants
  *  ========================= */
-type DriftArc = {
-    ax: number;
-    ay: number;
-    cx: number;
-    cy: number;
-    bx: number;
-    by: number;
-    age: number;
-    life: number;
-    alpha: number;
-};
-
-type SmokePuff = {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    age: number;
-    life: number;
-    // cluster of circles
-    circles: { ox: number; oy: number; r: number }[];
-};
-
-type CarState = {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    heading: number; // rad
-    steerAngle: number; // rad (front wheels)
-    wheelSpin: number; // rad
-};
-
-type UiSnapshot = {
-    // training
-    episode: number;
-    step: number;
-    stepInEpisode: number;
-    stepsPerEpisode: number;
-    totalSteps: number;
-    episodeReturn: number;
-    bestReturn: number;
-    avgReturn: number;
-    reward: number;
-
-    // learning signals (stylized)
-    skill: number;
-    epsilon: number;
-    loss: number;
-    qValue: number;
-
-    // physics/telemetry
-    speed: number;
-    headingDeg: number;
-    velDeg: number;
-    slipDeg: number;
-    desiredSlipDeg: number;
-    curvature: number;
-    trackError: number;
-
-    steerCmd: number; // [-1..1]
-    steerDeg: number;
-    throttle: number; // [0..1]
-    handbrake: number; // [0..1]
-
-    driftIntensity: number; // [0..1]
-};
-
-function formatSigned(x: number, digits = 2): string {
-    const s = x >= 0 ? '+' : '';
-    return `${s}${x.toFixed(digits)}`;
-}
-function formatPct01(x: number): string {
-    return `${Math.round(clamp01(x) * 100)}%`;
-}
+const MAX_STEER = degToRad(38);
+const STEER_RATE = degToRad(290);  // rad/s
+const MAX_SPEED = 330;             // px/s
+const MAX_ACCEL = 560;             // px/s^2
+const DRAG = 0.74;                 // velocity decay per second
+const BASE_GRIP = 6.8;             // lateral grip coefficient
+const DRIFT_GRIP_MIN = 0.12;       // minimum grip when full drift
+const CAR_IZ = 0.14;              // yaw inertia (lower = more responsive)
 
 /** =========================
- *  RL Drift Trainer Simulation
+ *  Agent: one car driven by a neural network
  *  ========================= */
-class DriftTrainerSim {
-    // dimensions (CSS px)
-    private w = 800;
-    private h = 500;
+class Agent {
+    net: NeuralNet;
+    car: CarState;
+    alive = false;
+    fitness = 0;
+    stepsAlive = 0;
 
-    private rng = new RNG(0xdecafbad);
+    // Skid mark trail (persistent tire trails)
+    skidPts: SkidPt[] = [];
+    smoke: SmokePuff[] = [];
 
-    private track: Track;
+    // Car dimensions (set by trainer)
+    carLength = 46;
+    carWidth = 24;
+    wheelbase = 30;
 
-    private car: CarState;
-
-    // visuals
-    private arcs: DriftArc[] = [];
-    private smoke: SmokePuff[] = [];
-    private arcTimer = 0;
-    private smokeTimer = 0;
-    private driftHold = 0; // time spent in strong drift
-
-    // training stats
-    episode = 0;
-    step = 0;
-    stepInEpisode = 0;
-    stepsPerEpisode = 720;
-
-    episodeReturn = 0;
-    bestReturn = -1e9;
+    // Last NN actions (for telemetry)
+    lastSteer = 0;
+    lastThrottle = 0;
+    lastHandbrake = 0;
     lastReward = 0;
 
-    // histories
-    private returns: number[] = [];
-    private epsHistory: number[] = [];
-    private skillHistory: number[] = [];
-
-    // step traces (last few seconds)
-    private slipTrace = new RingBuffer(260);
-    private speedTrace = new RingBuffer(260);
-    private rewardTrace = new RingBuffer(260);
-
-    // derived "learning" scalars
-    skill = 0; // 0..1
-    epsilon = 0.55;
-    loss = 0.9;
-    qValue = 0.0;
-
-    // controller parameters (shift over training)
-    private maxSteer = degToRad(34);
-    private steerRate = degToRad(220); // rad/s
-    private wheelBase = 30; // px
-    private carLength = 46; // px
-    private carWidth = 24; // px
-
-    private maxSpeed = 340; // px/s
-    private maxAccel = 520; // px/s^2
-    private brakeStrength = 820; // px/s^2
-    private drag = 0.78; // 1/s
-
-    private baseGrip = 7.2; // lateral "grip" coefficient
-    private driftSpeed = 140; // px/s at which drift is meaningful
-
-    private driftCurvThreshold = 0.010; // track curvature threshold for drift zones
-
-    // controller state
-    private kickTimer = 0;
-    private prevInDriftZone = false;
-    private prevSteerCmd = 0;
+    // Private state
+    private prevProgress = 0;
+    private prevSteer = 0;
     private prevThrottle = 0;
-    private prevHandbrake = 0;
-
-    // scratch objects (avoid allocations per step)
-    private sample: TrackSample = {
-        px: 0,
-        py: 0,
-        tx: 1,
-        ty: 0,
-        nx: 0,
-        ny: 1,
-        signedDist: 0,
-        dist: 0,
-        progress: 0,
-        curvature: 0,
-        turnSign: 0,
+    private smokeTimer = 0;
+    private driftHold = 0;
+    private prevInDriftZone = false;
+    private kickTimer = 0;
+    private _sample: TrackSample = {
+        px: 0, py: 0, tx: 1, ty: 0, nx: 0, ny: 1,
+        signedDist: 0, dist: 0, progress: 0, curvature: 0, turnSign: 0
     };
-    private tmpVecA: Vec2 = { x: 0, y: 0 };
-    private tmpVecB: Vec2 = { x: 0, y: 0 };
+    private _tmpV: Vec2 = { x: 0, y: 0 };
 
-    // UI scratch
-    private ui: UiSnapshot;
-
-    constructor(w: number, h: number) {
-        this.w = w;
-        this.h = h;
-        this.track = new Track(w, h);
-
-        this.car = {
-            x: 0,
-            y: 0,
-            vx: 0,
-            vy: 0,
-            heading: 0,
-            steerAngle: 0,
-            wheelSpin: 0,
-        };
-
-        this.ui = DriftTrainerSim.initialUi();
-        this.resetEpisode(true);
+    constructor(net: NeuralNet) {
+        this.net = net;
+        this.car = { x: 0, y: 0, vx: 0, vy: 0, heading: 0, omega: 0, steerAngle: 0, wheelSpin: 0 };
     }
 
-    static initialUi(): UiSnapshot {
-        return {
-            episode: 0,
-            step: 0,
-            stepInEpisode: 0,
-            stepsPerEpisode: 720,
-            totalSteps: 0,
-            episodeReturn: 0,
-            bestReturn: 0,
-            avgReturn: 0,
-            reward: 0,
-
-            skill: 0,
-            epsilon: 0,
-            loss: 0,
-            qValue: 0,
-
-            speed: 0,
-            headingDeg: 0,
-            velDeg: 0,
-            slipDeg: 0,
-            desiredSlipDeg: 0,
-            curvature: 0,
-            trackError: 0,
-
-            steerCmd: 0,
-            steerDeg: 0,
-            throttle: 0,
-            handbrake: 0,
-
-            driftIntensity: 0,
-        };
-    }
-
-    resize(w: number, h: number): void {
-        this.w = w;
-        this.h = h;
-        this.track.build(w, h);
-
-        // re-tune a few size-dependent params
-        const base = Math.min(w, h);
-        this.carLength = clamp(base * 0.085, 42, 56);
-        this.carWidth = clamp(base * 0.044, 20, 30);
-        this.wheelBase = this.carLength * 0.62;
-
-        // reset the running episode so we don't end up off-track after resize
-        this.resetEpisode(false);
-    }
-
-    resetTraining(): void {
-        this.episode = 0;
-        this.step = 0;
-        this.stepInEpisode = 0;
-
-        this.episodeReturn = 0;
-        this.bestReturn = -1e9;
-        this.lastReward = 0;
-
-        this.returns = [];
-        this.epsHistory = [];
-        this.skillHistory = [];
-
-        this.slipTrace.clear();
-        this.speedTrace.clear();
-        this.rewardTrace.clear();
-
-        this.skill = 0;
-        this.epsilon = 0.55;
-        this.loss = 0.9;
-        this.qValue = 0;
-
-        this.kickTimer = 0;
+    reset(track: Track, rng: RNG, skill: number): void {
+        this.alive = true;
+        this.fitness = 0;
+        this.stepsAlive = 0;
+        this.lastSteer = this.lastThrottle = this.lastHandbrake = this.lastReward = 0;
+        this.prevSteer = this.prevThrottle = 0;
+        this.smokeTimer = this.driftHold = this.kickTimer = 0;
         this.prevInDriftZone = false;
-        this.prevSteerCmd = 0;
-        this.prevThrottle = 0;
-        this.prevHandbrake = 0;
-
-        this.resetEpisode(true);
-    }
-
-    /** Run simulation steps until we advance N episodes (visuals disabled). */
-    fastForwardEpisodes(n: number): void {
-        const targetEpisode = this.episode + Math.max(0, Math.floor(n));
-        // Put visuals in a clean state
-        this.arcs = [];
+        this.skidPts = [];
         this.smoke = [];
-        this.arcTimer = 0;
-        this.smokeTimer = 0;
-        this.driftHold = 0;
 
-        // Run with fixed dt
-        let safety = 0;
-        while (this.episode < targetEpisode && safety < 2_000_000) {
-            this.stepOnce(FIXED_DT, false);
-            safety++;
-        }
+        // Random start position along track (small jitter)
+        const startD = rng.next() * track.totalLength * 0.15;
+        track.pointAtDistance(startD, this._tmpV);
+        this.car.x = this._tmpV.x;
+        this.car.y = this._tmpV.y;
+        track.tangentAtDistance(startD, this._tmpV);
+        this.car.heading = Math.atan2(this._tmpV.y, this._tmpV.x);
+
+        const startSpeed = lerp(140, 210, clamp01(skill));
+        this.car.vx = this._tmpV.x * startSpeed;
+        this.car.vy = this._tmpV.y * startSpeed;
+        this.car.omega = 0;
+        this.car.steerAngle = 0;
+        this.car.wheelSpin = 0;
+
+        track.closestSample(this.car.x, this.car.y, this._sample);
+        this.prevProgress = this._sample.progress;
     }
 
-    /** One fixed step of the world. */
-    stepOnce(dt: number, visualsEnabled: boolean): void {
-        // Training schedules: skill grows with episodes; epsilon decays
-        this.skill = clamp01(1 - Math.exp(-this.episode / 330));
-        const skillForDrift = smoothstep(0.12, 0.92, this.skill);
+    stepOnce(track: Track, dt: number, maxSteps: number, visualsEnabled: boolean, rng: RNG): { reward: number; done: boolean } {
+        // ---- Build neural network inputs ----
+        track.closestSample(this.car.x, this.car.y, this._sample);
 
-        this.epsilon = lerp(0.55, 0.03, this.skill);
-        // stylized loss + q
-        this.loss = lerp(0.85, 0.02, this.skill) + this.rng.next() * 0.01;
-        this.qValue = lerp(0.4, 2.8, this.skill) + this.rng.normal(0, 0.05);
-
-        // Track sample
-        this.track.closestSample(this.car.x, this.car.y, this.sample);
-
-        // Lookahead target on centerline
         const speed = hypot(this.car.vx, this.car.vy);
-        const lookahead = lerp(54, 110, clamp01(speed / this.maxSpeed));
-        this.track.pointAtDistance(this.sample.progress + lookahead, this.tmpVecA);
+        const velAng = speed > 2 ? Math.atan2(this.car.vy, this.car.vx) : this.car.heading;
+        const slip = wrapAngle(velAng - this.car.heading);
 
-        const desiredHeading = Math.atan2(this.tmpVecA.y - this.car.y, this.tmpVecA.x - this.car.x);
-        const headingErr = wrapAngle(desiredHeading - this.car.heading);
+        const trackAngle = Math.atan2(this._sample.ty, this._sample.tx);
+        const headingErr = wrapAngle(this.car.heading - trackAngle);
 
-        // Velocity / slip
-        const velAng = Math.atan2(this.car.vy, this.car.vx);
-        const slip = speed > 2 ? wrapAngle(velAng - this.car.heading) : 0;
+        const halfRoad = Math.max(20, track.roadWidth * 0.5);
+        const lookaheadDist = lerp(55, 105, clamp01(speed / MAX_SPEED));
+        const lookCurv = track.curvatureAtDistance(this._sample.progress + lookaheadDist);
 
-        // Curvature / drift zone
-        const curv = this.sample.curvature;
-        const curvAbs = Math.abs(curv);
-        const inDriftZone = curvAbs > this.driftCurvThreshold;
+        const inputs = new Float32Array([
+            clamp01(speed / MAX_SPEED),                          // 0: speed
+            clamp(this._sample.signedDist / halfRoad, -1, 1),   // 1: lateral error
+            Math.sin(headingErr),                                // 2: heading error sin
+            Math.cos(headingErr),                                // 3: heading error cos
+            Math.sin(slip),                                      // 4: slip sin
+            Math.cos(slip),                                      // 5: slip cos
+            clamp(lookCurv * 80, -1, 1),                        // 6: ahead curvature
+            clamp(this.car.omega / 5.0, -1, 1),                 // 7: yaw rate
+            clamp01(this.stepsAlive / maxSteps),                 // 8: episode progress
+        ]);
 
-        // Planned drift goal gets more ambitious with "skill"
-        const slipMax = degToRad(lerp(8, 32, skillForDrift));
-        const zoneStrength = smoothstep(this.driftCurvThreshold, this.driftCurvThreshold * 3.2, curvAbs);
-        const desiredSlip = inDriftZone ? this.sample.turnSign * slipMax * zoneStrength : 0;
+        // ---- Neural network forward pass ----
+        const out = this.net.forward(inputs);
+        const steerCmd = clamp(out[0], -1, 1);
+        const throttleCmd = clamp01((out[1] + 1) / 2);         // [-1,1] → [0,1]
+        const handbrakeCmd = clamp01((out[2] + 1) / 2);        // [-1,1] → [0,1]
 
-        // Detect drift-zone entry → kick timer (handbrake pulse)
+        this.lastSteer = steerCmd;
+        this.lastThrottle = throttleCmd;
+        this.lastHandbrake = handbrakeCmd;
+
+        // ---- Controller state (drift initiation kick) ----
+        const curvAbs = Math.abs(this._sample.curvature);
+        const inDriftZone = curvAbs > 0.007;
+
         if (!this.prevInDriftZone && inDriftZone) {
-            // as skill improves, kick is shorter and more precise
-            const kickDur = lerp(0.42, 0.22, this.skill);
-            this.kickTimer = kickDur;
+            this.kickTimer = 0.22; // brief handbrake pulse to initiate drift
         }
         this.prevInDriftZone = inDriftZone;
+        if (this.kickTimer > 0) this.kickTimer = Math.max(0, this.kickTimer - dt);
 
-        // Controller gains evolve to favor smoother, more stable drifts
-        const headingK = lerp(1.55, 2.05, this.skill);
-        const lateralK = lerp(0.38, 0.62, this.skill);
-        const slipK = lerp(0.55, 1.05, this.skill);
+        // Effective handbrake = NN's choice or kick override
+        const effectiveHB = Math.max(handbrakeCmd, this.kickTimer > 0 ? 0.85 : 0);
 
-        // Normalize track error by half road width (avoid div by 0)
-        const halfRoad = Math.max(20, this.track.roadWidth * 0.5);
-        const trackErrN = clamp(this.sample.signedDist / halfRoad, -2, 2);
+        // ---- Physics update ----
+        const hx = Math.cos(this.car.heading);
+        const hy = Math.sin(this.car.heading);
 
-        // Steering command:
-        // - follow lookahead heading
-        // - pull back to centerline
-        // - target slip in drift zones (countersteer emerges from slip error term)
-        let steerCmd =
-            headingK * headingErr +
-            lateralK * trackErrN +
-            slipK * (desiredSlip - slip);
+        const forwardV = this.car.vx * hx + this.car.vy * hy;
 
-        // Kick into drift: quick steer jab + handbrake
-        let handbrake = 0;
-        if (this.kickTimer > 0) {
-            this.kickTimer = Math.max(0, this.kickTimer - dt);
-            handbrake = 1.0;
-            // steer "into" the corner to initiate rotation
-            const jab = lerp(0.9, 0.55, this.skill);
-            steerCmd += this.sample.turnSign * jab;
-        }
+        // Drift factor: how much rear traction is lost
+        const driftFactor = clamp01(
+            (Math.abs(this.car.steerAngle) / MAX_STEER) * 0.55 +
+            throttleCmd * 0.28 +
+            effectiveHB * 1.3
+        ) * clamp01(speed / 100);
 
-        // Desired speed: faster on straights, slightly moderated in corners (but still aggressive)
-        const desiredSpeed = inDriftZone ? lerp(210, 260, this.skill) : lerp(240, 320, this.skill);
-        let throttle = clamp01(0.62 + (desiredSpeed - speed) / desiredSpeed);
+        // Yaw rate from steering (bicycle model approximation)
+        const yawFromSteer = Math.abs(forwardV) > 8
+            ? (forwardV / Math.max(10, this.wheelbase)) * Math.tan(this.car.steerAngle)
+            : 0;
 
-        // In drift zones, keep throttle steady to maintain slide (RWD power-over)
-        if (inDriftZone) throttle = clamp01(throttle + 0.10);
+        // Power-oversteer yaw boost (RWD characteristic — rear pushes out)
+        const turnDir = this._sample.turnSign !== 0 ? this._sample.turnSign
+            : (Math.abs(slip) > degToRad(5) ? Math.sign(slip) : 0);
+        const yawBoost = driftFactor * 2.9 * turnDir * clamp01(speed / 130);
 
-        // Exploration noise (decays with training)
-        steerCmd += this.rng.normal(0, this.epsilon * 0.35);
-        throttle += this.rng.normal(0, this.epsilon * 0.10);
-        if (handbrake > 0) {
-            handbrake = clamp01(handbrake + Math.abs(this.rng.normal(0, this.epsilon * 0.12)));
-        }
+        // Yaw with inertia (CAR_IZ controls how quickly heading responds)
+        const targetOmega = yawFromSteer + yawBoost;
+        const omegaDiff = targetOmega - this.car.omega;
+        this.car.omega += omegaDiff * Math.min(1, dt / CAR_IZ);
+        this.car.omega = clamp(this.car.omega, -5.8, 5.8);
+        this.car.heading = wrapAngle(this.car.heading + this.car.omega * dt);
 
-        steerCmd = clamp(steerCmd, -1, 1);
-        throttle = clamp01(throttle);
-        handbrake = clamp01(handbrake);
+        // Steering angle update (rate-limited)
+        const steerTarget = steerCmd * MAX_STEER;
+        const maxSD = STEER_RATE * dt;
+        this.car.steerAngle += clamp(steerTarget - this.car.steerAngle, -maxSD, maxSD);
 
-        // Smoothness penalty uses action deltas
-        const dSteer = steerCmd - this.prevSteerCmd;
-        const dThr = throttle - this.prevThrottle;
-        const dHb = handbrake - this.prevHandbrake;
-        this.prevSteerCmd = steerCmd;
-        this.prevThrottle = throttle;
-        this.prevHandbrake = handbrake;
+        // Engine force (RWD: always forward relative to new heading)
+        const nhx = Math.cos(this.car.heading);
+        const nhy = Math.sin(this.car.heading);
+        const nrx = -nhy, nry = nhx;
 
-        // Update steering angle with rate limit
-        const steerTarget = steerCmd * this.maxSteer;
-        const maxDelta = this.steerRate * dt;
-        this.car.steerAngle = approach(this.car.steerAngle, steerTarget, maxDelta);
+        const accel = throttleCmd * MAX_ACCEL * (inDriftZone ? 1.12 : 1.0);
+        this.car.vx += nhx * accel * dt;
+        this.car.vy += nhy * accel * dt;
 
-        // --- Physics update (simple drift-capable top-down model) ---
-        const fX = Math.cos(this.car.heading);
-        const fY = Math.sin(this.car.heading);
-
-        // For yaw rate, use forward component of velocity
-        const forwardSpeed = this.car.vx * fX + this.car.vy * fY;
-
-        // Extra yaw boost during drift initiation / power-over
-        const driftFactor =
-            clamp01((Math.abs(this.car.steerAngle) / this.maxSteer) * 0.8 + throttle * 0.4 + handbrake * 1.1) *
-            clamp01(speed / this.driftSpeed);
-
-        const yawFromSteer = (forwardSpeed / Math.max(12, this.wheelBase)) * Math.tan(this.car.steerAngle);
-        const yawBoost = driftFactor * 2.6 * this.sample.turnSign;
-
-        const yawRate = clamp(yawFromSteer + yawBoost, -4.6, 4.6);
-        this.car.heading = wrapAngle(this.car.heading + yawRate * dt);
-
-        // Recompute forward/right after heading update
-        const nfX = Math.cos(this.car.heading);
-        const nfY = Math.sin(this.car.heading);
-        const rX = -nfY;
-        const rY = nfX;
-
-        // Engine acceleration (RWD feel: stronger when in drift zone)
-        const accel = throttle * this.maxAccel * (inDriftZone ? 1.08 : 1.0);
-        this.car.vx += nfX * accel * dt;
-        this.car.vy += nfY * accel * dt;
-
-        // Handbrake removes speed and reduces grip
-        if (handbrake > 0) {
+        // Handbrake: reduces speed + kills rear grip
+        if (effectiveHB > 0.05) {
             const vMag = hypot(this.car.vx, this.car.vy);
-            if (vMag > 1e-3) {
-                const bx = this.car.vx / vMag;
-                const by = this.car.vy / vMag;
-                const b = handbrake * this.brakeStrength;
-                this.car.vx -= bx * b * dt;
-                this.car.vy -= by * b * dt;
+            if (vMag > 1) {
+                const brake = effectiveHB * 750;
+                this.car.vx -= (this.car.vx / vMag) * brake * dt;
+                this.car.vy -= (this.car.vy / vMag) * brake * dt;
             }
         }
 
-        // Lateral grip: remove sideways velocity component in car-local frame
-        const sideSpeed = this.car.vx * rX + this.car.vy * rY;
+        // Lateral grip correction (Pacejka-inspired: grip falls as slip increases)
+        const sideV = this.car.vx * nrx + this.car.vy * nry;
+        const grip = BASE_GRIP * lerp(1.0, DRIFT_GRIP_MIN, driftFactor);
+        this.car.vx -= nrx * sideV * grip * dt;
+        this.car.vy -= nry * sideV * grip * dt;
 
-        // Grip decreases when drifting (handbrake + throttle/steer at speed)
-        const grip = this.baseGrip * lerp(1.0, 0.18, clamp01(driftFactor));
-        this.car.vx -= rX * sideSpeed * grip * dt;
-        this.car.vy -= rY * sideSpeed * grip * dt;
+        // Aerodynamic drag
+        this.car.vx *= Math.max(0, 1 - DRAG * dt);
+        this.car.vy *= Math.max(0, 1 - DRAG * dt);
 
-        // Drag
-        const dragFactor = Math.max(0, 1 - this.drag * dt);
-        this.car.vx *= dragFactor;
-        this.car.vy *= dragFactor;
-
-        // Clamp max speed
+        // Speed cap
         const newSpeed = hypot(this.car.vx, this.car.vy);
-        if (newSpeed > this.maxSpeed) {
-            const s = this.maxSpeed / newSpeed;
-            this.car.vx *= s;
-            this.car.vy *= s;
+        if (newSpeed > MAX_SPEED) {
+            this.car.vx *= MAX_SPEED / newSpeed;
+            this.car.vy *= MAX_SPEED / newSpeed;
         }
 
         // Integrate position
         this.car.x += this.car.vx * dt;
         this.car.y += this.car.vy * dt;
 
-        // Wheel spin (rear wheels slightly more pronounced under throttle)
-        const spinRate = (newSpeed / 10) * (1 + throttle * 0.35);
-        this.car.wheelSpin = wrapAngle(this.car.wheelSpin + spinRate * dt);
+        // Wheel spin (visual)
+        this.car.wheelSpin = wrapAngle(this.car.wheelSpin + (newSpeed / 9) * dt);
 
-        // --- Reward shaping: smooth, planned drifts on corners ---
-        // Progress along tangent
-        const progressSpeed = (this.car.vx * this.sample.tx + this.car.vy * this.sample.ty);
-        const progressReward = clamp(progressSpeed / this.maxSpeed, -1, 1) * 0.55;
+        // ---- Reward computation ----
+        track.closestSample(this.car.x, this.car.y, this._sample);
 
-        // Track penalty
-        const trackPenalty = Math.pow(clamp01(Math.abs(this.sample.signedDist) / halfRoad), 2) * 0.85;
+        let progDelta = this._sample.progress - this.prevProgress;
+        if (progDelta < -track.totalLength * 0.5) progDelta += track.totalLength;
+        if (progDelta > track.totalLength * 0.5) progDelta -= track.totalLength;
+        this.prevProgress = this._sample.progress;
 
-        // Slip reward: in drift zones target desiredSlip, otherwise prefer low slip
-        const slipErr = inDriftZone ? Math.abs(wrapAngle(slip - desiredSlip)) : Math.abs(slip);
-        const slipReward = inDriftZone
-            ? (1 - clamp01(slipErr / Math.max(1e-3, slipMax))) * 0.55
-            : (1 - clamp01(slipErr / degToRad(18))) * 0.18;
+        const progressReward = clamp(progDelta / (MAX_SPEED * dt), -1, 1) * 0.65;
 
-        // Smoothness penalty (favor seamless drifts)
-        const smoothPenalty = (Math.abs(dSteer) * 0.24 + Math.abs(dThr) * 0.12 + Math.abs(dHb) * 0.20);
+        const distNorm = Math.abs(this._sample.signedDist) / halfRoad;
+        const trackPenalty = Math.pow(clamp01(distNorm), 2) * 0.75;
 
-        // Off-track termination
-        const offTrack = Math.abs(this.sample.signedDist) > halfRoad * 1.07;
+        const newSlip = wrapAngle(Math.atan2(this.car.vy, this.car.vx) - this.car.heading);
+        const slipAbs = Math.abs(newSlip);
+        const driftIntensity = clamp01(slipAbs / degToRad(28)) * clamp01(newSpeed / 110);
 
-        const reward = progressReward + slipReward - trackPenalty - smoothPenalty;
+        // Drift reward: incentivize maintaining ~18-22° slip angle on corners
+        let driftReward = 0;
+        if (inDriftZone && driftIntensity > 0.2) {
+            const idealSlip = degToRad(20);
+            const slipErr = Math.abs(slipAbs - idealSlip);
+            driftReward = (1 - clamp01(slipErr / idealSlip)) * 0.45
+                * smoothstep(0.007, 0.020, curvAbs);
+        }
+
+        // Smoothness penalty
+        const smoothPenalty = Math.abs(steerCmd - this.prevSteer) * 0.10
+            + Math.abs(throttleCmd - this.prevThrottle) * 0.06;
+        this.prevSteer = steerCmd;
+        this.prevThrottle = throttleCmd;
+
+        const reward = progressReward + driftReward - trackPenalty - smoothPenalty;
+        this.fitness += reward;
         this.lastReward = reward;
-        this.episodeReturn += reward;
+        this.stepsAlive++;
 
-        // Drift intensity & visuals signals
-        const driftIntensity = clamp01(Math.abs(slip) / degToRad(32)) * clamp01(newSpeed / this.driftSpeed);
+        const offTrack = Math.abs(this._sample.signedDist) > halfRoad * 1.12;
 
-        if (driftIntensity > 0.65) this.driftHold += dt;
-        else this.driftHold = Math.max(0, this.driftHold - dt * 1.3);
-
+        // ---- Visuals ----
         if (visualsEnabled) {
-            this.spawnAndUpdateVisuals(dt, driftIntensity, slip, newSpeed, desiredSlip, inDriftZone, handbrake);
-        } else {
-            // Keep visuals clean during fast-forward
-            this.arcs = [];
-            this.smoke = [];
-            this.arcTimer = 0;
-            this.smokeTimer = 0;
-            this.driftHold = 0;
+            this._updateVisuals(dt, driftIntensity, newSpeed, effectiveHB, rng);
         }
 
-        // Traces
-        this.slipTrace.push(radToDeg(slip));
-        this.speedTrace.push(newSpeed);
-        this.rewardTrace.push(reward);
-
-        // Step counters
-        this.step++;
-        this.stepInEpisode++;
-
-        if (offTrack) {
-            this.endEpisode(true);
-            return;
-        }
-
-        if (this.stepInEpisode >= this.stepsPerEpisode) {
-            this.endEpisode(false);
-            return;
-        }
-
-        // Update UI snapshot cache (cheap values only)
-        this.ui = this.makeUiSnapshot(steerCmd, throttle, handbrake, desiredSlip, driftIntensity, curv);
+        return { reward, done: offTrack };
     }
 
-    private spawnAndUpdateVisuals(
-        dt: number,
-        driftIntensity: number,
-        slip: number,
-        speed: number,
-        desiredSlip: number,
-        inDriftZone: boolean,
-        handbrake: number
-    ): void {
-        // Aging existing arcs
-        for (let i = this.arcs.length - 1; i >= 0; i--) {
-            this.arcs[i].age += dt;
-            if (this.arcs[i].age >= this.arcs[i].life) this.arcs.splice(i, 1);
+    private _updateVisuals(dt: number, driftIntensity: number, speed: number, hb: number, rng: RNG): void {
+        const hx = Math.cos(this.car.heading);
+        const hy = Math.sin(this.car.heading);
+        const rx = -hy, ry = hx;
+        const rOff = -this.carLength * 0.36;
+        const hw = this.carWidth * 0.46;
+
+        const lrx = this.car.x + hx * rOff - rx * hw;
+        const lry = this.car.y + hy * rOff - ry * hw;
+        const rrx = this.car.x + hx * rOff + rx * hw;
+        const rry = this.car.y + hy * rOff + ry * hw;
+
+        // Persistent skid marks (only when actively drifting)
+        if (driftIntensity > 0.22 && speed > 70) {
+            const prevL = this.skidPts[this.skidPts.length - 1];
+            const moved = !prevL || prevL.gap ||
+                hypot(lrx - prevL.lx, lry - prevL.ly) > 2.5;
+            if (moved) {
+                this.skidPts.push({
+                    lx: lrx, ly: lry, rx: rrx, ry: rry,
+                    alpha: clamp01(driftIntensity * 1.6) * 0.55,
+                    gap: false
+                });
+            }
+        } else {
+            // Add gap marker so lines don't connect across non-drifting gaps
+            const last = this.skidPts[this.skidPts.length - 1];
+            if (last && !last.gap) {
+                this.skidPts.push({ lx: last.lx, ly: last.ly, rx: last.rx, ry: last.ry, alpha: 0, gap: true });
+            }
         }
 
-        // Aging smoke puffs
+        // Cap skid trail length
+        if (this.skidPts.length > 900) this.skidPts.splice(0, 80);
+
+        // Drift hold for heavy smoke
+        if (driftIntensity > 0.65) this.driftHold += dt;
+        else this.driftHold = Math.max(0, this.driftHold - dt * 1.6);
+
+        // Spawn smoke on heavy drifts
+        this.smokeTimer += dt;
+        const heavy = driftIntensity > 0.72 && this.driftHold > 0.5 && (hb > 0.2 || speed > 120);
+        if (heavy && this.smokeTimer > 0.09) {
+            this.smokeTimer = 0;
+            const sp = Math.max(1, speed);
+            spawnSmoke(this.smoke, rng, lrx, lry, -this.car.vx / sp, -this.car.vy / sp);
+            spawnSmoke(this.smoke, rng, rrx, rry, -this.car.vx / sp, -this.car.vy / sp);
+        }
+
+        // Age smoke
         for (let i = this.smoke.length - 1; i >= 0; i--) {
             const p = this.smoke[i];
-            p.age += dt;
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
+            p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt;
             if (p.age >= p.life) this.smoke.splice(i, 1);
         }
-
-        // Spawn stylized drift arcs (thin, repeated curves)
-        this.arcTimer += dt;
-        const arcInterval = lerp(0.11, 0.07, clamp01(driftIntensity));
-        const shouldArc = driftIntensity > 0.30 && speed > this.driftSpeed * 0.75 && inDriftZone;
-
-        if (shouldArc && this.arcTimer >= arcInterval) {
-            this.arcTimer = 0;
-
-            // rear wheel positions in world coords
-            const rearOffset = -this.carLength * 0.34;
-            const halfW = this.carWidth * 0.45;
-
-            const hx = Math.cos(this.car.heading);
-            const hy = Math.sin(this.car.heading);
-            const rx = -hy;
-            const ry = hx;
-
-            const w1x = this.car.x + hx * rearOffset + rx * (-halfW);
-            const w1y = this.car.y + hy * rearOffset + ry * (-halfW);
-            const w2x = this.car.x + hx * rearOffset + rx * (halfW);
-            const w2y = this.car.y + hy * rearOffset + ry * (halfW);
-
-            const velMag = Math.max(1e-3, hypot(this.car.vx, this.car.vy));
-            const vx = this.car.vx / velMag;
-            const vy = this.car.vy / velMag;
-            // arc length and curvature scale
-            const arcLen = lerp(20, 34, clamp01(speed / this.maxSpeed));
-            const curveAmt = lerp(8, 16, clamp01(Math.abs(slip - desiredSlip) / degToRad(28))) + this.rng.next() * 4;
-
-            // Use slip sign to bend arcs in drift direction (graphic motion indicator)
-            const bend = signNonZero(slip) * curveAmt;
-
-            // Two arcs per wheel with slight offsets to create "repeated strokes"
-            spawnArc(this.arcs, w1x, w1y, vx, vy, bend, arcLen, 0.95);
-            spawnArc(this.arcs, w2x, w2y, vx, vy, bend, arcLen, 0.95);
-            spawnArc(this.arcs, w1x + rx * 2, w1y + ry * 2, vx, vy, bend * 0.85, arcLen * 0.92, 0.75);
-            spawnArc(this.arcs, w2x - rx * 2, w2y - ry * 2, vx, vy, bend * 0.85, arcLen * 0.92, 0.75);
-        }
-
-        // Spawn smoke only for long/heavy drifts
-        this.smokeTimer += dt;
-        const heavy = driftIntensity > 0.78 && this.driftHold > 0.65 && (handbrake > 0.2 || speed > this.driftSpeed);
-
-        if (heavy && this.smokeTimer > 0.10) {
-            this.smokeTimer = 0;
-
-            const rearOffset = -this.carLength * 0.34;
-            const halfW = this.carWidth * 0.45;
-
-            const hx = Math.cos(this.car.heading);
-            const hy = Math.sin(this.car.heading);
-            const rx = -hy;
-            const ry = hx;
-
-            const w1x = this.car.x + hx * rearOffset + rx * (-halfW);
-            const w1y = this.car.y + hy * rearOffset + ry * (-halfW);
-            const w2x = this.car.x + hx * rearOffset + rx * (halfW);
-            const w2y = this.car.y + hy * rearOffset + ry * (halfW);
-
-            // slight upward drift in screen-space + a touch opposite velocity
-            const vMag = Math.max(1e-3, hypot(this.car.vx, this.car.vy));
-            const ovx = -this.car.vx / vMag;
-            const ovy = -this.car.vy / vMag;
-
-            spawnSmoke(this.smoke, this.rng, w1x, w1y, ovx, ovy);
-            spawnSmoke(this.smoke, this.rng, w2x, w2y, ovx, ovy);
-        }
-
-        // keep arrays bounded
-        if (this.arcs.length > 520) this.arcs.splice(0, this.arcs.length - 520);
-        if (this.smoke.length > 220) this.smoke.splice(0, this.smoke.length - 220);
-    }
-
-    private endEpisode(crashed: boolean): void {
-        const ret = crashed ? this.episodeReturn - 6.5 : this.episodeReturn;
-        this.bestReturn = Math.max(this.bestReturn, ret);
-
-        // Keep a compact history
-        this.returns.push(ret);
-        if (this.returns.length > 140) this.returns.shift();
-
-        this.epsHistory.push(this.epsilon);
-        if (this.epsHistory.length > 140) this.epsHistory.shift();
-
-        this.skillHistory.push(this.skill);
-        if (this.skillHistory.length > 140) this.skillHistory.shift();
-
-        this.episode++;
-        this.resetEpisode(false);
-    }
-
-    private resetEpisode(clearTraces: boolean): void {
-        this.stepInEpisode = 0;
-        this.episodeReturn = 0;
-        this.lastReward = 0;
-
-        this.kickTimer = 0;
-        this.prevInDriftZone = false;
-        this.prevSteerCmd = 0;
-        this.prevThrottle = 0;
-        this.prevHandbrake = 0;
-
-        this.arcTimer = 0;
-        this.smokeTimer = 0;
-        this.driftHold = 0;
-        this.arcs = [];
-        this.smoke = [];
-
-        if (clearTraces) {
-            this.slipTrace.clear();
-            this.speedTrace.clear();
-            this.rewardTrace.clear();
-        }
-
-        // Start at distance 0 on track, oriented along tangent (clockwise)
-        this.track.pointAtDistance(0, this.tmpVecA);
-        this.track.tangentAtDistance(0, this.tmpVecB);
-
-        this.car.x = this.tmpVecA.x;
-        this.car.y = this.tmpVecA.y;
-        this.car.heading = Math.atan2(this.tmpVecB.y, this.tmpVecB.x);
-
-        // Give it a bit of initial forward speed
-        const startSpeed = lerp(170, 240, clamp01(this.skill));
-        this.car.vx = this.tmpVecB.x * startSpeed;
-        this.car.vy = this.tmpVecB.y * startSpeed;
-
-        this.car.steerAngle = 0;
-        this.car.wheelSpin = 0;
-
-        this.track.closestSample(this.car.x, this.car.y, this.sample);
-        this.ui = this.makeUiSnapshot(0, 0.6, 0, 0, 0, this.sample.curvature);
-    }
-
-    private makeUiSnapshot(
-        steerCmd: number,
-        throttle: number,
-        handbrake: number,
-        desiredSlip: number,
-        driftIntensity: number,
-        curvature: number
-    ): UiSnapshot {
-        const speed = hypot(this.car.vx, this.car.vy);
-        const velAng = Math.atan2(this.car.vy, this.car.vx);
-        const slip = speed > 2 ? wrapAngle(velAng - this.car.heading) : 0;
-
-        const avg = averageLast(this.returns, 24);
-
-        return {
-            episode: this.episode,
-            step: this.step,
-            stepInEpisode: this.stepInEpisode,
-            stepsPerEpisode: this.stepsPerEpisode,
-            totalSteps: this.step,
-            episodeReturn: this.episodeReturn,
-            bestReturn: this.bestReturn,
-            avgReturn: avg,
-            reward: this.lastReward,
-
-            skill: this.skill,
-            epsilon: this.epsilon,
-            loss: this.loss,
-            qValue: this.qValue,
-
-            speed,
-            headingDeg: radToDeg(this.car.heading),
-            velDeg: radToDeg(velAng),
-            slipDeg: radToDeg(slip),
-            desiredSlipDeg: radToDeg(desiredSlip),
-            curvature,
-            trackError: this.sample.signedDist,
-
-            steerCmd,
-            steerDeg: radToDeg(this.car.steerAngle),
-            throttle,
-            handbrake,
-
-            driftIntensity,
-        };
-    }
-
-    getUiSnapshot(): UiSnapshot {
-        return this.ui;
-    }
-
-    getReturnHistory(): number[] {
-        return this.returns.slice();
-    }
-    getEpsilonHistory(): number[] {
-        return this.epsHistory.slice();
-    }
-    getSkillHistory(): number[] {
-        return this.skillHistory.slice();
-    }
-
-    getSlipTrace(): RingBuffer {
-        return this.slipTrace;
-    }
-    getSpeedTrace(): RingBuffer {
-        return this.speedTrace;
-    }
-    getRewardTrace(): RingBuffer {
-        return this.rewardTrace;
-    }
-
-    render(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-        // Background (white) + subtle grid
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-
-        drawFaintGrid(ctx, w, h);
-
-        // Track (stroke-based road for clean vector look)
-        drawTrack(ctx, this.track);
-
-        // Drift arcs (light gray motion curves)
-        drawDriftArcs(ctx, this.arcs);
-
-        // Smoke (soft circles)
-        drawSmoke(ctx, this.smoke);
-
-        // Velocity arrow (subtle, helps "drift" readability)
-        drawVelocityVector(ctx, this.car);
-
-        // Car
-        drawCar(ctx, this.car, this.carLength, this.carWidth, this.maxSteer);
-    }
-
-    drawCharts(
-        returnCtx: CanvasRenderingContext2D | null,
-        epsCtx: CanvasRenderingContext2D | null,
-        slipCtx: CanvasRenderingContext2D | null,
-        rewardCtx: CanvasRenderingContext2D | null
-    ): void {
-        if (returnCtx) {
-            drawEpisodeChart(returnCtx, this.getReturnHistory(), this.bestReturn, 'Episode Return');
-        }
-        if (epsCtx) {
-            // show skill and epsilon together
-            drawDualChart(epsCtx, this.getSkillHistory(), this.getEpsilonHistory(), 'Skill / Epsilon');
-        }
-        if (slipCtx) {
-            drawTraceChart(slipCtx, this.slipTrace, -40, 40, 'Slip (deg)');
-        }
-        if (rewardCtx) {
-            drawTraceChart(rewardCtx, this.rewardTrace, -1.1, 1.1, 'Reward (step)');
-        }
+        if (this.smoke.length > 70) this.smoke.splice(0, 20);
     }
 }
 
-function approach(cur: number, target: number, maxDelta: number): number {
-    const d = target - cur;
-    if (Math.abs(d) <= maxDelta) return target;
-    return cur + Math.sign(d) * maxDelta;
-}
-
-function averageLast(arr: number[], n: number): number {
-    if (arr.length === 0) return 0;
-    const k = Math.max(1, Math.min(n, arr.length));
-    let s = 0;
-    for (let i = arr.length - k; i < arr.length; i++) s += arr[i] ?? 0;
-    return s / k;
+function spawnSmoke(smoke: SmokePuff[], rng: RNG, x: number, y: number, ovx: number, ovy: number): void {
+    const life = lerp(0.6, 1.1, rng.next());
+    const bv = lerp(12, 24, rng.next());
+    const circles: SmokePuff['circles'] = [];
+    const cnt = 3 + Math.floor(rng.next() * 3);
+    for (let i = 0; i < cnt; i++) circles.push({ ox: rng.normal(0, 4), oy: rng.normal(0, 3.5), r: lerp(5, 10, rng.next()) });
+    smoke.push({
+        x, y,
+        vx: ovx * bv + rng.normal(0, 7),
+        vy: ovy * bv + rng.normal(-14, 5),
+        age: 0, life, circles
+    });
 }
 
 /** =========================
- *  Visual spawning helpers
+ *  Genetic Drift Trainer
  *  ========================= */
-function spawnArc(
-    arcs: DriftArc[],
-    sx: number,
-    sy: number,
-    dirx: number,
-    diry: number,
-    bend: number,
-    len: number,
-    alpha: number
-): void {
-    // from start, go backward along velocity direction
-    const bx = sx - dirx * len;
-    const by = sy - diry * len;
-    // control point: midpoint + perpendicular bend
-    const mx = (sx + bx) * 0.5;
-    const my = (sy + by) * 0.5;
-    const px = -diry;
-    const py = dirx;
-    const cx = mx + px * bend;
-    const cy = my + py * bend;
+const POP_SIZE = 8;
+const ELITE_COUNT = 3;
 
-    arcs.push({
-        ax: sx,
-        ay: sy,
-        cx,
-        cy,
-        bx,
-        by,
-        age: 0,
-        life: 1.05,
-        alpha,
-    });
-}
+class GeneticDriftTrainer {
+    private rng = new RNG(0xdeadbeef);
 
-function spawnSmoke(
-    smoke: SmokePuff[],
-    rng: RNG,
-    x: number,
-    y: number,
-    ovx: number,
-    ovy: number
-): void {
-    const life = lerp(0.75, 1.25, rng.next());
-    const baseV = lerp(16, 30, rng.next());
-    const vx = ovx * baseV + rng.normal(0, 8);
-    const vy = ovy * baseV + rng.normal(-18, 6); // upward-ish in screen coordinates
+    track: Track;
+    private trackType: TrackType = 'oval';
 
-    const circles: { ox: number; oy: number; r: number }[] = [];
-    const count = 4 + Math.floor(rng.next() * 3);
-    for (let i = 0; i < count; i++) {
-        circles.push({
-            ox: rng.normal(0, 5),
-            oy: rng.normal(0, 4),
-            r: lerp(6, 12, rng.next()),
-        });
+    private pop: Agent[] = [];
+    private generation = 0;
+    private totalSteps = 0;
+
+    bestFitness = -Infinity;
+    private genBestHistory: number[] = [];
+    private genAvgHistory: number[] = [];
+
+    // Live traces from best current agent
+    liveSlipTrace = new RingBuffer(220);
+    liveRewardTrace = new RingBuffer(220);
+    liveSpeedTrace = new RingBuffer(220);
+
+    // Mutation schedule
+    private mutSigma = 1.2;
+
+    // Car sizing
+    private carLength = 46;
+    private carWidth = 24;
+    private wheelbase = 30;
+
+    private _ui: UiSnapshot;
+    private _stepsPerEpisode = 600;
+
+    constructor(w: number, h: number) {
+        this.track = new Track(w, h, 'oval');
+        this._resizeCar(w, h);
+        this._initPop();
+        this._ui = this._buildUiSnap(null);
     }
 
-    smoke.push({
-        x,
-        y,
-        vx,
-        vy,
-        age: 0,
-        life,
-        circles,
-    });
+    private _resizeCar(w: number, h: number): void {
+        const base = Math.min(w, h);
+        this.carLength = clamp(base * 0.085, 42, 56);
+        this.carWidth = clamp(base * 0.044, 20, 30);
+        this.wheelbase = this.carLength * 0.62;
+    }
+
+    private _applySize(a: Agent): void {
+        a.carLength = this.carLength;
+        a.carWidth = this.carWidth;
+        a.wheelbase = this.wheelbase;
+    }
+
+    private _skill(): number {
+        return clamp01(1 - Math.exp(-this.generation / 260));
+    }
+
+    private _initPop(): void {
+        this.pop = [];
+        for (let i = 0; i < POP_SIZE; i++) {
+            const net = NeuralNet.random(this.rng);
+            const a = new Agent(net);
+            this._applySize(a);
+            a.reset(this.track, this.rng, 0);
+            this.pop.push(a);
+        }
+    }
+
+    private _resetEpisode(): void {
+        const skill = this._skill();
+        for (const a of this.pop) {
+            this._applySize(a);
+            a.reset(this.track, this.rng, skill);
+        }
+    }
+
+    resize(w: number, h: number): void {
+        this.track.build(w, h, this.trackType);
+        this._resizeCar(w, h);
+        this._resetEpisode();
+    }
+
+    setTrackType(type: TrackType, w: number, h: number): void {
+        this.trackType = type;
+        this.track.build(w, h, type);
+        this._resetEpisode();
+    }
+
+    resetTraining(w?: number, h?: number): void {
+        this.generation = 0;
+        this.totalSteps = 0;
+        this.bestFitness = -Infinity;
+        this.genBestHistory = [];
+        this.genAvgHistory = [];
+        this.liveSlipTrace.clear();
+        this.liveRewardTrace.clear();
+        this.liveSpeedTrace.clear();
+        this.mutSigma = 1.2;
+        if (w && h) { this.track.build(w, h, this.trackType); this._resizeCar(w, h); }
+        this._initPop();
+    }
+
+    fastForward(nGen: number): void {
+        const target = this.generation + nGen;
+        let safety = 0;
+        const maxSafety = nGen * POP_SIZE * 900 + 10000;
+        while (this.generation < target && safety < maxSafety) {
+            this._tickAll(FIXED_DT, false);
+            safety++;
+        }
+    }
+
+    stepAll(dt: number, visualsEnabled: boolean): void {
+        this._tickAll(dt, visualsEnabled);
+    }
+
+    private _tickAll(dt: number, visuals: boolean): void {
+        const maxSteps = this._stepsPerEpisode;
+        let anyAlive = false;
+        let bestAgent: Agent | null = null;
+        let bestFit = -Infinity;
+
+        for (const a of this.pop) {
+            if (!a.alive) continue;
+            if (a.stepsAlive >= maxSteps) { a.alive = false; continue; }
+
+            const { done } = a.stepOnce(this.track, dt, maxSteps, visuals, this.rng);
+            this.totalSteps++;
+            anyAlive = true;
+            if (done) { a.alive = false; continue; }
+
+            if (a.fitness > bestFit) { bestFit = a.fitness; bestAgent = a; }
+        }
+
+        // Live traces from best agent
+        if (visuals && bestAgent) {
+            const sp = hypot(bestAgent.car.vx, bestAgent.car.vy);
+            const velAng = sp > 2 ? Math.atan2(bestAgent.car.vy, bestAgent.car.vx) : bestAgent.car.heading;
+            const slip = wrapAngle(velAng - bestAgent.car.heading);
+            this.liveSlipTrace.push(radToDeg(slip));
+            this.liveSpeedTrace.push(sp);
+            this.liveRewardTrace.push(bestAgent.lastReward);
+        }
+
+        if (!anyAlive) {
+            this._evolve();
+            this._resetEpisode();
+        }
+
+        this._ui = this._buildUiSnap(bestAgent);
+    }
+
+    private _evolve(): void {
+        this.pop.sort((a, b) => b.fitness - a.fitness);
+
+        const best = this.pop[0];
+        const bestFit = best?.fitness ?? 0;
+        const avgFit = this.pop.reduce((s, a) => s + a.fitness, 0) / this.pop.length;
+
+        if (bestFit > this.bestFitness) {
+            this.bestFitness = bestFit;
+        }
+
+        this.genBestHistory.push(bestFit);
+        this.genAvgHistory.push(avgFit);
+        if (this.genBestHistory.length > 140) this.genBestHistory.shift();
+        if (this.genAvgHistory.length > 140) this.genAvgHistory.shift();
+
+        // Sigma annealing
+        this.mutSigma = Math.max(0.04, this.mutSigma * 0.975);
+
+        const elites = this.pop.slice(0, ELITE_COUNT);
+        const newPop: Agent[] = [];
+
+        // Keep elites
+        for (const e of elites) {
+            const a = new Agent(NeuralNet.clone(e.net));
+            this._applySize(a);
+            newPop.push(a);
+        }
+
+        // Offspring
+        while (newPop.length < POP_SIZE) {
+            const r = this.rng.next();
+            let net: NeuralNet;
+            if (r < 0.38 && elites.length >= 2) {
+                const pa = elites[Math.floor(this.rng.next() * elites.length)]!;
+                const pb = elites[Math.floor(this.rng.next() * elites.length)]!;
+                net = NeuralNet.crossover(pa.net, pb.net, this.rng);
+                net = NeuralNet.mutate(net, this.mutSigma, this.rng, 0.08);
+            } else if (r < 0.82) {
+                const par = elites[Math.floor(this.rng.next() * elites.length)]!;
+                net = NeuralNet.mutate(par.net, this.mutSigma, this.rng, 0.14);
+            } else {
+                net = NeuralNet.random(this.rng);
+            }
+            const a = new Agent(net);
+            this._applySize(a);
+            newPop.push(a);
+        }
+
+        this.pop = newPop;
+        this.generation++;
+    }
+
+    render(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        drawFaintGrid(ctx, w, h);
+        drawTrack(ctx, this.track);
+
+        // Sort by fitness: champion first
+        const sorted = [...this.pop].sort((a, b) => b.fitness - a.fitness);
+
+        // Draw skid marks for all agents (under cars)
+        for (const a of this.pop) {
+            if (a.skidPts.length > 1) drawSkidMarks(ctx, a.skidPts);
+        }
+
+        // Draw smoke
+        for (const a of this.pop) {
+            if (a.smoke.length > 0) drawSmoke(ctx, a.smoke);
+        }
+
+        // Ghost agents (alive but not champion)
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i]!.alive) drawCarGhost(ctx, sorted[i]!, i);
+        }
+
+        // Champion on top
+        if (sorted[0]?.alive) drawCarChampion(ctx, sorted[0]!);
+
+        // Info overlay
+        drawSimOverlay(ctx, w,
+            this.generation,
+            this.pop.filter(a => a.alive).length,
+            POP_SIZE,
+            this.bestFitness
+        );
+    }
+
+    drawCharts(
+        fitCtx: CanvasRenderingContext2D | null,
+        sigCtx: CanvasRenderingContext2D | null,
+        slipCtx: CanvasRenderingContext2D | null,
+        rewardCtx: CanvasRenderingContext2D | null
+    ): void {
+        if (fitCtx) drawFitnessChart(fitCtx, this.genBestHistory, this.genAvgHistory, 'Fitness / Generation');
+        if (sigCtx) drawSigmaChart(sigCtx, this.genBestHistory.length, this.mutSigma);
+        if (slipCtx) drawTraceChart(slipCtx, this.liveSlipTrace, -45, 45, 'Live Slip (°)');
+        if (rewardCtx) drawTraceChart(rewardCtx, this.liveRewardTrace, -1.2, 1.2, 'Live Reward');
+    }
+
+    getUiSnapshot(): UiSnapshot { return this._ui; }
+    getGenBestHistory(): number[] { return this.genBestHistory.slice(); }
+    getGenAvgHistory(): number[] { return this.genAvgHistory.slice(); }
+
+    private _buildUiSnap(bestAgent: Agent | null): UiSnapshot {
+        const skill = this._skill();
+        const aliveAgents = this.pop.filter(a => a.alive).length;
+        const lastGenAvg = this.genAvgHistory[this.genAvgHistory.length - 1] ?? 0;
+
+        if (!bestAgent) {
+            return {
+                generation: this.generation, totalSteps: this.totalSteps,
+                aliveAgents, populationSize: POP_SIZE,
+                bestFitness: Math.max(0, this.bestFitness),
+                currentBestFitness: 0, avgFitness: lastGenAvg,
+                skill, mutSigma: this.mutSigma,
+                speed: 0, slipDeg: 0, headingErrDeg: 0, trackError: 0, driftIntensity: 0, yawRate: 0,
+                steer: 0, throttle: 0, handbrake: 0, reward: 0, fitness: 0,
+            };
+        }
+
+        const sp = hypot(bestAgent.car.vx, bestAgent.car.vy);
+        const velAng = sp > 2 ? Math.atan2(bestAgent.car.vy, bestAgent.car.vx) : bestAgent.car.heading;
+        const slip = wrapAngle(velAng - bestAgent.car.heading);
+
+        const smp: TrackSample = { px: 0, py: 0, tx: 1, ty: 0, nx: 0, ny: 1, signedDist: 0, dist: 0, progress: 0, curvature: 0, turnSign: 0 };
+        this.track.closestSample(bestAgent.car.x, bestAgent.car.y, smp);
+        const trackAngle = Math.atan2(smp.ty, smp.tx);
+        const headingErr = wrapAngle(bestAgent.car.heading - trackAngle);
+        const driftIntensity = clamp01(Math.abs(slip) / degToRad(28)) * clamp01(sp / 110);
+
+        return {
+            generation: this.generation, totalSteps: this.totalSteps,
+            aliveAgents, populationSize: POP_SIZE,
+            bestFitness: Math.max(0, this.bestFitness),
+            currentBestFitness: bestAgent.fitness,
+            avgFitness: lastGenAvg,
+            skill, mutSigma: this.mutSigma,
+            speed: sp, slipDeg: radToDeg(slip),
+            headingErrDeg: radToDeg(headingErr),
+            trackError: smp.signedDist,
+            driftIntensity, yawRate: bestAgent.car.omega,
+            steer: bestAgent.lastSteer,
+            throttle: bestAgent.lastThrottle,
+            handbrake: bestAgent.lastHandbrake,
+            reward: bestAgent.lastReward,
+            fitness: bestAgent.fitness,
+        };
+    }
 }
 
 /** =========================
  *  Rendering helpers
  *  ========================= */
 function drawFaintGrid(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const spacing = 34;
+    const sp = 34;
     ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.045)';
+    ctx.strokeStyle = 'rgba(15,23,42,0.042)';
     ctx.lineWidth = 1;
-
-    // vertical
-    for (let x = 0; x <= w; x += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(x + 0.5, 0);
-        ctx.lineTo(x + 0.5, h);
-        ctx.stroke();
-    }
-    // horizontal
-    for (let y = 0; y <= h; y += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(0, y + 0.5);
-        ctx.lineTo(w, y + 0.5);
-        ctx.stroke();
-    }
-
+    for (let x = 0; x <= w; x += sp) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); }
+    for (let y = 0; y <= h; y += sp) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); }
     ctx.restore();
 }
 
 function drawTrack(ctx: CanvasRenderingContext2D, track: Track): void {
     const pts = track.points;
     if (pts.length < 2) return;
-
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    // Outer border
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.closePath();
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = track.roadWidth + 10;
-    ctx.stroke();
-
-    // Road surface
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.closePath();
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = track.roadWidth;
-    ctx.stroke();
-
-    // Centerline (thin dashed)
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.closePath();
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.35)';
-    ctx.setLineDash([7, 10]);
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // A few subtle "apex markers" (dots)
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.22)';
-    const stride = Math.max(10, Math.floor(pts.length / 10));
-    for (let i = 0; i < pts.length; i += stride) {
-        const p = pts[i];
+    const drawPath = () => {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.2, 0, TAU);
-        ctx.fill();
-    }
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+        ctx.closePath();
+    };
+
+    // Outer border
+    drawPath(); ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = track.roadWidth + 12; ctx.stroke();
+    // Road surface
+    drawPath(); ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = track.roadWidth; ctx.stroke();
+    // Centerline dashes
+    drawPath(); ctx.strokeStyle = 'rgba(100,116,139,0.32)'; ctx.setLineDash([7, 11]); ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.setLineDash([]);
 
     ctx.restore();
 }
 
-function drawDriftArcs(ctx: CanvasRenderingContext2D, arcs: DriftArc[]): void {
+function drawSkidMarks(ctx: CanvasRenderingContext2D, pts: SkidPt[]): void {
+    if (pts.length < 2) return;
     ctx.save();
-    ctx.lineWidth = 1.15;
+    ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
 
-    for (const a of arcs) {
-        const t = clamp01(a.age / a.life);
+    const n = pts.length;
+    for (let i = 0; i < n - 1; i++) {
+        const a = pts[i]!;
+        const b = pts[i + 1]!;
+        if (a.gap || b.gap) continue;
 
-        // fade in quickly then fade out
-        const fadeIn = smoothstep(0, 0.12, t);
-        const fadeOut = 1 - smoothstep(0.55, 1.0, t);
-        const alpha = a.alpha * fadeIn * fadeOut;
+        // Fade older marks toward transparent
+        const ageFrac = i / n;
+        const alpha = a.alpha * (0.15 + 0.85 * (1 - ageFrac * ageFrac));
+        ctx.strokeStyle = `rgba(148,163,184,${alpha})`;
 
-        ctx.strokeStyle = `rgba(148, 163, 184, ${alpha * 0.65})`;
-        ctx.beginPath();
-        ctx.moveTo(a.ax, a.ay);
-        ctx.quadraticCurveTo(a.cx, a.cy, a.bx, a.by);
-        ctx.stroke();
+        // Left tire
+        ctx.beginPath(); ctx.moveTo(a.lx, a.ly); ctx.lineTo(b.lx, b.ly); ctx.stroke();
+        // Right tire
+        ctx.beginPath(); ctx.moveTo(a.rx, a.ry); ctx.lineTo(b.rx, b.ry); ctx.stroke();
     }
-
     ctx.restore();
 }
 
@@ -1419,146 +1155,125 @@ function drawSmoke(ctx: CanvasRenderingContext2D, smoke: SmokePuff[]): void {
     ctx.save();
     for (const p of smoke) {
         const t = clamp01(p.age / p.life);
-
-        const scale = lerp(0.75, 1.65, smoothstep(0, 1, t));
-        const alpha = Math.pow(1 - t, 2) * 0.25;
-
-        ctx.fillStyle = `rgba(148, 163, 184, ${alpha})`;
-
+        const scale = lerp(0.7, 1.8, smoothstep(0, 1, t));
+        const alpha = Math.pow(1 - t, 1.8) * 0.22;
+        ctx.fillStyle = `rgba(148,163,184,${alpha})`;
         for (const c of p.circles) {
-            const r = c.r * scale;
-            const ox = c.ox * scale;
-            const oy = c.oy * scale;
-
             ctx.beginPath();
-            ctx.arc(p.x + ox, p.y + oy, r, 0, TAU);
+            ctx.arc(p.x + c.ox * scale, p.y + c.oy * scale, c.r * scale, 0, TAU);
             ctx.fill();
         }
     }
     ctx.restore();
 }
 
-function drawVelocityVector(ctx: CanvasRenderingContext2D, car: CarState): void {
+function drawCarChampion(ctx: CanvasRenderingContext2D, agent: Agent): void {
+    const { car, carLength, carWidth } = agent;
     const sp = hypot(car.vx, car.vy);
-    if (sp < 2) return;
 
-    const vx = car.vx / sp;
-    const vy = car.vy / sp;
+    // Velocity direction arrow (shows the drift — body heading vs travel direction)
+    if (sp > 12) {
+        const vx = car.vx / sp, vy = car.vy / sp;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(99,102,241,0.55)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + vx * 34, car.y + vy * 34); ctx.stroke();
+        // Arrow tip
+        const ax = car.x + vx * 34, ay = car.y + vy * 34;
+        const px = -vy, py = vx;
+        ctx.fillStyle = 'rgba(99,102,241,0.55)';
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - vx * 6 + px * 4, ay - vy * 6 + py * 4);
+        ctx.lineTo(ax - vx * 6 - px * 4, ay - vy * 6 - py * 4); ctx.closePath(); ctx.fill();
+        ctx.restore();
+    }
 
+    drawCarShape(ctx, car, carLength, carWidth, 1.0, '#1e293b', '#0f172a');
+}
+
+function drawCarGhost(ctx: CanvasRenderingContext2D, agent: Agent, rank: number): void {
+    const alpha = Math.max(0.18, 0.45 - rank * 0.06);
     ctx.save();
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.22)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(car.x, car.y);
-    ctx.lineTo(car.x + vx * 28, car.y + vy * 28);
-    ctx.stroke();
+    ctx.globalAlpha = alpha;
+    drawCarShape(ctx, agent.car, agent.carLength, agent.carWidth, 1.0, '#334155', '#1e293b');
     ctx.restore();
 }
 
-function drawCar(
+function drawCarShape(
     ctx: CanvasRenderingContext2D,
     car: CarState,
     carL: number,
     carW: number,
-    maxSteer: number
+    _alpha: number,
+    bodyColor: string,
+    roofColor: string
 ): void {
     ctx.save();
     ctx.translate(car.x, car.y);
     ctx.rotate(car.heading);
 
-    // Body (rounded rect)
-    const halfL = carL * 0.5;
-    const halfW = carW * 0.5;
-    const radius = Math.min(halfW, 7);
+    const hL = carL * 0.5;
+    const hW = carW * 0.5;
+    const r = Math.min(hW, 7);
 
-    ctx.fillStyle = '#1f2937';
-    roundedRect(ctx, -halfL, -halfW, carL, carW, radius);
+    // Body
+    ctx.fillStyle = bodyColor;
+    roundedRect(ctx, -hL, -hW, carL, carW, r);
     ctx.fill();
 
-    // Window/roof (simple darker shape)
-    ctx.fillStyle = '#0f172a';
-    const roofL = carL * 0.56;
-    const roofW = carW * 0.52;
-    roundedRect(ctx, -roofL * 0.3, -roofW * 0.5, roofL, roofW, Math.min(roofW / 2, 6));
+    // Roof/windshield area
+    ctx.fillStyle = roofColor;
+    const roofL = carL * 0.54, roofW = carW * 0.50;
+    roundedRect(ctx, -roofL * 0.28, -roofW * 0.5, roofL, roofW, Math.min(roofW / 2, 5));
     ctx.fill();
 
-    // Tail lights (minimal accent red)
+    // Tail lights (red accent)
     ctx.fillStyle = '#ef4444';
-    const tlW = 4.6;
-    const tlH = 2.2;
-    // rear is -halfL
-    ctx.fillRect(-halfL + 2.2, -halfW + 2.6, tlW, tlH);
-    ctx.fillRect(-halfL + 2.2, halfW - 2.6 - tlH, tlW, tlH);
+    const tlW = 4.4, tlH = 2.0;
+    ctx.fillRect(-hL + 2.0, -hW + 2.4, tlW, tlH);
+    ctx.fillRect(-hL + 2.0, hW - 2.4 - tlH, tlW, tlH);
 
-    // Wheels (barely visible, implied) + spin lines
-    const wheelW = Math.max(5.5, carW * 0.22);
-    const wheelH = Math.max(2.4, carW * 0.10);
-    const wheelXFront = halfL * 0.28;
-    const wheelXRear = -halfL * 0.28;
-    const wheelY = halfW * 0.78;
+    // Wheels
+    const wW = Math.max(5.5, carW * 0.22);
+    const wH = Math.max(2.4, carW * 0.10);
+    const wxF = hL * 0.28;
+    const wxR = -hL * 0.28;
+    const wy = hW * 0.78;
 
-    // front wheels steer with steerAngle
-    drawWheel(ctx, wheelXFront, -wheelY, wheelW, wheelH, car.steerAngle, car.wheelSpin);
-    drawWheel(ctx, wheelXFront, wheelY, wheelW, wheelH, car.steerAngle, car.wheelSpin);
+    // Front wheels (steered)
+    drawWheel(ctx, wxF, -wy, wW, wH, car.steerAngle, car.wheelSpin);
+    drawWheel(ctx, wxF, wy, wW, wH, car.steerAngle, car.wheelSpin);
+    // Rear wheels (RWD — no steer angle)
+    drawWheel(ctx, wxR, -wy, wW, wH, 0, car.wheelSpin);
+    drawWheel(ctx, wxR, wy, wW, wH, 0, car.wheelSpin);
 
-    // rear wheels (RWD) — slight extra spin under throttle is baked into wheelSpin already
-    drawWheel(ctx, wheelXRear, -wheelY, wheelW, wheelH, 0, car.wheelSpin);
-    drawWheel(ctx, wheelXRear, wheelY, wheelW, wheelH, 0, car.wheelSpin);
-
-    // subtle nose marker (helps orientation in top-down)
-    ctx.strokeStyle = 'rgba(226, 232, 240, 0.55)';
+    // Nose indicator
+    ctx.strokeStyle = 'rgba(226,232,240,0.5)';
     ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(halfL - 6, 0);
-    ctx.lineTo(halfL - 2, 0);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hL - 5, 0); ctx.lineTo(hL - 1.5, 0); ctx.stroke();
 
     ctx.restore();
 }
 
-function drawWheel(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    steerAngle: number,
-    spin: number
-): void {
+function drawWheel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, steer: number, spin: number): void {
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(steerAngle);
-
+    ctx.rotate(steer);
     ctx.fillStyle = '#0b1220';
     roundedRect(ctx, -w / 2, -h / 2, w, h, Math.min(h / 2, 2));
     ctx.fill();
-
-    // Spin line (implied tire rotation; graphic/clean)
-    ctx.strokeStyle = 'rgba(226, 232, 240, 0.50)';
-    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = 'rgba(226,232,240,0.45)';
+    ctx.lineWidth = 1.0;
     ctx.save();
     ctx.rotate(spin);
-    ctx.beginPath();
-    ctx.moveTo(-w * 0.28, 0);
-    ctx.lineTo(w * 0.28, 0);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-w * 0.27, 0); ctx.lineTo(w * 0.27, 0); ctx.stroke();
     ctx.restore();
-
     ctx.restore();
 }
 
-function roundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    r: number
-): void {
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
     const rr = Math.max(0, Math.min(r, Math.min(w, h) / 2));
     ctx.beginPath();
-    ctx.moveTo(x + rr, y);
-    ctx.lineTo(x + w - rr, y);
+    ctx.moveTo(x + rr, y); ctx.lineTo(x + w - rr, y);
     ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
     ctx.lineTo(x + w, y + h - rr);
     ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
@@ -1569,244 +1284,149 @@ function roundedRect(
     ctx.closePath();
 }
 
+function drawSimOverlay(ctx: CanvasRenderingContext2D, _w: number, gen: number, alive: number, total: number, bestFit: number): void {
+    ctx.save();
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.fillStyle = 'rgba(15,23,42,0.65)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`GEN ${gen}   ALIVE ${alive}/${total}   BEST FIT ${bestFit > -Infinity ? bestFit.toFixed(1) : '—'}`, 10, 10);
+    ctx.restore();
+}
+
 /** =========================
- *  Charts
+ *  Chart drawing
  *  ========================= */
-function chartFrame(ctx: CanvasRenderingContext2D, title: string): { w: number; h: number } {
+function chartFrame(ctx: CanvasRenderingContext2D, title: string): { w: number; h: number; px: number; py: number; pw: number; ph: number } {
     const w = ctx.canvas.width / (window.devicePixelRatio || 1);
     const h = ctx.canvas.height / (window.devicePixelRatio || 1);
-
     ctx.clearRect(0, 0, w, h);
-
-    // frame
-    ctx.save();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
-
-    // title
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.90)';
-    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(title, 8, 6);
-
-    ctx.restore();
-
-    return { w, h };
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    ctx.fillStyle = 'rgba(100,116,139,0.9)';
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(title, 8, 5);
+    return { w, h, px: 8, py: 18, pw: w - 16, ph: h - 24 };
 }
 
-function drawEpisodeChart(ctx: CanvasRenderingContext2D, data: number[], best: number, title: string): void {
-    const { w, h } = chartFrame(ctx, title);
+function drawFitnessChart(ctx: CanvasRenderingContext2D, best: number[], avg: number[], title: string): void {
+    const { px, py, pw, ph } = chartFrame(ctx, title);
+    if (best.length < 2) return;
 
-    const plotX = 8;
-    const plotY = 20;
-    const plotW = w - 16;
-    const plotH = h - 28;
+    const allVals = [...best, ...avg];
+    let minV = Math.min(...allVals);
+    let maxV = Math.max(...allVals);
+    const pad = (maxV - minV) * 0.12 + 0.5;
+    minV -= pad; maxV += pad;
+    const rng = maxV - minV || 1;
 
-    if (data.length < 2) return;
-
-    let minV = Math.min(...data);
-    let maxV = Math.max(...data, best);
-
-    // expand range a bit
-    const pad = (maxV - minV) * 0.12 + 1e-3;
-    minV -= pad;
-    maxV += pad;
-
-    // grid
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.06)';
-    ctx.lineWidth = 1;
+    // Grid lines
+    ctx.strokeStyle = 'rgba(15,23,42,0.06)'; ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
-        const y = plotY + (plotH * i) / 4;
-        ctx.beginPath();
-        ctx.moveTo(plotX, y);
-        ctx.lineTo(plotX + plotW, y);
-        ctx.stroke();
+        const y = py + ph * i / 4;
+        ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke();
     }
-    ctx.restore();
 
-    // line
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.68)';
-    ctx.lineWidth = 1.2;
+    // Avg line (lighter)
+    const n = Math.min(best.length, avg.length);
+    ctx.strokeStyle = 'rgba(100,116,139,0.4)'; ctx.lineWidth = 1.0;
     ctx.beginPath();
-
-    for (let i = 0; i < data.length; i++) {
-        const t = data.length === 1 ? 0 : i / (data.length - 1);
-        const x = plotX + t * plotW;
-        const y = plotY + (1 - (data[i] - minV) / (maxV - minV)) * plotH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+    for (let i = 0; i < n; i++) {
+        const x = px + (i / (n - 1)) * pw;
+        const y = py + (1 - (avg[i]! - minV) / rng) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.restore();
 
-    // best marker line
-    ctx.save();
-    const yBest = plotY + (1 - (best - minV) / (maxV - minV)) * plotH;
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.35)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
+    // Best line (solid)
+    ctx.strokeStyle = 'rgba(15,23,42,0.72)'; ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(plotX, yBest);
-    ctx.lineTo(plotX + plotW, yBest);
+    for (let i = 0; i < best.length; i++) {
+        const x = px + (i / (best.length - 1)) * pw;
+        const y = py + (1 - (best[i]! - minV) / rng) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
     ctx.stroke();
+
+    // Latest value label
+    const last = best[best.length - 1] ?? 0;
+    ctx.fillStyle = 'rgba(15,23,42,0.82)';
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(last.toFixed(1), px + pw, 5);
+
+    // Legend
+    ctx.fillStyle = 'rgba(100,116,139,0.75)'; ctx.textAlign = 'left';
+    ctx.fillText('best', px, 5);
+    ctx.fillStyle = 'rgba(100,116,139,0.45)';
+    ctx.fillText('avg', px + 28, 5);
+}
+
+function drawSigmaChart(ctx: CanvasRenderingContext2D, genCount: number, currentSigma: number): void {
+    const { px, py, pw, ph } = chartFrame(ctx, 'Mutation σ');
+
+    // Draw the decay curve
+    const INIT_SIGMA = 1.2;
+    const DECAY = 0.975;
+
+    ctx.strokeStyle = 'rgba(100,116,139,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+    const midY = py + ph * 0.5;
+    ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.restore();
 
-    // last value label
-    const last = data[data.length - 1] ?? 0;
-    ctx.save();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.80)';
-    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText(last.toFixed(1), plotX + plotW, 6);
-    ctx.restore();
-}
+    // Simulated sigma history
+    const pts: number[] = [];
+    let sig = INIT_SIGMA;
+    for (let i = 0; i < Math.max(genCount, 2); i++) { pts.push(sig); sig *= DECAY; }
 
-function drawDualChart(ctx: CanvasRenderingContext2D, a: number[], b: number[], title: string): void {
-    const { w, h } = chartFrame(ctx, title);
-
-    const plotX = 8;
-    const plotY = 20;
-    const plotW = w - 16;
-    const plotH = h - 28;
-
-    const n = Math.min(a.length, b.length);
-    if (n < 2) return;
-
-    // Both are [0..1-ish], clamp range to [0..1]
-    const minV = 0;
-    const maxV = 1;
-
-    // grid
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.06)';
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 3; i++) {
-        const y = plotY + (plotH * i) / 4;
-        ctx.beginPath();
-        ctx.moveTo(plotX, y);
-        ctx.lineTo(plotX + plotW, y);
-        ctx.stroke();
-    }
-    ctx.restore();
-
-    // skill (darker)
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.70)';
-    ctx.lineWidth = 1.2;
+    const maxV = INIT_SIGMA * 1.1;
+    ctx.strokeStyle = 'rgba(15,23,42,0.68)'; ctx.lineWidth = 1.2;
     ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-        const t = i / (n - 1);
-        const x = plotX + t * plotW;
-        const y = plotY + (1 - (clamp01(a[i]) - minV) / (maxV - minV)) * plotH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+    for (let i = 0; i < pts.length; i++) {
+        const x = px + (i / (pts.length - 1)) * pw;
+        const y = py + (1 - pts[i]! / maxV) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.restore();
 
-    // epsilon (lighter)
-    ctx.save();
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.55)';
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-        const t = i / (n - 1);
-        const x = plotX + t * plotW;
-        const y = plotY + (1 - (clamp01(b[i]) - minV) / (maxV - minV)) * plotH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-
-    // labels
-    ctx.save();
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.85)';
-    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('skill', plotX, 6);
-    ctx.textAlign = 'right';
-    ctx.fillText('epsilon', plotX + plotW, 6);
-    ctx.restore();
+    ctx.fillStyle = 'rgba(15,23,42,0.8)';
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(currentSigma.toFixed(3), px + pw, 5);
 }
 
 function drawTraceChart(ctx: CanvasRenderingContext2D, trace: RingBuffer, minV: number, maxV: number, title: string): void {
-    const { w, h } = chartFrame(ctx, title);
-
-    const plotX = 8;
-    const plotY = 20;
-    const plotW = w - 16;
-    const plotH = h - 28;
-
+    const { px, py, pw, ph } = chartFrame(ctx, title);
     const n = trace.size();
     if (n < 2) return;
 
-    // grid
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.06)';
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 3; i++) {
-        const y = plotY + (plotH * i) / 4;
-        ctx.beginPath();
-        ctx.moveTo(plotX, y);
-        ctx.lineTo(plotX + plotW, y);
-        ctx.stroke();
-    }
-    ctx.restore();
+    const rng = maxV - minV || 1;
 
-    // midline
-    const mid = (minV + maxV) / 2;
-    const yMid = plotY + (1 - (mid - minV) / (maxV - minV)) * plotH;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(100, 116, 139, 0.20)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(plotX, yMid);
-    ctx.lineTo(plotX + plotW, yMid);
-    ctx.stroke();
+    // Mid line
+    const midY = py + (1 - (0 - minV) / rng) * ph;
+    ctx.strokeStyle = 'rgba(100,116,139,0.18)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.restore();
 
-    // line
-    ctx.save();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.68)';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(15,23,42,0.68)'; ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
-        const t = n === 1 ? 0 : i / (n - 1);
-        const x = plotX + t * plotW;
-        const v = trace.at(i);
-        const y = plotY + (1 - (clamp(v, minV, maxV) - minV) / (maxV - minV)) * plotH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        const x = px + (i / (n - 1)) * pw;
+        const y = py + (1 - (clamp(trace.at(i), minV, maxV) - minV) / rng) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.restore();
 
-    // last label
     const last = trace.latest();
-    ctx.save();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.80)';
-    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText(last.toFixed(1), plotX + plotW, 6);
-    ctx.restore();
+    ctx.fillStyle = 'rgba(15,23,42,0.8)';
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(last.toFixed(1), px + pw, 5);
 }
 
 /** =========================
- *  Canvas resizing helper
+ *  Canvas resize helper
  *  ========================= */
 function resizeCanvas(canvas: HTMLCanvasElement, cssW: number, cssH: number): CanvasRenderingContext2D | null {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1816,7 +1436,6 @@ function resizeCanvas(canvas: HTMLCanvasElement, cssW: number, cssH: number): Ca
     canvas.height = Math.floor(h * dpr);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1824,172 +1443,154 @@ function resizeCanvas(canvas: HTMLCanvasElement, cssW: number, cssH: number): Ca
 }
 
 /** =========================
- *  React component
+ *  Formatters
  *  ========================= */
+function fmtSgn(x: number, d = 2): string { return (x >= 0 ? '+' : '') + x.toFixed(d); }
+function fmtPct(x: number): string { return `${Math.round(clamp01(x) * 100)}%`; }
+function fmt(x: number, d = 2): string { return x.toFixed(d); }
+
+/** =========================
+ *  React Component
+ *  ========================= */
+const TRACK_TYPES: TrackType[] = ['oval', 'chicane', 'circuit'];
+const TRACK_LABELS: Record<TrackType, string> = { oval: 'Oval', chicane: 'Chicane', circuit: 'Circuit' };
+
 const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
 
     const simWrapRef = useRef<HTMLDivElement | null>(null);
     const simCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const chartReturnWrapRef = useRef<HTMLDivElement | null>(null);
-    const chartEpsWrapRef = useRef<HTMLDivElement | null>(null);
+    const chartFitWrapRef = useRef<HTMLDivElement | null>(null);
+    const chartSigWrapRef = useRef<HTMLDivElement | null>(null);
     const chartSlipWrapRef = useRef<HTMLDivElement | null>(null);
-    const chartRewardWrapRef = useRef<HTMLDivElement | null>(null);
+    const chartRewWrapRef = useRef<HTMLDivElement | null>(null);
 
-    const chartReturnCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const chartEpsCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const chartFitCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const chartSigCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const chartSlipCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const chartRewardCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const chartRewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const simRef = useRef<DriftTrainerSim | null>(null);
-
+    const trainerRef = useRef<GeneticDriftTrainer | null>(null);
     const simCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-    const chartReturnCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-    const chartEpsCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+    const chartFitCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+    const chartSigCtxRef = useRef<CanvasRenderingContext2D | null>(null);
     const chartSlipCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-    const chartRewardCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+    const chartRewCtxRef = useRef<CanvasRenderingContext2D | null>(null);
 
     const rafRef = useRef<number>(0);
     const lastTRef = useRef<number>(0);
     const accRef = useRef<number>(0);
     const uiTimerRef = useRef<number>(0);
-
     const visibleRef = useRef<boolean>(true);
 
+    const simDimsRef = useRef<{ w: number; h: number }>({ w: 600, h: 400 });
+
     const [running, setRunning] = useState(true);
-    const [ui, setUi] = useState<UiSnapshot>(() => DriftTrainerSim.initialUi());
+    const [trackType, setTrackType] = useState<TrackType>('oval');
+    const [ui, setUi] = useState<UiSnapshot>(() => ({
+        generation: 0, totalSteps: 0, aliveAgents: 0, populationSize: POP_SIZE,
+        bestFitness: 0, currentBestFitness: 0, avgFitness: 0,
+        skill: 0, mutSigma: 1.2,
+        speed: 0, slipDeg: 0, headingErrDeg: 0, trackError: 0, driftIntensity: 0, yawRate: 0,
+        steer: 0, throttle: 0, handbrake: 0, reward: 0, fitness: 0,
+    }));
 
     const compact = width < 840;
 
-    const rootStyle = useMemo<React.CSSProperties>(() => {
-        return {
-            width,
-            height,
-            flexDirection: compact ? 'column' : 'row',
-        };
-    }, [width, height, compact]);
+    const rootStyle = useMemo<React.CSSProperties>(() => ({
+        width, height, flexDirection: compact ? 'column' : 'row',
+    }), [width, height, compact]);
 
-    const ensureSim = useCallback((w: number, h: number) => {
-        if (!simRef.current) simRef.current = new DriftTrainerSim(w, h);
-        else simRef.current.resize(w, h);
+    // Ensure trainer is created
+    const ensureTrainer = useCallback((w: number, h: number) => {
+        if (!trainerRef.current) {
+            trainerRef.current = new GeneticDriftTrainer(w, h);
+        } else {
+            trainerRef.current.resize(w, h);
+        }
+        simDimsRef.current = { w, h };
     }, []);
 
-    // ResizeObserver to size canvases to their rendered boxes
+    // ResizeObserver
     useEffect(() => {
         const resizeAll = () => {
-            // sim
             if (simWrapRef.current && simCanvasRef.current) {
                 const r = simWrapRef.current.getBoundingClientRect();
                 const ctx = resizeCanvas(simCanvasRef.current, r.width, r.height);
                 simCtxRef.current = ctx;
-                if (ctx) ensureSim(Math.floor(r.width), Math.floor(r.height));
+                ensureTrainer(Math.floor(r.width), Math.floor(r.height));
             }
 
-            // charts
-            const resizeChart = (
-                wrap: HTMLDivElement | null,
-                canvas: HTMLCanvasElement | null,
-                outRef: React.MutableRefObject<CanvasRenderingContext2D | null>
-            ) => {
+            const rc = (wrap: HTMLDivElement | null, canvas: HTMLCanvasElement | null, ref: React.MutableRefObject<CanvasRenderingContext2D | null>) => {
                 if (!wrap || !canvas) return;
-                const r = wrap.getBoundingClientRect();
-                const ctx = resizeCanvas(canvas, r.width, r.height);
-                outRef.current = ctx;
+                ref.current = resizeCanvas(canvas, wrap.getBoundingClientRect().width, wrap.getBoundingClientRect().height);
             };
+            rc(chartFitWrapRef.current, chartFitCanvasRef.current, chartFitCtxRef);
+            rc(chartSigWrapRef.current, chartSigCanvasRef.current, chartSigCtxRef);
+            rc(chartSlipWrapRef.current, chartSlipCanvasRef.current, chartSlipCtxRef);
+            rc(chartRewWrapRef.current, chartRewCanvasRef.current, chartRewCtxRef);
 
-            resizeChart(chartReturnWrapRef.current, chartReturnCanvasRef.current, chartReturnCtxRef);
-            resizeChart(chartEpsWrapRef.current, chartEpsCanvasRef.current, chartEpsCtxRef);
-            resizeChart(chartSlipWrapRef.current, chartSlipCanvasRef.current, chartSlipCtxRef);
-            resizeChart(chartRewardWrapRef.current, chartRewardCanvasRef.current, chartRewardCtxRef);
-
-            // update UI snapshot immediately after resize
-            if (simRef.current) setUi(simRef.current.getUiSnapshot());
+            if (trainerRef.current) setUi(trainerRef.current.getUiSnapshot());
         };
 
         resizeAll();
-
         const ro = new ResizeObserver(() => resizeAll());
-        if (simWrapRef.current) ro.observe(simWrapRef.current);
-        if (chartReturnWrapRef.current) ro.observe(chartReturnWrapRef.current);
-        if (chartEpsWrapRef.current) ro.observe(chartEpsWrapRef.current);
-        if (chartSlipWrapRef.current) ro.observe(chartSlipWrapRef.current);
-        if (chartRewardWrapRef.current) ro.observe(chartRewardWrapRef.current);
-
+        [simWrapRef, chartFitWrapRef, chartSigWrapRef, chartSlipWrapRef, chartRewWrapRef].forEach(ref => {
+            if (ref.current) ro.observe(ref.current);
+        });
         return () => ro.disconnect();
-    }, [ensureSim, width, height]);
+    }, [ensureTrainer, width, height]);
 
-    // Visibility observer to pause work offscreen
+    // Intersection observer (pause offscreen)
     useEffect(() => {
         const root = rootRef.current;
         if (!root) return;
-
-        const io = new IntersectionObserver(
-            (entries) => {
-                visibleRef.current = entries[0]?.isIntersecting ?? true;
-            },
-            { threshold: 0.05 }
-        );
+        const io = new IntersectionObserver(([e]) => { visibleRef.current = e?.isIntersecting ?? true; }, { threshold: 0.05 });
         io.observe(root);
         return () => io.disconnect();
     }, []);
 
     // RAF loop
     useEffect(() => {
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (prefersReducedMotion) return;
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
         const tick = (now: number) => {
             rafRef.current = requestAnimationFrame(tick);
-
             if (!visibleRef.current) return;
 
-            const sim = simRef.current;
+            const trainer = trainerRef.current;
             const simCtx = simCtxRef.current;
-
-            if (!sim || !simCtx) return;
+            if (!trainer || !simCtx) return;
 
             const dtMs = now - (lastTRef.current || now);
             lastTRef.current = now;
-
-            // Clamp big jumps (tab switching)
             const dt = Math.min(0.05, Math.max(0, dtMs / 1000));
 
             if (running) {
                 accRef.current += dt;
-
-                // Limit work per frame
-                const maxSteps = 10;
                 let steps = 0;
-
-                while (accRef.current >= FIXED_DT && steps < maxSteps) {
-                    sim.stepOnce(FIXED_DT, true);
+                while (accRef.current >= FIXED_DT && steps < 12) {
+                    trainer.stepAll(FIXED_DT, true);
                     accRef.current -= FIXED_DT;
                     steps++;
                 }
             }
 
             // Render sim every frame
-            const simCanvas = simCanvasRef.current;
-            if (simCanvas) {
-                const wCss = simCanvas.width / (window.devicePixelRatio || 1);
-                const hCss = simCanvas.height / (window.devicePixelRatio || 1);
-                sim.render(simCtx, wCss, hCss);
+            const cv = simCanvasRef.current;
+            if (cv) {
+                const wCss = cv.width / (window.devicePixelRatio || 1);
+                const hCss = cv.height / (window.devicePixelRatio || 1);
+                trainer.render(simCtx, wCss, hCss);
             }
 
-            // Update UI + charts at ~12fps
+            // Update UI + charts ~12fps
             uiTimerRef.current += dt;
-            if (uiTimerRef.current > 0.085) {
+            if (uiTimerRef.current > 0.082) {
                 uiTimerRef.current = 0;
-
-                setUi(sim.getUiSnapshot());
-
-                sim.drawCharts(
-                    chartReturnCtxRef.current,
-                    chartEpsCtxRef.current,
-                    chartSlipCtxRef.current,
-                    chartRewardCtxRef.current
-                );
+                setUi(trainer.getUiSnapshot());
+                trainer.drawCharts(chartFitCtxRef.current, chartSigCtxRef.current, chartSlipCtxRef.current, chartRewCtxRef.current);
             }
         };
 
@@ -1998,159 +1599,146 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     }, [running]);
 
     const onReset = useCallback(() => {
-        const sim = simRef.current;
-        if (!sim) return;
-        sim.resetTraining();
-        setUi(sim.getUiSnapshot());
+        const trainer = trainerRef.current;
+        if (!trainer) return;
+        const d = simDimsRef.current;
+        trainer.resetTraining(d.w, d.h);
+        setUi(trainer.getUiSnapshot());
     }, []);
 
-    const onJump = useCallback((episodes: number) => {
-        const sim = simRef.current;
-        if (!sim) return;
-        sim.fastForwardEpisodes(episodes);
-        setUi(sim.getUiSnapshot());
+    const onJump = useCallback((nGen: number) => {
+        const trainer = trainerRef.current;
+        if (!trainer) return;
+        trainer.fastForward(nGen);
+        setUi(trainer.getUiSnapshot());
+    }, []);
+
+    const onTrackChange = useCallback((type: TrackType) => {
+        setTrackType(type);
+        const trainer = trainerRef.current;
+        const d = simDimsRef.current;
+        if (!trainer) return;
+        trainer.setTrackType(type, d.w, d.h);
     }, []);
 
     const status = running ? 'TRAINING' : 'PAUSED';
 
     return (
         <div className="rl-root" ref={rootRef} style={rootStyle}>
-            {/* Simulation */}
+            {/* Simulation canvas */}
             <div className="rl-sim" ref={simWrapRef}>
                 <canvas ref={simCanvasRef} className="rl-sim-canvas" />
             </div>
 
-            {/* Panel */}
+            {/* Right panel */}
             <div className="rl-panel">
                 <div className="rl-controls">
                     <div className="rl-controls-top">
-                        <div className="rl-title">RL DRIFT TRAINER</div>
+                        <div className="rl-title">RL DRIFT — NEUROEVOLUTION</div>
                         <div className="rl-status">
                             <span className={`rl-dot ${running ? 'is-on' : ''}`} />
                             {status}
                         </div>
                     </div>
 
+                    {/* Track selector */}
                     <div className="rl-buttons">
-                        <button className="rl-btn rl-btn-primary" onClick={() => setRunning((r) => !r)}>
+                        {TRACK_TYPES.map(t => (
+                            <button
+                                key={t}
+                                className={`rl-btn ${trackType === t ? 'rl-btn-primary' : ''}`}
+                                onClick={() => onTrackChange(t)}
+                            >
+                                {TRACK_LABELS[t]}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Control buttons */}
+                    <div className="rl-buttons">
+                        <button className="rl-btn rl-btn-primary" onClick={() => setRunning(r => !r)}>
                             {running ? 'Pause' : 'Play'}
                         </button>
-                        <button className="rl-btn" onClick={onReset}>
-                            Reset
-                        </button>
-
+                        <button className="rl-btn" onClick={onReset}>Reset</button>
                         <div className="rl-spacer" />
-
-                        <button className="rl-btn" onClick={() => onJump(10)}>
-                            Jump +10
-                        </button>
-                        <button className="rl-btn" onClick={() => onJump(50)}>
-                            Jump +50
-                        </button>
-                        <button className="rl-btn" onClick={() => onJump(200)}>
-                            Jump +200
-                        </button>
-                        <button className="rl-btn" onClick={() => onJump(800)}>
-                            Jump +800
-                        </button>
+                        <button className="rl-btn" onClick={() => onJump(10)}>+10 Gen</button>
+                        <button className="rl-btn" onClick={() => onJump(50)}>+50 Gen</button>
+                        <button className="rl-btn" onClick={() => onJump(200)}>+200 Gen</button>
+                        <button className="rl-btn" onClick={() => onJump(800)}>+800 Gen</button>
                     </div>
                 </div>
 
                 {/* Dense numeric telemetry */}
                 <div className="rl-telemetry">
                     <div className="rl-row">
-                        <div className="k">EP</div>
-                        <div className="v">{ui.episode}</div>
-                        <div className="k">STEP</div>
-                        <div className="v">
-                            {ui.stepInEpisode}/{ui.stepsPerEpisode}
-                        </div>
+                        <div className="k">GEN</div>
+                        <div className="v">{ui.generation}</div>
+                        <div className="k">ALIVE</div>
+                        <div className="v">{ui.aliveAgents}/{ui.populationSize}</div>
                     </div>
-
                     <div className="rl-row">
-                        <div className="k">Return</div>
-                        <div className="v">{formatSigned(ui.episodeReturn, 2)}</div>
-                        <div className="k">Best</div>
-                        <div className="v">{formatSigned(ui.bestReturn, 2)}</div>
+                        <div className="k">BestFit</div>
+                        <div className="v">{fmtSgn(ui.bestFitness, 1)}</div>
+                        <div className="k">CurFit</div>
+                        <div className="v">{fmtSgn(ui.currentBestFitness, 1)}</div>
                     </div>
-
                     <div className="rl-row">
-                        <div className="k">Avg(24)</div>
-                        <div className="v">{formatSigned(ui.avgReturn, 2)}</div>
-                        <div className="k">r(t)</div>
-                        <div className="v">{formatSigned(ui.reward, 2)}</div>
+                        <div className="k">AvgFit</div>
+                        <div className="v">{fmtSgn(ui.avgFitness, 1)}</div>
+                        <div className="k">Steps</div>
+                        <div className="v">{ui.totalSteps.toLocaleString()}</div>
                     </div>
-
                     <div className="rl-row">
                         <div className="k">Skill</div>
-                        <div className="v">{formatPct01(ui.skill)}</div>
-                        <div className="k">ε</div>
-                        <div className="v">{ui.epsilon.toFixed(3)}</div>
+                        <div className="v">{fmtPct(ui.skill)}</div>
+                        <div className="k">σ</div>
+                        <div className="v">{fmt(ui.mutSigma, 3)}</div>
                     </div>
-
-                    <div className="rl-row">
-                        <div className="k">Loss</div>
-                        <div className="v">{ui.loss.toFixed(3)}</div>
-                        <div className="k">Q̂</div>
-                        <div className="v">{ui.qValue.toFixed(2)}</div>
-                    </div>
-
                     <div className="rl-row">
                         <div className="k">Speed</div>
-                        <div className="v">{ui.speed.toFixed(1)}</div>
-                        <div className="k">Curv</div>
-                        <div className="v">{ui.curvature.toFixed(4)}</div>
+                        <div className="v">{fmt(ui.speed, 0)}</div>
+                        <div className="k">YawRate</div>
+                        <div className="v">{fmtSgn(ui.yawRate, 2)}</div>
                     </div>
-
-                    <div className="rl-row">
-                        <div className="k">Heading</div>
-                        <div className="v">{formatSigned(ui.headingDeg, 1)}°</div>
-                        <div className="k">Vel</div>
-                        <div className="v">{formatSigned(ui.velDeg, 1)}°</div>
-                    </div>
-
                     <div className="rl-row">
                         <div className="k">Slip</div>
-                        <div className="v">{formatSigned(ui.slipDeg, 1)}°</div>
-                        <div className="k">Target</div>
-                        <div className="v">{formatSigned(ui.desiredSlipDeg, 1)}°</div>
+                        <div className="v">{fmtSgn(ui.slipDeg, 1)}°</div>
+                        <div className="k">HdgErr</div>
+                        <div className="v">{fmtSgn(ui.headingErrDeg, 1)}°</div>
                     </div>
-
                     <div className="rl-row">
-                        <div className="k">TrackErr</div>
-                        <div className="v">{formatSigned(ui.trackError, 1)}</div>
+                        <div className="k">TrkErr</div>
+                        <div className="v">{fmtSgn(ui.trackError, 1)}</div>
                         <div className="k">Drift</div>
-                        <div className="v">{formatPct01(ui.driftIntensity)}</div>
+                        <div className="v">{fmtPct(ui.driftIntensity)}</div>
                     </div>
-
                     <div className="rl-row">
                         <div className="k">Steer</div>
-                        <div className="v">{formatSigned(ui.steerCmd, 2)}</div>
-                        <div className="k">δ</div>
-                        <div className="v">{formatSigned(ui.steerDeg, 1)}°</div>
-                    </div>
-
-                    <div className="rl-row">
+                        <div className="v">{fmtSgn(ui.steer, 2)}</div>
                         <div className="k">Throttle</div>
-                        <div className="v">{ui.throttle.toFixed(2)}</div>
-                        <div className="k">HB</div>
-                        <div className="v">{ui.handbrake.toFixed(2)}</div>
+                        <div className="v">{fmt(ui.throttle, 2)}</div>
+                    </div>
+                    <div className="rl-row">
+                        <div className="k">Handbrk</div>
+                        <div className="v">{fmt(ui.handbrake, 2)}</div>
+                        <div className="k">r(t)</div>
+                        <div className="v">{fmtSgn(ui.reward, 3)}</div>
                     </div>
                 </div>
 
                 {/* Charts */}
                 <div className="rl-charts">
-                    <div className="rl-chart" ref={chartReturnWrapRef}>
-                        <canvas ref={chartReturnCanvasRef} />
+                    <div className="rl-chart" ref={chartFitWrapRef}>
+                        <canvas ref={chartFitCanvasRef} />
                     </div>
-                    <div className="rl-chart" ref={chartEpsWrapRef}>
-                        <canvas ref={chartEpsCanvasRef} />
+                    <div className="rl-chart" ref={chartSigWrapRef}>
+                        <canvas ref={chartSigCanvasRef} />
                     </div>
                     <div className="rl-chart" ref={chartSlipWrapRef}>
                         <canvas ref={chartSlipCanvasRef} />
                     </div>
-                    <div className="rl-chart" ref={chartRewardWrapRef}>
-                        <canvas ref={chartRewardCanvasRef} />
+                    <div className="rl-chart" ref={chartRewWrapRef}>
+                        <canvas ref={chartRewCanvasRef} />
                     </div>
                 </div>
             </div>

@@ -2,253 +2,325 @@ import { gsap } from 'gsap';
 import type { SubvizOpts, SubvizRunHandle } from './index';
 
 /**
- * Server Management Animation (Isometric Cluster)
- * -----------------------------------------------
- * Visualizes "Load Balancing" in a 3D Isometric view.
- * 1. A cluster of 9 Server Pods (3x3 grid) sits in isometric space.
- * 2. "Traffic" (particles) falls from the cloud onto the grid.
- * 3. Scenario: Traffic hits only ONE node, causing it to spike (Overload).
- * 4. Action: The system "Balances," and the height of the spiked node
- * flows outward to neighbors until all are equal.
+ * Server Management Animation (Live Status Dashboard)
+ * ----------------------------------------------------
+ * 1. A dark dashboard card pops in with server rows.
+ * 2. Bars pulse showing live traffic / healthy state.
+ * 3. One server degrades — bar drops, status goes red, alert badge appears.
+ * 4. Automated restart sequence plays on that row.
+ * 5. Server recovers — bar fills, status goes green.
+ * 6. "All Systems Operational" banner, then exit.
  */
+
+interface ServerRow {
+    row: HTMLDivElement;
+    dot: HTMLDivElement;
+    bar: HTMLDivElement;
+    barFill: HTMLDivElement;
+    ping: HTMLDivElement;
+    name: string;
+    normalLoad: number; // 0-1
+}
+
 export function runServersPreview({ container, center }: SubvizOpts): SubvizRunHandle {
     const root = document.createElement('div');
-    Object.assign(root.style, { 
-        position: 'absolute', inset: '0', pointerEvents: 'none',
-        perspective: '800px', // Enable 3D space
-        overflow: 'hidden'
-    });
+    Object.assign(root.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
 
-    // --- 1. The Isometric Plane ---
-    const plane = document.createElement('div');
-    Object.assign(plane.style, {
+    // Dashboard card
+    const card = document.createElement('div');
+    Object.assign(card.style, {
         position: 'absolute',
-        left: `${center.x}px`, top: `${center.y + 40}px`, // Shift down slightly for 3D height
-        width: '0px', height: '0px',
-        transformStyle: 'preserve-3d',
-        transform: 'rotateX(55deg) rotateZ(45deg)', // Isometric angle
+        left: `${center.x}px`, top: `${center.y}px`,
+        transform: 'translate(-50%, -50%)',
+        width: '420px',
+        background: '#0f172a',
+        borderRadius: '10px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        fontFamily: 'ui-monospace, monospace',
+        overflow: 'hidden',
+        border: '1px solid #1e293b',
     });
-    root.appendChild(plane);
 
-    // --- 2. The Server Pods (3x3 Grid) ---
-    const gridSize = 3;
-    const gap = 40;
-    const podSize = 32;
-    const offset = ((gridSize - 1) * gap) / 2; // To center the grid
-    
-    const pods: { el: HTMLDivElement, body: HTMLDivElement, top: HTMLDivElement, height: number }[] = [];
+    // Header bar
+    const header = document.createElement('div');
+    Object.assign(header.style, {
+        padding: '10px 14px',
+        display: 'flex', alignItems: 'center', gap: '8px',
+        borderBottom: '1px solid #1e293b',
+        background: '#0b1120',
+    });
+    const headerDot = document.createElement('div');
+    Object.assign(headerDot.style, {
+        width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e',
+        boxShadow: '0 0 6px #22c55e',
+    });
+    const headerTitle = document.createElement('span');
+    headerTitle.textContent = 'CLUSTER STATUS';
+    Object.assign(headerTitle.style, {
+        fontSize: '11px', fontWeight: '700', color: '#94a3b8',
+        letterSpacing: '0.08em',
+    });
+    header.appendChild(headerDot);
+    header.appendChild(headerTitle);
+    card.appendChild(header);
 
-    for (let x = 0; x < gridSize; x++) {
-        for (let y = 0; y < gridSize; y++) {
-            const podGroup = document.createElement('div');
-            // Position in grid (centered around 0,0)
-            const px = (x * gap) - offset;
-            const py = (y * gap) - offset;
+    // Server list
+    const list = document.createElement('div');
+    Object.assign(list.style, { padding: '6px 0' });
 
-            Object.assign(podGroup.style, {
-                position: 'absolute',
-                left: `${px}px`, top: `${py}px`,
-                width: `${podSize}px`, height: `${podSize}px`,
-                transformStyle: 'preserve-3d',
-                transform: 'translate(-50%, -50%)'
-            });
+    const servers: ServerRow[] = [];
+    const serverDefs = [
+        { name: 'us-east-1', load: 0.62 },
+        { name: 'us-west-2', load: 0.45 },
+        { name: 'eu-central', load: 0.78 },
+        { name: 'ap-south-1', load: 0.33 },
+    ];
 
-            // Pod Body (The vertical bar)
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                position: 'absolute',
-                left: '0', top: '0', width: '100%', height: '100%',
-                background: 'linear-gradient(to bottom, #3b82f6, #1e3a8a)', // Blue gradient
-                transformOrigin: '50% 50%',
-                transform: 'translateZ(-1px)', // Extrude downwards visually
-                boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)'
-            });
-            
-            // Pod Top (The cap)
-            const topFace = document.createElement('div');
-            Object.assign(topFace.style, {
-                position: 'absolute',
-                left: '0', top: '0', width: '100%', height: '100%',
-                background: '#60a5fa', // Lighter blue top
-                border: '1px solid #93c5fd',
-                transform: 'translateZ(1px)', // Sits on top
-                boxShadow: '0 0 15px rgba(59, 130, 246, 0.4)',
-                transition: 'background 0.3s'
-            });
+    for (const def of serverDefs) {
+        const row = document.createElement('div');
+        Object.assign(row.style, {
+            display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '9px 14px',
+            borderBottom: '1px solid rgba(30,41,59,0.5)',
+        });
 
-            // Construct 3D Box (Pseudo-3D using Z-translation)
-            // We animate the 'height' by translating the topFace Z up, and scaling the body Z
-            // But simpler method for CSS: Just animate translateZ of the *Group* or Top, and stretch a side face.
-            // Let's stick to a simpler visual: The 'body' is just a flat colored square, 
-            // but we will extrude it by adding a 'side' pseudo-element later if needed.
-            // Actually, let's keep it simple: The 'body' creates the column.
-            
-            // Simpler 3D approach for GSAP:
-            // We will animate the `transform: translateZ(H)` of the top face, 
-            // and scale the height of a side face. 
-            // To keep code clean, we will just move the WHOLE pod up/down in Z space 
-            // and assume the user looks from above, or just scale the Z-axis.
-            
-            // REVISION: Let's just use a "Bar Chart" visual. 
-            // The podGroup is the base. We add a "pillar" inside.
-            const pillar = document.createElement('div');
-            Object.assign(pillar.style, {
-                position: 'absolute', bottom: '0', left: '0', width: '100%', 
-                height: '10px', // Initial height
-                background: 'rgba(59, 130, 246, 0.6)',
-                border: '1px solid #60a5fa',
-                transform: 'rotateX(-90deg) translateZ(16px)', // Stand it up? No, CSS 3D is tricky.
-                // Let's just stack them flat layers for the isometric "stack" look.
-                transformStyle: 'preserve-3d'
-            });
-            
-            // To make a solid looking bar in isometric, we need 3 faces: Top, Left, Right.
-            // Top
-            const fTop = document.createElement('div');
-            Object.assign(fTop.style, {
-                position: 'absolute', width: '100%', height: '100%', background: '#60a5fa',
-                transform: 'translateZ(0px)'
-            });
-            // Right
-            const fRight = document.createElement('div');
-            Object.assign(fRight.style, {
-                position: 'absolute', top: '0', right: '0', width: '10px', height: '100%',
-                background: '#2563eb', transformOrigin: 'right', transform: 'rotateY(90deg)'
-            });
-            // Front
-            const fFront = document.createElement('div');
-            Object.assign(fFront.style, {
-                position: 'absolute', bottom: '0', left: '0', width: '100%', height: '10px',
-                background: '#1d4ed8', transformOrigin: 'bottom', transform: 'rotateX(-90deg)'
-            });
+        // Status dot
+        const dot = document.createElement('div');
+        Object.assign(dot.style, {
+            width: '8px', height: '8px', borderRadius: '50%',
+            background: '#22c55e',
+            boxShadow: '0 0 6px rgba(34,197,94,0.5)',
+            flexShrink: '0',
+        });
 
-            podGroup.appendChild(fRight);
-            podGroup.appendChild(fFront);
-            podGroup.appendChild(fTop);
-            plane.appendChild(podGroup);
+        // Name
+        const nameEl = document.createElement('span');
+        nameEl.textContent = def.name;
+        Object.assign(nameEl.style, {
+            fontSize: '12px', color: '#e2e8f0', width: '90px', flexShrink: '0',
+        });
 
-            pods.push({ el: podGroup, body: fFront, top: fTop, height: 0 });
-        }
+        // Bar track
+        const bar = document.createElement('div');
+        Object.assign(bar.style, {
+            flex: '1', height: '6px', background: '#1e293b',
+            borderRadius: '3px', overflow: 'hidden', position: 'relative',
+        });
+
+        // Bar fill
+        const barFill = document.createElement('div');
+        Object.assign(barFill.style, {
+            height: '100%', width: '0%',
+            background: 'linear-gradient(90deg, #22c55e, #4ade80)',
+            borderRadius: '3px',
+            transition: 'background 0.3s',
+        });
+        bar.appendChild(barFill);
+
+        // Ping label
+        const ping = document.createElement('span');
+        ping.textContent = `${Math.round(def.load * 100)}%`;
+        Object.assign(ping.style, {
+            fontSize: '10px', color: '#64748b', width: '36px',
+            textAlign: 'right', flexShrink: '0',
+        });
+
+        row.appendChild(dot);
+        row.appendChild(nameEl);
+        row.appendChild(bar);
+        row.appendChild(ping);
+        list.appendChild(row);
+
+        servers.push({ row, dot, bar, barFill, ping, name: def.name, normalLoad: def.load });
     }
 
+    card.appendChild(list);
+
+    // Alert banner (hidden)
+    const banner = document.createElement('div');
+    Object.assign(banner.style, {
+        padding: '8px 14px',
+        fontSize: '10px', fontWeight: '700', letterSpacing: '0.06em',
+        textAlign: 'center',
+        opacity: '0',
+    });
+    card.appendChild(banner);
+
+    root.appendChild(card);
     container.appendChild(root);
 
-    // Helper to set height of a pod (by moving Top and stretching Sides)
-    const setPodHeight = (podIdx: number, h: number, color = '#60a5fa') => {
-        const p = pods[podIdx];
-        const sideColor = color === '#ef4444' ? '#b91c1c' : '#2563eb'; // Darker red or blue
-        const frontColor = color === '#ef4444' ? '#991b1b' : '#1d4ed8'; // Darkest red or blue
-
-        // 1. Move Top Face up
-        gsap.to(p.top, { z: h, backgroundColor: color, duration: 0.5, ease: 'power2.out' });
-        
-        // 2. Stretch Side/Front faces (scaleY or height)
-        // Since they are rotated, 'width' or 'height' maps to Z height in parent space
-        const sideEl = p.el.children[0] as HTMLElement; // Right
-        const frontEl = p.el.children[1] as HTMLElement; // Front
-        
-        gsap.to(sideEl, { width: h, backgroundColor: sideColor, duration: 0.5, ease: 'power2.out' });
-        gsap.to(frontEl, { height: h, backgroundColor: frontColor, duration: 0.5, ease: 'power2.out' });
-    };
-
-    // === ANIMATION SEQUENCE ===
+    // --- Animation ---
     const tl = gsap.timeline();
+    const failIdx = 2; // eu-central will fail
+    const failServer = servers[failIdx];
 
-    // 1. Intro: Grow from floor
-    pods.forEach((p, i) => {
-        // Initial state
-        gsap.set(p.top, { z: 0 });
-        gsap.set(p.el.children[0], { width: 0 });
-        gsap.set(p.el.children[1], { height: 0 });
-        
-        // Animate to "Idle" height (approx 20px)
-        const randomH = gsap.utils.random(15, 30);
-        tl.add(() => setPodHeight(i, randomH), i * 0.05);
+    // 1. Pop in
+    tl.from(card, { scale: 0.85, opacity: 0, duration: 0.4, ease: 'back.out(1.2)' });
+
+    // 2. Bars fill in staggered
+    servers.forEach((s, i) => {
+        tl.to(s.barFill, {
+            width: `${s.normalLoad * 100}%`,
+            duration: 0.5,
+            ease: 'power2.out',
+        }, 0.5 + i * 0.08);
     });
 
-    // 2. Data Ingress (Particles falling)
-    // Visual only: White streaks falling into the center pod
-    const trafficDuration = 1.5;
-    for(let i=0; i<5; i++) {
-        const drop = document.createElement('div');
-        Object.assign(drop.style, {
-            position: 'absolute', width: '2px', height: '20px', background: '#fff',
-            left: '0px', top: '0px', // Center of plane
-            transform: `translateZ(200px)`
-        });
-        plane.appendChild(drop);
-        
-        tl.to(drop, { 
-            z: 50, // Hit the stack
-            opacity: 0, 
-            duration: 0.4, 
-            ease: 'power1.in',
-            onComplete: () => drop.remove()
-        }, 0.5 + (i*0.2));
-    }
-
-    // 3. IMBALANCE: Center pod (index 4) grows HUGE and RED
-    const centerIdx = 4;
-    tl.add(() => {
-        // Grow center
-        setPodHeight(centerIdx, 120, '#ef4444'); // Red, Tall
-        // Shrink others slightly (starved)
-        pods.forEach((p, i) => {
-            if (i !== centerIdx) setPodHeight(i, 10, '#93c5fd');
-        });
-    }, 0.8);
-
-    // Text Label appearing
-    const label = document.createElement('div');
-    Object.assign(label.style, {
-        position: 'absolute', left: `${center.x}px`, top: `${center.y - 120}px`,
-        transform: 'translate(-50%, -50%)',
-        background: '#ef4444', color: '#fff', padding: '4px 8px', borderRadius: '4px',
-        fontSize: '10px', fontWeight: 'bold', opacity: '0', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+    // 3. Brief healthy pulse — bars fluctuate subtly
+    const pulseLabel = 'pulse';
+    servers.forEach((s, i) => {
+        const jitter = gsap.utils.random(-5, 5);
+        tl.to(s.barFill, {
+            width: `${Math.min(95, s.normalLoad * 100 + jitter)}%`,
+            duration: 0.4,
+            ease: 'sine.inOut',
+            yoyo: true,
+            repeat: 1,
+        }, `${pulseLabel}+=${i * 0.06}`);
     });
-    label.textContent = "OVERLOAD DETECTED";
-    root.appendChild(label);
-    
-    tl.to(label, { opacity: 1, y: -10, duration: 0.3 }, 1.2);
+    tl.addLabel(pulseLabel, '+=0.3');
 
-    // 4. REBALANCING ACTION
-    tl.to(label, { 
-        backgroundColor: '#10b981', 
-        text: "BALANCING...", // Requires TextPlugin? Fallback to opacity/swap if not available
+    // 4. eu-central degrades
+    const degradeLabel = 'degrade';
+    tl.addLabel(degradeLabel, '+=0.2');
+
+    // Bar drops
+    tl.to(failServer.barFill, {
+        width: '92%',
+        background: 'linear-gradient(90deg, #f59e0b, #eab308)',
+        duration: 0.4,
+        ease: 'power2.in',
+    }, degradeLabel);
+
+    // Dot goes yellow
+    tl.to(failServer.dot, {
+        background: '#f59e0b',
+        boxShadow: '0 0 6px rgba(245,158,11,0.6)',
         duration: 0.2,
-        onStart: () => { label.textContent = "REBALANCING"; }
-    }, 2.2);
+    }, degradeLabel);
 
-    // The Wave: Center shrinks, neighbors grow until all are equal
-    tl.add(() => {
-        const balancedH = 40;
-        pods.forEach((p, i) => {
-            // Slight stagger based on distance from center for a "ripple" effect
-            const row = Math.floor(i / 3);
-            const col = i % 3;
-            const dist = Math.abs(1 - row) + Math.abs(1 - col); // Manhattan dist from center (1,1)
-            
-            setTimeout(() => {
-                setPodHeight(i, balancedH, '#3b82f6'); // Back to healthy blue
-            }, dist * 100);
-        });
-    }, 2.4);
+    tl.set(failServer.ping, {
+        color: '#f59e0b',
+        onComplete: () => { failServer.ping.textContent = '92%'; },
+    }, `${degradeLabel}+=0.3`);
 
-    // 5. Success state
-    tl.to(label, { opacity: 0, duration: 0.3, delay: 0.5 });
+    // Then crashes to red
+    const crashLabel = 'crash';
+    tl.addLabel(crashLabel, '+=0.4');
 
-    // 6. Exit: Collapse all
-    tl.add(() => {
-        pods.forEach((p, i) => {
-            setTimeout(() => setPodHeight(i, 0), i * 30);
-        });
-    }, '+=0.5');
+    tl.to(failServer.barFill, {
+        width: '4%',
+        background: 'linear-gradient(90deg, #ef4444, #dc2626)',
+        duration: 0.5,
+        ease: 'power3.in',
+    }, crashLabel);
 
-    // Wait for collapse animation to finish before resolving
-    tl.to({}, { duration: 0.8 }); 
+    tl.to(failServer.dot, {
+        background: '#ef4444',
+        boxShadow: '0 0 8px rgba(239,68,68,0.7)',
+        duration: 0.3,
+    }, crashLabel);
+
+    tl.set(failServer.ping, {
+        color: '#ef4444',
+        onComplete: () => { failServer.ping.textContent = 'DOWN'; },
+    }, `${crashLabel}+=0.3`);
+
+    // Row flash red briefly
+    tl.to(failServer.row, {
+        background: 'rgba(239,68,68,0.08)',
+        duration: 0.15,
+        yoyo: true,
+        repeat: 3,
+    }, crashLabel);
+
+    // Show alert banner
+    tl.set(banner, {
+        onComplete: () => {
+            banner.textContent = '⚠ ALERT — eu-central unresponsive';
+            banner.style.color = '#fca5a5';
+            banner.style.background = 'rgba(239,68,68,0.1)';
+            banner.style.borderTop = '1px solid rgba(239,68,68,0.2)';
+        },
+    }, `${crashLabel}+=0.4`);
+    tl.to(banner, { opacity: 1, duration: 0.25 }, `${crashLabel}+=0.4`);
+
+    // 5. Restart sequence
+    const restartLabel = 'restart';
+    tl.addLabel(restartLabel, '+=0.8');
+
+    tl.set(banner, {
+        onComplete: () => {
+            banner.textContent = '↻ RESTARTING eu-central …';
+            banner.style.color = '#93c5fd';
+            banner.style.background = 'rgba(59,130,246,0.08)';
+            banner.style.borderTop = '1px solid rgba(59,130,246,0.15)';
+        },
+    }, restartLabel);
+
+    // Dot blinks blue during restart
+    tl.to(failServer.dot, {
+        background: '#3b82f6',
+        boxShadow: '0 0 6px rgba(59,130,246,0.6)',
+        duration: 0.25,
+        yoyo: true,
+        repeat: 5,
+        ease: 'steps(1)',
+    }, restartLabel);
+
+    tl.set(failServer.ping, {
+        onComplete: () => { failServer.ping.textContent = '...'; failServer.ping.style.color = '#64748b'; },
+    }, restartLabel);
+
+    // Bar slowly recovers
+    tl.to(failServer.barFill, {
+        width: `${failServer.normalLoad * 100}%`,
+        background: 'linear-gradient(90deg, #22c55e, #4ade80)',
+        duration: 1.4,
+        ease: 'power2.out',
+    }, `${restartLabel}+=0.3`);
+
+    // 6. Recovery complete
+    const recoveryLabel = 'recovery';
+    tl.addLabel(recoveryLabel, `${restartLabel}+=1.8`);
+
+    tl.to(failServer.dot, {
+        background: '#22c55e',
+        boxShadow: '0 0 6px rgba(34,197,94,0.5)',
+        duration: 0.3,
+    }, recoveryLabel);
+
+    tl.set(failServer.ping, {
+        onComplete: () => {
+            failServer.ping.textContent = `${Math.round(failServer.normalLoad * 100)}%`;
+            failServer.ping.style.color = '#64748b';
+        },
+    }, recoveryLabel);
+
+    tl.to(failServer.row, { background: 'transparent', duration: 0.3 }, recoveryLabel);
+
+    // Banner → success
+    tl.set(banner, {
+        onComplete: () => {
+            banner.textContent = '✓ ALL SYSTEMS OPERATIONAL';
+            banner.style.color = '#86efac';
+            banner.style.background = 'rgba(34,197,94,0.08)';
+            banner.style.borderTop = '1px solid rgba(34,197,94,0.15)';
+        },
+    }, `${recoveryLabel}+=0.1`);
+
+    // Header dot pulse
+    tl.to(headerDot, {
+        scale: 1.4, duration: 0.2, yoyo: true, repeat: 1,
+    }, `${recoveryLabel}+=0.1`);
+
+    // 7. Exit
+    tl.to(card, { scale: 0.9, opacity: 0, duration: 0.35, delay: 0.8, ease: 'power2.in' });
 
     const cleanup = () => { tl.kill(); root.remove(); };
-    const promise = new Promise<void>(resolve => tl.eventCallback('onComplete', () => { cleanup(); resolve(); }));
+    const promise = new Promise<void>(resolve =>
+        tl.eventCallback('onComplete', () => { cleanup(); resolve(); })
+    );
 
     return { promise, cancel: cleanup };
 }

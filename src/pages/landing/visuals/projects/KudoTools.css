@@ -42,30 +42,65 @@
     border-color: rgba(15, 23, 42, 0.15);
 }
 
-/* Grid Spans */
+/* Gradient hue overlay */
+.kudo-tile::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Grid Spans + per-tile gradient hues */
 .tile-inventory {
     grid-column: 1 / span 3;
     grid-row: 1 / span 3;
+}
+.tile-inventory::after {
+    background:
+        radial-gradient(ellipse at 0% 0%, rgba(37, 99, 235, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse at 100% 100%, rgba(59, 130, 246, 0.05) 0%, transparent 55%);
 }
 
 .tile-captcha {
     grid-column: 4 / span 3;
     grid-row: 1 / span 2;
 }
+.tile-captcha::after {
+    background:
+        radial-gradient(ellipse at 100% 0%, rgba(16, 185, 129, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse at 0% 100%, rgba(52, 211, 153, 0.05) 0%, transparent 55%);
+}
 
 .tile-spoof {
     grid-column: 5 / span 2;
     grid-row: 3 / span 3;
+}
+.tile-spoof::after {
+    background:
+        radial-gradient(ellipse at 100% 100%, rgba(239, 68, 68, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse at 0% 0%, rgba(251, 113, 133, 0.05) 0%, transparent 55%);
 }
 
 .tile-servers {
     grid-column: 1 / span 2;
     grid-row: 4 / span 2;
 }
+.tile-servers::after {
+    background:
+        radial-gradient(ellipse at 0% 100%, rgba(139, 92, 246, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse at 100% 0%, rgba(167, 139, 250, 0.05) 0%, transparent 55%);
+}
 
 .tile-converter {
     grid-column: 3 / span 2;
     grid-row: 4 / span 2;
+}
+.tile-converter::after {
+    background:
+        radial-gradient(ellipse at 100% 100%, rgba(245, 158, 11, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse at 0% 0%, rgba(251, 191, 36, 0.05) 0%, transparent 55%);
 }
 
 /* Badge & Label */

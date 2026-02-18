@@ -1,5 +1,6 @@
 // src/pages/landing/visuals/EducationRLDrift.tsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import gsap from 'gsap';
 import '../styles/EducationRLDrift.css';
 
 /** =========================
@@ -36,6 +37,13 @@ type SmokePuff = {
 };
 
 type SkidPt = { lx: number; ly: number; rx: number; ry: number; alpha: number; gap: boolean; time: number };
+
+type TrackTransition = {
+    oldTrack: Track;
+    /** Fraction of oldTrack that is/was visible — normally 1.0, less if interrupted mid-draw. */
+    eraseEndFrac: number;
+    newTrack: Track;
+};
 
 type UiSnapshot = {
     generation: number;
@@ -860,6 +868,10 @@ class GeneticDriftTrainer {
 
     private _ui: UiSnapshot;
     private _stepsPerEpisode = 600;
+    private transition: TrackTransition | null = null;
+    /** GSAP-animated proxy — drives the visual transition. */
+    private _transProxy = { eraseT: 0, drawT: 0, carFade: 1 };
+    private _transTimeline: gsap.core.Timeline | null = null;
 
     constructor(w: number, h: number) {
         this.track = new Track(w, h, 'oval');
@@ -911,8 +923,75 @@ class GeneticDriftTrainer {
     }
 
     setTrackType(type: TrackType, w: number, h: number): void {
+        if (type === this.trackType) return;
+
+        // --- Determine what is currently visible so we resume seamlessly ---
+        let oldTrack: Track;
+        let eraseEndFrac = 1.0;
+        let initialEraseT = 0;
+
+        if (this._transTimeline) {
+            this._transTimeline.kill();
+            this._transTimeline = null;
+
+            if (this.transition) {
+                const { eraseT, drawT } = this._transProxy;
+                if (drawT > 0.005) {
+                    // Interrupted mid-draw: only the drawn portion is visible
+                    oldTrack = this.transition.newTrack;
+                    eraseEndFrac = clamp01(drawT);
+                    initialEraseT = 0;
+                } else if (eraseT > 0.005 && eraseT < 0.995) {
+                    // Interrupted mid-erase: continue from current erase position
+                    oldTrack = this.transition.oldTrack;
+                    eraseEndFrac = this.transition.eraseEndFrac;
+                    initialEraseT = eraseT;
+                } else {
+                    // Car-exit or gap phase — treat as full old track
+                    oldTrack = this.transition.oldTrack;
+                    eraseEndFrac = this.transition.eraseEndFrac;
+                    initialEraseT = eraseT > 0.995 ? 1 : 0;
+                }
+            } else {
+                oldTrack = this.track;
+            }
+        } else {
+            oldTrack = this.track;
+        }
+
+        const newTrack = new Track(w, h, type);
+        this.transition = { oldTrack, eraseEndFrac, newTrack };
+
+        this._transProxy.eraseT = initialEraseT;
+        this._transProxy.drawT = 0;
+        // carFade keeps its current value so interrupts don't snap
+
+        // Erase duration proportional to remaining visible arc
+        const remainingErase = eraseEndFrac * (1 - initialEraseT);
+        const eraseDuration = Math.max(0, remainingErase * 0.55);
+        const drawStart = eraseDuration + 0.08; // small gap after erase
+
+        const tl = gsap.timeline({
+            onComplete: () => { this.transition = null; this._transTimeline = null; },
+        });
+
+        // Cars fade out and erase begin simultaneously
+        tl.to(this._transProxy, { carFade: 0, duration: 0.15, ease: 'power2.in' }, 0);
+        if (eraseDuration > 0.01) {
+            tl.to(this._transProxy, { eraseT: 1, duration: eraseDuration, ease: 'power2.inOut' }, 0);
+        } else {
+            this._transProxy.eraseT = 1; // snap to blank immediately
+        }
+
+        // New track builds in
+        tl.to(this._transProxy, { drawT: 1, duration: 0.75, ease: 'power2.inOut' }, drawStart);
+
+        // Cars fade in overlapping the last 0.1 s of drawing
+        tl.to(this._transProxy, { carFade: 1, duration: 0.28, ease: 'power2.out' }, drawStart + 0.65);
+
+        this._transTimeline = tl;
         this.trackType = type;
-        this.track.build(w, h, type);
+        this.track = newTrack; // physics on new track immediately
         this._resetEpisode();
     }
 
@@ -1037,37 +1116,90 @@ class GeneticDriftTrainer {
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
-        drawTrack(ctx, this.track);
 
-        // Sort by fitness: champion first
-        const sorted = [...this.pop].sort((a, b) => b.fitness - a.fitness);
+        // --- Track transition (driven by GSAP proxy) ---
+        let carAlpha = 1;
+        let carScale = 1;
+        let showCars = true;
 
-        // Draw skid marks for all agents (under cars)
-        const skidNow = performance.now();
-        for (const a of this.pop) {
-            if (a.skidPts.length > 1) drawSkidMarks(ctx, a.skidPts, skidNow);
+        if (this.transition) {
+            const { eraseT, drawT, carFade } = this._transProxy;
+            const { oldTrack, newTrack, eraseEndFrac } = this.transition;
+
+            carAlpha = carFade;
+            carScale = smoothstep(0, 1, carFade); // ease the scale for nicer pop
+
+            if (drawT > 0.005) {
+                // Draw phase or car-enter phase
+                if (drawT < 0.995) {
+                    drawTrackPartial(ctx, newTrack, 0, drawT, 'end');
+                    showCars = false;
+                } else {
+                    drawTrack(ctx, this.track); // fully drawn, show cars fading in
+                }
+            } else if (eraseT > 0.005) {
+                // Erase phase or gap (blank canvas)
+                showCars = false;
+                if (eraseT < 0.995 && eraseEndFrac > 0) {
+                    const startFrac = eraseEndFrac * eraseT;
+                    drawTrackPartial(ctx, oldTrack, startFrac, eraseEndFrac, 'start');
+                }
+                // else: gap — blank canvas intentionally
+            } else {
+                // Car-exit phase: full old track visible, cars fading out
+                drawTrackPartial(ctx, oldTrack, 0, eraseEndFrac, null);
+            }
+        } else {
+            drawTrack(ctx, this.track);
         }
 
-        // Draw smoke
-        for (const a of this.pop) {
-            if (a.smoke.length > 0) drawSmoke(ctx, a.smoke);
+        // Cars, skid marks, smoke, overlay — always gated by showCars + carAlpha
+        if (showCars && carAlpha > 0.01) {
+            const sorted = [...this.pop].sort((a, b) => b.fitness - a.fitness);
+
+            // Helper: draw with per-car scale (around car centre) + global alpha
+            const withCarFx = (fn: () => void, cx: number, cy: number) => {
+                ctx.save();
+                ctx.globalAlpha = carAlpha;
+                ctx.translate(cx, cy);
+                ctx.scale(carScale, carScale);
+                ctx.translate(-cx, -cy);
+                fn();
+                ctx.restore();
+            };
+
+            // Skid marks and smoke: fade with carAlpha but no scale (world-space effects)
+            ctx.save();
+            ctx.globalAlpha = carAlpha;
+            const skidNow = performance.now();
+            for (const a of this.pop) {
+                if (a.skidPts.length > 1) drawSkidMarks(ctx, a.skidPts, skidNow);
+            }
+            for (const a of this.pop) {
+                if (a.smoke.length > 0) drawSmoke(ctx, a.smoke);
+            }
+            ctx.restore();
+
+            // Ghost agents
+            for (let i = 1; i < sorted.length; i++) {
+                const a = sorted[i]!;
+                if (a.alive) withCarFx(() => drawCarGhost(ctx, a, i), a.car.x, a.car.y);
+            }
+
+            // Champion on top
+            if (sorted[0]?.alive) {
+                const champ = sorted[0]!;
+                withCarFx(() => drawCarChampion(ctx, champ), champ.car.x, champ.car.y);
+            }
+
+            // Info overlay
+            drawSimOverlay(ctx, w,
+                this.generation,
+                this.pop.filter(a => a.alive).length,
+                POP_SIZE,
+                this.bestFitness
+            );
         }
-
-        // Ghost agents (alive but not champion)
-        for (let i = 1; i < sorted.length; i++) {
-            if (sorted[i]!.alive) drawCarGhost(ctx, sorted[i]!, i);
-        }
-
-        // Champion on top
-        if (sorted[0]?.alive) drawCarChampion(ctx, sorted[0]!);
-
-        // Info overlay
-        drawSimOverlay(ctx, w,
-            this.generation,
-            this.pop.filter(a => a.alive).length,
-            POP_SIZE,
-            this.bestFitness
-        );
     }
 
     drawCharts(
@@ -1157,6 +1289,80 @@ function drawTrack(ctx: CanvasRenderingContext2D, track: Track): void {
     // Centerline dashes
     drawPath(); ctx.strokeStyle = 'rgba(226,232,240,0.65)'; ctx.setLineDash([7, 11]); ctx.lineWidth = 1.2; ctx.stroke();
     ctx.setLineDash([]);
+
+    ctx.restore();
+}
+
+/**
+ * Draw an arc of the track from [startFrac, endFrac] (0–1).
+ * fadeEdge: 'start' fades the leading edge that's disappearing (erase animation);
+ *           'end'   fades the leading edge that's appearing  (draw  animation).
+ */
+function drawTrackPartial(
+    ctx: CanvasRenderingContext2D,
+    track: Track,
+    startFrac: number,
+    endFrac: number,
+    fadeEdge: 'start' | 'end' | null = null,
+): void {
+    const pts = track.points;
+    const n = pts.length;
+    if (n < 2 || endFrac <= startFrac) return;
+
+    const si = Math.min(n - 1, Math.floor(n * clamp01(startFrac)));
+    const ei = Math.min(n - 1, Math.ceil(n * clamp01(endFrac)));
+    if (ei <= si) return;
+
+    const visLen = ei - si;
+    const FADE_STEPS = Math.max(2, Math.floor(visLen * 0.18));
+
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // Draw a single segment pts[a]→pts[a+1] at a given globalAlpha
+    const drawSeg = (a: number, alpha: number) => {
+        if (a >= n - 1) return;
+        const p0 = pts[a]!, p1 = pts[a + 1]!;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = 'rgba(226,232,240,1)';    ctx.lineWidth = track.roadWidth + 12; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = 'rgba(226,232,240,0.35)'; ctx.lineWidth = track.roadWidth;      ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = 'rgba(226,232,240,0.65)'; ctx.lineWidth = 1.2; ctx.setLineDash([7, 11]); ctx.stroke();
+        ctx.setLineDash([]);
+    };
+
+    // Draw a range of points as one path at full alpha (fast path)
+    const drawBulk = (from: number, to: number) => {
+        if (to <= from) return;
+        ctx.globalAlpha = 1;
+        const sub = pts.slice(from, to + 1);
+        const path = () => {
+            ctx.beginPath();
+            ctx.moveTo(sub[0]!.x, sub[0]!.y);
+            for (let i = 1; i < sub.length; i++) ctx.lineTo(sub[i]!.x, sub[i]!.y);
+        };
+        path(); ctx.strokeStyle = 'rgba(226,232,240,1)';    ctx.lineWidth = track.roadWidth + 12; ctx.stroke();
+        path(); ctx.strokeStyle = 'rgba(226,232,240,0.35)'; ctx.lineWidth = track.roadWidth;      ctx.stroke();
+        path(); ctx.strokeStyle = 'rgba(226,232,240,0.65)'; ctx.lineWidth = 1.2; ctx.setLineDash([7, 11]); ctx.stroke();
+        ctx.setLineDash([]);
+    };
+
+    if (fadeEdge === 'start') {
+        // Tip at si fades from 0 → 1 over FADE_STEPS segments; bulk is drawn at full alpha
+        const fadeEnd = Math.min(si + FADE_STEPS, ei);
+        drawBulk(fadeEnd, ei);
+        for (let i = si; i < fadeEnd; i++) drawSeg(i, (i - si + 1) / FADE_STEPS);
+    } else if (fadeEdge === 'end') {
+        // Tip at ei fades from 1 → 0 over FADE_STEPS segments; bulk at full alpha
+        const fadeStart = Math.max(si, ei - FADE_STEPS);
+        drawBulk(si, fadeStart);
+        for (let i = fadeStart; i < ei; i++) drawSeg(i, (ei - i) / FADE_STEPS);
+    } else {
+        drawBulk(si, ei);
+    }
 
     ctx.restore();
 }

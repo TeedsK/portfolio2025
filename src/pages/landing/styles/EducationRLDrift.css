@@ -24,45 +24,180 @@
     display: block;
 }
 
-/* ── Bottom row: description left, hub right ── */
+/* ── Stat bar — sits directly below canvas, same width ── */
+.rl-stat-bar {
+    width: min(1200px, 92vw);
+    align-self: center;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 8px 0 6px;
+}
+
+.rl-stat-bar-section {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.rl-stat-bar-right {
+    align-items: flex-end;
+}
+
+.rl-stat-bar-right .rl-btn-group-label {
+    text-align: right;
+}
+
+.rl-stat-bar-stats {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    padding-bottom: 2px;
+}
+
+.rl-stat-item {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+}
+
+.rl-stat-k {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+}
+
+.rl-stat-v {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.rl-stat-sep {
+    display: inline-block;
+    width: 1px;
+    height: 14px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+/* ── Bottom row: description left (~40%), hub right (~60%) ── */
 .rl-bottom {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 48px;
+    gap: 72px;
     /* Left edge matches edu-inner: max(4vw, (100vw - 1200px)/2) */
     padding: 28px max(4vw, calc((100vw - 1200px) / 2)) 32px;
 }
 
-/* Left: title + paragraph — fixed narrow width */
+/* Left: title + paragraph — ~40% of available width */
 .rl-info {
-    flex: 0 0 auto;
-    width: clamp(200px, 26%, 320px);
-    min-width: 180px;
+    flex: 2 1 0;
+    min-width: 200px;
 }
 
 .rl-info-heading {
-    font-size: clamp(18px, 2vw, 24px);
+    font-size: clamp(22px, 2.6vw, 34px);
     font-weight: 700;
     color: #0f172a;
-    margin: 0 0 12px;
-    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    letter-spacing: -0.02em;
 }
 
 .rl-info-body {
-    font-size: 13px;
+    font-size: clamp(14px, 1.3vw, 16px);
     color: #64748b;
-    line-height: 1.7;
+    line-height: 1.72;
     margin: 0;
-    max-width: 400px;
 }
 
-/* Right: stats hub — grows to fill most of the remaining width */
+.rl-info-body-gap {
+    margin-top: 14px;
+}
+
+.rl-interest-link {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: clamp(13px, 1.15vw, 15px);
+    color: #64748b;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(100, 116, 139, 0.5);
+    transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.rl-interest-link:hover,
+.rl-interest-link:focus {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+}
+
+.rl-interest-link:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* Technical explainer collapsible */
+.rl-explainer {
+    margin-top: 16px;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 4px;
+}
+
+.rl-explainer-toggle {
+    appearance: none;
+    border: 1px solid #e2e8f0;
+    background: transparent;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.rl-explainer-toggle:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.rl-explainer-body {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rl-exp-heading {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+}
+
+.rl-exp-body {
+    font-size: clamp(13px, 1.1vw, 14px);
+    color: #64748b;
+    line-height: 1.68;
+    margin: 0;
+}
+
+/* Right: stats hub — ~60% of available width */
 .rl-panel {
-    flex: 1 1 auto;
-    min-width: 300px;
-    /* small right-margin so it doesn't reach the absolute edge of the timeline */
-    margin-right: clamp(24px, 3vw, 56px);
+    flex: 3 1 0;
+    min-width: 280px;
 
     display: flex;
     flex-direction: column;
@@ -115,6 +250,26 @@
     flex-wrap: wrap;
     gap: 5px;
     align-items: center;
+}
+
+.rl-info-actions {
+    margin-top: 16px;
+}
+
+/* Labeled button groups */
+.rl-btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.rl-btn-group-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
 }
 
 .rl-spacer {
@@ -184,13 +339,12 @@
     text-align: right;
 }
 
-/* Charts area */
+/* Charts area — wide best/avg on top row, 2×2 below */
 .rl-charts {
-    flex: 1 1 auto;
     display: grid;
-    grid-template-rows: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
-    min-height: 160px;
+    height: clamp(360px, 44vh, 520px);
 }
 
 .rl-chart {
@@ -204,6 +358,53 @@
     display: block;
 }
 
+.rl-chart-wide {
+    grid-column: 1 / -1;
+}
+
+/* Collapsible live telemetry */
+.rl-details {
+    border-top: 1px solid #f1f5f9;
+    padding-top: 4px;
+}
+
+.rl-details-toggle {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 5px 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.rl-details-toggle:hover {
+    color: #64748b;
+}
+
+.rl-details-arrow {
+    display: inline-block;
+    transition: transform 0.18s ease;
+    line-height: 1;
+}
+
+.rl-details-arrow.is-open {
+    transform: rotate(180deg);
+}
+
+.rl-details-body {
+    padding-top: 6px;
+}
+
 /* Compact: stack vertically on narrow viewports */
 @media (max-width: 760px) {
     .rl-bottom {
@@ -212,8 +413,9 @@
         padding: 20px max(4vw, 16px) 24px;
     }
     .rl-info {
-        width: auto;
-        max-width: none;
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
     }
     .rl-panel {
         flex: 0 0 auto;

@@ -1192,13 +1192,6 @@ class GeneticDriftTrainer {
                 withCarFx(() => drawCarChampion(ctx, champ), champ.car.x, champ.car.y);
             }
 
-            // Info overlay
-            drawSimOverlay(ctx, w,
-                this.generation,
-                this.pop.filter(a => a.alive).length,
-                POP_SIZE,
-                this.bestFitness
-            );
         }
     }
 
@@ -1206,12 +1199,14 @@ class GeneticDriftTrainer {
         fitCtx: CanvasRenderingContext2D | null,
         sigCtx: CanvasRenderingContext2D | null,
         slipCtx: CanvasRenderingContext2D | null,
-        rewardCtx: CanvasRenderingContext2D | null
+        rewardCtx: CanvasRenderingContext2D | null,
+        bestAvgCtx: CanvasRenderingContext2D | null
     ): void {
         if (fitCtx) drawFitnessChart(fitCtx, this.genBestHistory, this.genAvgHistory, 'Fitness / Generation');
         if (sigCtx) drawSigmaChart(sigCtx, this.genBestHistory.length, this.mutSigma);
-        if (slipCtx) drawTraceChart(slipCtx, this.liveSlipTrace, -45, 45, 'Live Slip (°)');
-        if (rewardCtx) drawTraceChart(rewardCtx, this.liveRewardTrace, -1.2, 1.2, 'Live Reward');
+        if (slipCtx) drawTraceChart(slipCtx, this.liveSlipTrace, -45, 45, 'Live Slip (°)', 'rgb(249,115,22)');
+        if (rewardCtx) drawTraceChart(rewardCtx, this.liveRewardTrace, -1.2, 1.2, 'Live Reward', 'rgb(34,197,94)');
+        if (bestAvgCtx) drawBestAvgChart(bestAvgCtx, this.genBestHistory, this.genAvgHistory);
     }
 
     getUiSnapshot(): UiSnapshot { return this._ui; }
@@ -1535,7 +1530,7 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     ctx.closePath();
 }
 
-function drawSimOverlay(ctx: CanvasRenderingContext2D, _w: number, gen: number, alive: number, total: number, bestFit: number): void {
+function drawSimOverlay(ctx: CanvasRenderingContext2D, _w: number, gen: number, alive: number, total: number, bestFit: number, skill: number): void {
     const dpr = window.devicePixelRatio || 1;
     const w = ctx.canvas.width / dpr;
     const h = ctx.canvas.height / dpr;
@@ -1544,7 +1539,8 @@ function drawSimOverlay(ctx: CanvasRenderingContext2D, _w: number, gen: number, 
     ctx.fillStyle = 'rgba(148,163,184,0.8)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`GEN ${gen}   ALIVE ${alive}/${total}   BEST FIT ${bestFit > -Infinity ? bestFit.toFixed(1) : '—'}`, w / 2, h - 10);
+    const skillPct = `${(skill * 100).toFixed(0)}%`;
+    ctx.fillText(`GEN ${gen}   ALIVE ${alive}/${total}   SKILL ${skillPct}   BEST FIT ${bestFit > -Infinity ? bestFit.toFixed(1) : '—'}`, w / 2, h - 10);
     ctx.restore();
 }
 
@@ -1556,7 +1552,6 @@ function chartFrame(ctx: CanvasRenderingContext2D, title: string): { w: number; 
     const h = ctx.canvas.height / (window.devicePixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
     ctx.fillStyle = 'rgba(100,116,139,0.9)';
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -1567,6 +1562,8 @@ function chartFrame(ctx: CanvasRenderingContext2D, title: string): { w: number; 
 function drawFitnessChart(ctx: CanvasRenderingContext2D, best: number[], avg: number[], title: string): void {
     const { px, py, pw, ph } = chartFrame(ctx, title);
     if (best.length < 2) return;
+
+    const COLOR = 'rgb(59,130,246)'; // blue
 
     const allVals = [...best, ...avg];
     let minV = Math.min(...allVals);
@@ -1584,7 +1581,7 @@ function drawFitnessChart(ctx: CanvasRenderingContext2D, best: number[], avg: nu
 
     // Avg line (lighter)
     const n = Math.min(best.length, avg.length);
-    ctx.strokeStyle = 'rgba(100,116,139,0.4)'; ctx.lineWidth = 1.0;
+    ctx.strokeStyle = 'rgba(59,130,246,0.3)'; ctx.lineWidth = 1.0;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
         const x = px + (i / (n - 1)) * pw;
@@ -1593,8 +1590,17 @@ function drawFitnessChart(ctx: CanvasRenderingContext2D, best: number[], avg: nu
     }
     ctx.stroke();
 
-    // Best line (solid)
-    ctx.strokeStyle = 'rgba(15,23,42,0.72)'; ctx.lineWidth = 1.3;
+    // Best line — fill area then stroke
+    ctx.beginPath();
+    for (let i = 0; i < best.length; i++) {
+        const x = px + (i / (best.length - 1)) * pw;
+        const y = py + (1 - (best[i]! - minV) / rng) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo(px + pw, py + ph); ctx.lineTo(px, py + ph); ctx.closePath();
+    ctx.fillStyle = 'rgba(59,130,246,0.2)'; ctx.fill();
+
+    ctx.strokeStyle = COLOR; ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < best.length; i++) {
         const x = px + (i / (best.length - 1)) * pw;
@@ -1603,39 +1609,90 @@ function drawFitnessChart(ctx: CanvasRenderingContext2D, best: number[], avg: nu
     }
     ctx.stroke();
 
-    // Latest value label
     const last = best[best.length - 1] ?? 0;
-    ctx.fillStyle = 'rgba(15,23,42,0.82)';
+    ctx.fillStyle = COLOR;
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     ctx.fillText(last.toFixed(1), px + pw, 5);
+}
 
-    // Legend
-    ctx.fillStyle = 'rgba(100,116,139,0.75)'; ctx.textAlign = 'left';
-    ctx.fillText('best', px, 5);
-    ctx.fillStyle = 'rgba(100,116,139,0.45)';
-    ctx.fillText('avg', px + 28, 5);
+function drawBestAvgChart(ctx: CanvasRenderingContext2D, best: number[], avg: number[]): void {
+    const { px, py, pw, ph } = chartFrame(ctx, 'Best Fit / Avg Fit');
+    const n = Math.min(best.length, avg.length);
+    if (n < 2) return;
+
+    const BEST = 'rgb(59,130,246)';
+    const AVG  = 'rgb(249,115,22)';
+
+    const allVals = [...best.slice(0, n), ...avg.slice(0, n)];
+    let minV = Math.min(...allVals);
+    let maxV = Math.max(...allVals);
+    const pad = (maxV - minV) * 0.12 + 0.5;
+    minV -= pad; maxV += pad;
+    const rng = maxV - minV || 1;
+
+    ctx.strokeStyle = 'rgba(15,23,42,0.06)'; ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+        const y = py + ph * i / 4;
+        ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke();
+    }
+
+    const drawLine = (data: number[], color: string, fillAlpha: number) => {
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+            const x = px + (i / (n - 1)) * pw;
+            const y = py + (1 - (data[i]! - minV) / rng) * ph;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.lineTo(px + pw, py + ph); ctx.lineTo(px, py + ph); ctx.closePath();
+        ctx.fillStyle = color.replace('rgb(', 'rgba(').replace(')', `,${fillAlpha})`);
+        ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+            const x = px + (i / (n - 1)) * pw;
+            const y = py + (1 - (data[i]! - minV) / rng) * ph;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    };
+
+    drawLine(avg.slice(0, n), AVG, 0.15);
+    drawLine(best.slice(0, n), BEST, 0.2);
+
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = BEST;
+    ctx.fillText(`Best ${(best[n - 1] ?? 0).toFixed(1)}`, px + pw, 5);
+    ctx.fillStyle = AVG;
+    ctx.fillText(`Avg ${(avg[n - 1] ?? 0).toFixed(1)}`, px + pw - 72, 5);
 }
 
 function drawSigmaChart(ctx: CanvasRenderingContext2D, genCount: number, currentSigma: number): void {
-    const { px, py, pw, ph } = chartFrame(ctx, 'Mutation σ');
+    const { px, py, pw, ph } = chartFrame(ctx, 'Mutation \u03c3');
+    const COLOR = 'rgb(168,85,247)'; // purple
 
-    // Draw the decay curve
     const INIT_SIGMA = 1.2;
     const DECAY = 0.975;
 
-    ctx.strokeStyle = 'rgba(100,116,139,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
-    const midY = py + ph * 0.5;
-    ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Simulated sigma history
     const pts: number[] = [];
     let sig = INIT_SIGMA;
     for (let i = 0; i < Math.max(genCount, 2); i++) { pts.push(sig); sig *= DECAY; }
 
     const maxV = INIT_SIGMA * 1.1;
-    ctx.strokeStyle = 'rgba(15,23,42,0.68)'; ctx.lineWidth = 1.2;
+
+    // Fill area then stroke
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+        const x = px + (i / (pts.length - 1)) * pw;
+        const y = py + (1 - pts[i]! / maxV) * ph;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo(px + pw, py + ph); ctx.lineTo(px, py + ph); ctx.closePath();
+    ctx.fillStyle = 'rgba(168,85,247,0.2)'; ctx.fill();
+
+    ctx.strokeStyle = COLOR; ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < pts.length; i++) {
         const x = px + (i / (pts.length - 1)) * pw;
@@ -1644,36 +1701,48 @@ function drawSigmaChart(ctx: CanvasRenderingContext2D, genCount: number, current
     }
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(15,23,42,0.8)';
+    ctx.fillStyle = COLOR;
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     ctx.fillText(currentSigma.toFixed(3), px + pw, 5);
 }
 
-function drawTraceChart(ctx: CanvasRenderingContext2D, trace: RingBuffer, minV: number, maxV: number, title: string): void {
+function drawTraceChart(ctx: CanvasRenderingContext2D, trace: RingBuffer, minV: number, maxV: number, title: string, color: string): void {
     const { px, py, pw, ph } = chartFrame(ctx, title);
     const n = trace.size();
     if (n < 2) return;
 
     const rng = maxV - minV || 1;
 
-    // Mid line
+    // Zero reference line
     const midY = py + (1 - (0 - minV) / rng) * ph;
     ctx.strokeStyle = 'rgba(100,116,139,0.18)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
     ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.strokeStyle = 'rgba(15,23,42,0.68)'; ctx.lineWidth = 1.2;
+    // Fill area then stroke
+    const ys: number[] = [];
+    for (let i = 0; i < n; i++) ys.push(py + (1 - (clamp(trace.at(i), minV, maxV) - minV) / rng) * ph);
+
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
         const x = px + (i / (n - 1)) * pw;
-        const y = py + (1 - (clamp(trace.at(i), minV, maxV) - minV) / rng) * ph;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        i === 0 ? ctx.moveTo(x, ys[i]!) : ctx.lineTo(x, ys[i]!);
+    }
+    ctx.lineTo(px + pw, py + ph); ctx.lineTo(px, py + ph); ctx.closePath();
+    // Parse color to build fill with 0.2 opacity
+    ctx.fillStyle = color.replace('rgb(', 'rgba(').replace(')', ',0.2)'); ctx.fill();
+
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+        const x = px + (i / (n - 1)) * pw;
+        i === 0 ? ctx.moveTo(x, ys[i]!) : ctx.lineTo(x, ys[i]!);
     }
     ctx.stroke();
 
     const last = trace.latest();
-    ctx.fillStyle = 'rgba(15,23,42,0.8)';
+    ctx.fillStyle = color;
     ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     ctx.fillText(last.toFixed(1), px + pw, 5);
@@ -1719,11 +1788,13 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     const chartSigWrapRef = useRef<HTMLDivElement | null>(null);
     const chartSlipWrapRef = useRef<HTMLDivElement | null>(null);
     const chartRewWrapRef = useRef<HTMLDivElement | null>(null);
+    const chartBestAvgWrapRef = useRef<HTMLDivElement | null>(null);
 
     const chartFitCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const chartSigCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const chartSlipCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const chartRewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const chartBestAvgCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const trainerRef = useRef<GeneticDriftTrainer | null>(null);
     const simCtxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -1731,6 +1802,7 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
     const chartSigCtxRef = useRef<CanvasRenderingContext2D | null>(null);
     const chartSlipCtxRef = useRef<CanvasRenderingContext2D | null>(null);
     const chartRewCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+    const chartBestAvgCtxRef = useRef<CanvasRenderingContext2D | null>(null);
 
     const rafRef = useRef<number>(0);
     const lastTRef = useRef<number>(0);
@@ -1783,13 +1855,14 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
             rc(chartSigWrapRef.current, chartSigCanvasRef.current, chartSigCtxRef);
             rc(chartSlipWrapRef.current, chartSlipCanvasRef.current, chartSlipCtxRef);
             rc(chartRewWrapRef.current, chartRewCanvasRef.current, chartRewCtxRef);
+            rc(chartBestAvgWrapRef.current, chartBestAvgCanvasRef.current, chartBestAvgCtxRef);
 
             if (trainerRef.current) setUi(trainerRef.current.getUiSnapshot());
         };
 
         resizeAll();
         const ro = new ResizeObserver(() => resizeAll());
-        [simWrapRef, chartFitWrapRef, chartSigWrapRef, chartSlipWrapRef, chartRewWrapRef].forEach(ref => {
+        [simWrapRef, chartFitWrapRef, chartSigWrapRef, chartSlipWrapRef, chartRewWrapRef, chartBestAvgWrapRef].forEach(ref => {
             if (ref.current) ro.observe(ref.current);
         });
         return () => ro.disconnect();
@@ -1843,7 +1916,7 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
             if (uiTimerRef.current > 0.082) {
                 uiTimerRef.current = 0;
                 setUi(trainer.getUiSnapshot());
-                trainer.drawCharts(chartFitCtxRef.current, chartSigCtxRef.current, chartSlipCtxRef.current, chartRewCtxRef.current);
+                trainer.drawCharts(chartFitCtxRef.current, chartSigCtxRef.current, chartSlipCtxRef.current, chartRewCtxRef.current, chartBestAvgCtxRef.current);
             }
         };
 
@@ -1874,6 +1947,8 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
         trainer.setTrackType(type, d.w, d.h);
     }, []);
 
+    const [detailsOpen, setDetailsOpen] = useState(false);
+    const [explainerOpen, setExplainerOpen] = useState(false);
     const status = running ? 'TRAINING' : 'PAUSED';
 
     return (
@@ -1883,31 +1958,11 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                 <canvas ref={simCanvasRef} className="rl-sim-canvas" />
             </div>
 
-            {/* Bottom row: description left, stats hub right */}
-            <div className="rl-bottom">
-                <div className="rl-info">
-                    <h3 className="rl-info-heading">Reinforcement Learning</h3>
-                    <p className="rl-info-body">
-                        A neuroevolution drift trainer where eight neural-network agents compete
-                        each generation on a rear-wheel-drive track. Top performers survive,
-                        recombine, and mutate—progressively learning to initiate controlled
-                        oversteer at corner entry, sustain a precise slip angle through the apex,
-                        and exit cleanly without spinning out. Use the jump buttons to
-                        fast-forward through generations and watch the skill evolve in real time.
-                    </p>
-                </div>
-
-            {/* Stats hub */}
-            <div className="rl-panel">
-                <div className="rl-controls">
-                    <div className="rl-controls-top">
-                        <div className="rl-status">
-                            <span className={`rl-dot ${running ? 'is-on' : ''}`} />
-                            {status}
-                        </div>
-                    </div>
-
-                    {/* Track selector */}
+            {/* Stat bar — sits directly below canvas, same width */}
+            <div className="rl-stat-bar">
+                {/* Map selector — far left */}
+                <div className="rl-stat-bar-section">
+                    <div className="rl-btn-group-label">Map</div>
                     <div className="rl-buttons">
                         {TRACK_TYPES.map(t => (
                             <button
@@ -1919,81 +1974,146 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                             </button>
                         ))}
                     </div>
+                </div>
 
-                    {/* Control buttons */}
+                {/* GEN / ALIVE / SKILL — center */}
+                <div className="rl-stat-bar-stats">
+                    <span className="rl-stat-item">
+                        <span className="rl-stat-k">GEN</span>
+                        <span className="rl-stat-v">{ui.generation}</span>
+                    </span>
+                    <span className="rl-stat-sep" />
+                    <span className="rl-stat-item">
+                        <span className="rl-stat-k">ALIVE</span>
+                        <span className="rl-stat-v">{ui.aliveAgents}/{ui.populationSize}</span>
+                    </span>
+                    <span className="rl-stat-sep" />
+                    <span className="rl-stat-item">
+                        <span className="rl-stat-k">SKILL</span>
+                        <span className="rl-stat-v">{fmtPct(ui.skill)}</span>
+                    </span>
+                </div>
+
+                {/* Jump buttons — far right */}
+                <div className="rl-stat-bar-section rl-stat-bar-right">
+                    <div className="rl-btn-group-label">Jump Generations</div>
                     <div className="rl-buttons">
-                        <button className="rl-btn rl-btn-primary" onClick={() => setRunning(r => !r)}>
-                            {running ? 'Pause' : 'Play'}
-                        </button>
                         <button className="rl-btn" onClick={onReset}>Reset</button>
                         <div className="rl-spacer" />
-                        <button className="rl-btn" onClick={() => onJump(10)}>+10 Gen</button>
-                        <button className="rl-btn" onClick={() => onJump(50)}>+50 Gen</button>
-                        <button className="rl-btn" onClick={() => onJump(200)}>+200 Gen</button>
-                        <button className="rl-btn" onClick={() => onJump(800)}>+800 Gen</button>
+                        <button className="rl-btn" onClick={() => onJump(10)}>+10</button>
+                        <button className="rl-btn" onClick={() => onJump(50)}>+50</button>
+                        <button className="rl-btn" onClick={() => onJump(200)}>+200</button>
+                        <button className="rl-btn" onClick={() => onJump(800)}>+800</button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom row: description left, stats hub right */}
+            <div className="rl-bottom">
+                <div className="rl-info">
+                    <h3 className="rl-info-heading">Reinforcement Learning</h3>
+                    <p className="rl-info-body">
+                        The visual above is a simulation of eight neural network agents, each learning
+                        how to drift a rear wheel drive car through pure trial and error. There are no
+                        hand crafted rules and no labeled data. With each generation, the strongest
+                        performing cars survive and pass on their weights to slightly mutated copies.
+                    </p>
+                    <p className="rl-info-body rl-info-body-gap">
+                        This is the kind of system that drew me to computer science. The idea that a
+                        computer can teach itself problem solving strategies without explicit instruction
+                        is deeply compelling to me. I deliberately shaped my education around exploring
+                        this space and building systems that turn those ideas into practice.
+                    </p>
+                    <a href="#" className="rl-interest-link" onClick={(e) => e.preventDefault()}>
+                        Learn more about my interests →
+                    </a>
+
+                    {/* Technical explainer collapsible */}
+                    <div className="rl-explainer">
+                        <button
+                            className="rl-explainer-toggle"
+                            onClick={() => setExplainerOpen(o => !o)}
+                            aria-expanded={explainerOpen}
+                        >
+                            <span>How it works</span>
+                            <span className={`rl-details-arrow ${explainerOpen ? 'is-open' : ''}`}>▾</span>
+                        </button>
+                        {explainerOpen && (
+                            <div className="rl-explainer-body">
+                                <h4 className="rl-exp-heading">What it is</h4>
+                                <p className="rl-exp-body">
+                                    This is a neuroevolution simulation: a genetic algorithm that evolves
+                                    the weights of small neural networks over successive generations. There
+                                    is no gradient descent and no reward signal shaped by a human. The
+                                    only feedback each agent receives is a fitness score derived from how
+                                    well it drives. Poor drivers are eliminated; strong drivers pass their
+                                    weights to the next generation.
+                                </p>
+
+                                <h4 className="rl-exp-heading">Physics &amp; car model</h4>
+                                <p className="rl-exp-body">
+                                    Each car is simulated with a simplified top-down rigid-body model.
+                                    Longitudinal force comes from a rear-wheel throttle, while lateral grip
+                                    follows a Pacejka-style tire curve that produces realistic oversteer
+                                    when the slip angle exceeds the peak grip point. A yaw-inertia term
+                                    lets angular momentum build realistically, and a handbrake input can
+                                    abruptly unload the rear axle to initiate a drift. The result is a
+                                    system sensitive enough that small network weight changes produce
+                                    noticeably different driving styles.
+                                </p>
+
+                                <h4 className="rl-exp-heading">Neural network architecture</h4>
+                                <p className="rl-exp-body">
+                                    Each agent's brain is a fully-connected feedforward network with 9
+                                    inputs, two hidden layers of 16 neurons each (ReLU activation), and 3
+                                    outputs: steering, throttle, and handbrake. The 9 inputs are the car's
+                                    current speed, yaw rate, slip angle, heading error relative to the
+                                    track centerline, signed track-edge distance, drift intensity, and the
+                                    three previous control outputs fed back as context. All weights and
+                                    biases are encoded as a flat float array, the genome.
+                                </p>
+
+                                <h4 className="rl-exp-heading">Genetic algorithm</h4>
+                                <p className="rl-exp-body">
+                                    A population of 8 agents runs simultaneously each generation. Fitness
+                                    rewards track progress, sustained drift angle, and smooth control
+                                    while penalising spinning out or leaving the track. After the episode
+                                    ends, the top 3 agents (elites) are copied unchanged into the next
+                                    generation. The remaining 5 slots are filled by randomly pairing
+                                    elites and performing uniform crossover on their genomes, followed by
+                                    Gaussian mutation. Mutation magnitude is controlled by a sigma
+                                    parameter that decays each generation, shifting from broad exploration
+                                    early on to fine-grained refinement once good strategies emerge.
+                                </p>
+
+                                <h4 className="rl-exp-heading">Skill metric</h4>
+                                <p className="rl-exp-body">
+                                    The skill percentage shown in the stat bar is a composite score
+                                    measuring how consistently the champion agent holds a meaningful slip
+                                    angle while advancing around the track. It starts near zero and
+                                    asymptotically climbs toward 100% as the population converges on a
+                                    stable drifting strategy, giving an intuitive read on evolutionary
+                                    progress without needing to interpret raw fitness numbers.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Dense numeric telemetry */}
-                <div className="rl-telemetry">
-                    <div className="rl-row">
-                        <div className="k">GEN</div>
-                        <div className="v">{ui.generation}</div>
-                        <div className="k">ALIVE</div>
-                        <div className="v">{ui.aliveAgents}/{ui.populationSize}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">BestFit</div>
-                        <div className="v">{fmtSgn(ui.bestFitness, 1)}</div>
-                        <div className="k">CurFit</div>
-                        <div className="v">{fmtSgn(ui.currentBestFitness, 1)}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">AvgFit</div>
-                        <div className="v">{fmtSgn(ui.avgFitness, 1)}</div>
-                        <div className="k">Steps</div>
-                        <div className="v">{ui.totalSteps.toLocaleString()}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">Skill</div>
-                        <div className="v">{fmtPct(ui.skill)}</div>
-                        <div className="k">σ</div>
-                        <div className="v">{fmt(ui.mutSigma, 3)}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">Speed</div>
-                        <div className="v">{fmt(ui.speed, 0)}</div>
-                        <div className="k">YawRate</div>
-                        <div className="v">{fmtSgn(ui.yawRate, 2)}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">Slip</div>
-                        <div className="v">{fmtSgn(ui.slipDeg, 1)}°</div>
-                        <div className="k">HdgErr</div>
-                        <div className="v">{fmtSgn(ui.headingErrDeg, 1)}°</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">TrkErr</div>
-                        <div className="v">{fmtSgn(ui.trackError, 1)}</div>
-                        <div className="k">Drift</div>
-                        <div className="v">{fmtPct(ui.driftIntensity)}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">Steer</div>
-                        <div className="v">{fmtSgn(ui.steer, 2)}</div>
-                        <div className="k">Throttle</div>
-                        <div className="v">{fmt(ui.throttle, 2)}</div>
-                    </div>
-                    <div className="rl-row">
-                        <div className="k">Handbrk</div>
-                        <div className="v">{fmt(ui.handbrake, 2)}</div>
-                        <div className="k">r(t)</div>
-                        <div className="v">{fmtSgn(ui.reward, 3)}</div>
+            {/* Stats hub */}
+            <div className="rl-panel">
+                <div className="rl-controls-top">
+                    <div className="rl-status">
+                        <span className={`rl-dot ${running ? 'is-on' : ''}`} />
+                        {status}
                     </div>
                 </div>
 
-                {/* Charts */}
+                {/* Charts — wide best/avg on top, 2×2 below */}
                 <div className="rl-charts">
+                    <div className="rl-chart rl-chart-wide" ref={chartBestAvgWrapRef}>
+                        <canvas ref={chartBestAvgCanvasRef} />
+                    </div>
                     <div className="rl-chart" ref={chartFitWrapRef}>
                         <canvas ref={chartFitCanvasRef} />
                     </div>
@@ -2006,6 +2126,74 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                     <div className="rl-chart" ref={chartRewWrapRef}>
                         <canvas ref={chartRewCanvasRef} />
                     </div>
+                </div>
+
+                {/* Collapsible live telemetry */}
+                <div className="rl-details">
+                    <button
+                        className="rl-details-toggle"
+                        onClick={() => setDetailsOpen(o => !o)}
+                        aria-expanded={detailsOpen}
+                    >
+                        <span>Live Telemetry</span>
+                        <span className={`rl-details-arrow ${detailsOpen ? 'is-open' : ''}`}>▾</span>
+                    </button>
+                    {detailsOpen && (
+                        <div className="rl-telemetry rl-details-body">
+                            <div className="rl-row">
+                                <div className="k">GEN</div>
+                                <div className="v">{ui.generation}</div>
+                                <div className="k">ALIVE</div>
+                                <div className="v">{ui.aliveAgents}/{ui.populationSize}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">BestFit</div>
+                                <div className="v">{fmtSgn(ui.bestFitness, 1)}</div>
+                                <div className="k">CurFit</div>
+                                <div className="v">{fmtSgn(ui.currentBestFitness, 1)}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">AvgFit</div>
+                                <div className="v">{fmtSgn(ui.avgFitness, 1)}</div>
+                                <div className="k">Steps</div>
+                                <div className="v">{ui.totalSteps.toLocaleString()}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">σ</div>
+                                <div className="v">{fmt(ui.mutSigma, 3)}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">Speed</div>
+                                <div className="v">{fmt(ui.speed, 0)}</div>
+                                <div className="k">YawRate</div>
+                                <div className="v">{fmtSgn(ui.yawRate, 2)}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">Slip</div>
+                                <div className="v">{fmtSgn(ui.slipDeg, 1)}°</div>
+                                <div className="k">HdgErr</div>
+                                <div className="v">{fmtSgn(ui.headingErrDeg, 1)}°</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">TrkErr</div>
+                                <div className="v">{fmtSgn(ui.trackError, 1)}</div>
+                                <div className="k">Drift</div>
+                                <div className="v">{fmtPct(ui.driftIntensity)}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">Steer</div>
+                                <div className="v">{fmtSgn(ui.steer, 2)}</div>
+                                <div className="k">Throttle</div>
+                                <div className="v">{fmt(ui.throttle, 2)}</div>
+                            </div>
+                            <div className="rl-row">
+                                <div className="k">Handbrk</div>
+                                <div className="v">{fmt(ui.handbrake, 2)}</div>
+                                <div className="k">r(t)</div>
+                                <div className="v">{fmtSgn(ui.reward, 3)}</div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
             </div>{/* /rl-bottom */}

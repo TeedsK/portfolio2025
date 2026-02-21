@@ -2028,18 +2028,129 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                         Learn more about my interests →
                     </a>
 
-                    {/* Technical explainer collapsible */}
-                    <div className="rl-explainer">
-                        <button
-                            className="rl-explainer-toggle"
-                            onClick={() => setExplainerOpen(o => !o)}
-                            aria-expanded={explainerOpen}
-                        >
-                            <span>How it works</span>
-                            <span className={`rl-details-arrow ${explainerOpen ? 'is-open' : ''}`}>▾</span>
-                        </button>
-                        {explainerOpen && (
-                            <div className="rl-explainer-body">
+                </div>
+
+            {/* Stats hub */}
+            <div className="rl-panel">
+                <div className="rl-controls-top">
+                    <div className="rl-status">
+                        <span className={`rl-dot ${running ? 'is-on' : ''}`} />
+                        {status}
+                    </div>
+                </div>
+
+                {/* Charts — wide best/avg on top, 2×2 below */}
+                <div className="rl-charts">
+                    <div className="rl-chart rl-chart-wide" ref={chartBestAvgWrapRef}>
+                        <canvas ref={chartBestAvgCanvasRef} />
+                    </div>
+                    <div className="rl-chart" ref={chartFitWrapRef}>
+                        <canvas ref={chartFitCanvasRef} />
+                    </div>
+                    <div className="rl-chart" ref={chartSigWrapRef}>
+                        <canvas ref={chartSigCanvasRef} />
+                    </div>
+                    <div className="rl-chart" ref={chartSlipWrapRef}>
+                        <canvas ref={chartSlipCanvasRef} />
+                    </div>
+                    <div className="rl-chart" ref={chartRewWrapRef}>
+                        <canvas ref={chartRewCanvasRef} />
+                    </div>
+                </div>
+
+                {/* Collapsible live telemetry */}
+                <div className="rl-details">
+                    <button
+                        className="rl-details-toggle"
+                        onClick={() => setDetailsOpen(o => !o)}
+                        aria-expanded={detailsOpen}
+                        aria-controls="rl-live-telemetry"
+                    >
+                        <span>Live Telemetry</span>
+                        <span className={`rl-details-arrow ${detailsOpen ? 'is-open' : ''}`}>▾</span>
+                    </button>
+                    <div
+                        id="rl-live-telemetry"
+                        className={`rl-details-content ${detailsOpen ? 'is-open' : ''}`}
+                        aria-hidden={!detailsOpen}
+                    >
+                        <div className="rl-details-inner">
+                            <div className="rl-telemetry rl-details-body">
+                                <div className="rl-row">
+                                    <div className="k">GEN</div>
+                                    <div className="v">{ui.generation}</div>
+                                    <div className="k">ALIVE</div>
+                                    <div className="v">{ui.aliveAgents}/{ui.populationSize}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">BestFit</div>
+                                    <div className="v">{fmtSgn(ui.bestFitness, 1)}</div>
+                                    <div className="k">CurFit</div>
+                                    <div className="v">{fmtSgn(ui.currentBestFitness, 1)}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">AvgFit</div>
+                                    <div className="v">{fmtSgn(ui.avgFitness, 1)}</div>
+                                    <div className="k">Steps</div>
+                                    <div className="v">{ui.totalSteps.toLocaleString()}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">σ</div>
+                                    <div className="v">{fmt(ui.mutSigma, 3)}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">Speed</div>
+                                    <div className="v">{fmt(ui.speed, 0)}</div>
+                                    <div className="k">YawRate</div>
+                                    <div className="v">{fmtSgn(ui.yawRate, 2)}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">Slip</div>
+                                    <div className="v">{fmtSgn(ui.slipDeg, 1)}°</div>
+                                    <div className="k">HdgErr</div>
+                                    <div className="v">{fmtSgn(ui.headingErrDeg, 1)}°</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">TrkErr</div>
+                                    <div className="v">{fmtSgn(ui.trackError, 1)}</div>
+                                    <div className="k">Drift</div>
+                                    <div className="v">{fmtPct(ui.driftIntensity)}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">Steer</div>
+                                    <div className="v">{fmtSgn(ui.steer, 2)}</div>
+                                    <div className="k">Throttle</div>
+                                    <div className="v">{fmt(ui.throttle, 2)}</div>
+                                </div>
+                                <div className="rl-row">
+                                    <div className="k">Handbrk</div>
+                                    <div className="v">{fmt(ui.handbrake, 2)}</div>
+                                    <div className="k">r(t)</div>
+                                    <div className="v">{fmtSgn(ui.reward, 3)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Collapsible technical explainer */}
+                <div className="rl-details">
+                    <button
+                        className="rl-details-toggle"
+                        onClick={() => setExplainerOpen(o => !o)}
+                        aria-expanded={explainerOpen}
+                        aria-controls="rl-how-it-works"
+                    >
+                        <span>How it works</span>
+                        <span className={`rl-details-arrow ${explainerOpen ? 'is-open' : ''}`}>▾</span>
+                    </button>
+                    <div
+                        id="rl-how-it-works"
+                        className={`rl-details-content ${explainerOpen ? 'is-open' : ''}`}
+                        aria-hidden={!explainerOpen}
+                    >
+                        <div className="rl-details-inner">
+                            <div className="rl-details-body rl-explainer-body">
                                 <h4 className="rl-exp-heading">What it is</h4>
                                 <p className="rl-exp-body">
                                     This is a neuroevolution simulation: a genetic algorithm that evolves
@@ -2096,104 +2207,8 @@ const EducationRLDrift: React.FC<Props> = ({ width, height }) => {
                                     progress without needing to interpret raw fitness numbers.
                                 </p>
                             </div>
-                        )}
-                    </div>
-                </div>
-
-            {/* Stats hub */}
-            <div className="rl-panel">
-                <div className="rl-controls-top">
-                    <div className="rl-status">
-                        <span className={`rl-dot ${running ? 'is-on' : ''}`} />
-                        {status}
-                    </div>
-                </div>
-
-                {/* Charts — wide best/avg on top, 2×2 below */}
-                <div className="rl-charts">
-                    <div className="rl-chart rl-chart-wide" ref={chartBestAvgWrapRef}>
-                        <canvas ref={chartBestAvgCanvasRef} />
-                    </div>
-                    <div className="rl-chart" ref={chartFitWrapRef}>
-                        <canvas ref={chartFitCanvasRef} />
-                    </div>
-                    <div className="rl-chart" ref={chartSigWrapRef}>
-                        <canvas ref={chartSigCanvasRef} />
-                    </div>
-                    <div className="rl-chart" ref={chartSlipWrapRef}>
-                        <canvas ref={chartSlipCanvasRef} />
-                    </div>
-                    <div className="rl-chart" ref={chartRewWrapRef}>
-                        <canvas ref={chartRewCanvasRef} />
-                    </div>
-                </div>
-
-                {/* Collapsible live telemetry */}
-                <div className="rl-details">
-                    <button
-                        className="rl-details-toggle"
-                        onClick={() => setDetailsOpen(o => !o)}
-                        aria-expanded={detailsOpen}
-                    >
-                        <span>Live Telemetry</span>
-                        <span className={`rl-details-arrow ${detailsOpen ? 'is-open' : ''}`}>▾</span>
-                    </button>
-                    {detailsOpen && (
-                        <div className="rl-telemetry rl-details-body">
-                            <div className="rl-row">
-                                <div className="k">GEN</div>
-                                <div className="v">{ui.generation}</div>
-                                <div className="k">ALIVE</div>
-                                <div className="v">{ui.aliveAgents}/{ui.populationSize}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">BestFit</div>
-                                <div className="v">{fmtSgn(ui.bestFitness, 1)}</div>
-                                <div className="k">CurFit</div>
-                                <div className="v">{fmtSgn(ui.currentBestFitness, 1)}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">AvgFit</div>
-                                <div className="v">{fmtSgn(ui.avgFitness, 1)}</div>
-                                <div className="k">Steps</div>
-                                <div className="v">{ui.totalSteps.toLocaleString()}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">σ</div>
-                                <div className="v">{fmt(ui.mutSigma, 3)}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">Speed</div>
-                                <div className="v">{fmt(ui.speed, 0)}</div>
-                                <div className="k">YawRate</div>
-                                <div className="v">{fmtSgn(ui.yawRate, 2)}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">Slip</div>
-                                <div className="v">{fmtSgn(ui.slipDeg, 1)}°</div>
-                                <div className="k">HdgErr</div>
-                                <div className="v">{fmtSgn(ui.headingErrDeg, 1)}°</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">TrkErr</div>
-                                <div className="v">{fmtSgn(ui.trackError, 1)}</div>
-                                <div className="k">Drift</div>
-                                <div className="v">{fmtPct(ui.driftIntensity)}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">Steer</div>
-                                <div className="v">{fmtSgn(ui.steer, 2)}</div>
-                                <div className="k">Throttle</div>
-                                <div className="v">{fmt(ui.throttle, 2)}</div>
-                            </div>
-                            <div className="rl-row">
-                                <div className="k">Handbrk</div>
-                                <div className="v">{fmt(ui.handbrake, 2)}</div>
-                                <div className="k">r(t)</div>
-                                <div className="v">{fmtSgn(ui.reward, 3)}</div>
-                            </div>
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
             </div>{/* /rl-bottom */}

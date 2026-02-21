@@ -144,36 +144,7 @@
     border-radius: 2px;
 }
 
-/* Technical explainer collapsible */
-.rl-explainer {
-    margin-top: 16px;
-    border-top: 1px solid #f1f5f9;
-    padding-top: 4px;
-}
-
-.rl-explainer-toggle {
-    appearance: none;
-    border: 1px solid #e2e8f0;
-    background: transparent;
-    color: #334155;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: background 0.1s ease, border-color 0.1s ease;
-}
-
-.rl-explainer-toggle:hover {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-}
-
 .rl-explainer-body {
-    margin-top: 14px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -401,8 +372,32 @@
     transform: rotate(180deg);
 }
 
+.rl-details-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rl-details-content.is-open {
+    grid-template-rows: 1fr;
+}
+
+.rl-details-inner {
+    min-height: 0;
+    overflow: hidden;
+}
+
 .rl-details-body {
     padding-top: 6px;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 200ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rl-details-content.is-open .rl-details-body {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 40ms;
 }
 
 /* Compact: stack vertically on narrow viewports */

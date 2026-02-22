@@ -1,0 +1,256 @@
+/* src/pages/landing/styles/AboutMe.css */
+
+.about-section {
+    --about-pad: clamp(24px, 3vh, 48px);
+    width: 100%;
+    position: relative;
+    padding-block: var(--about-pad);
+    background: rgba(255, 255, 255, 0.86);
+    overflow: visible;
+    z-index: 2;
+}
+
+.about-inner {
+    width: 1200px;
+    max-width: 100%;
+    margin-inline: auto;
+    position: relative;
+    overflow: visible;
+}
+
+.about-web-canvas {
+    position: relative;
+    width: 1200px;
+    height: 960px;
+    margin-inline: auto;
+    overflow: visible;
+}
+
+.about-orbit {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 920px;
+    height: 720px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid rgba(15, 23, 42, 0.22);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.about-orbit-node {
+    --orbit-x: 0px;
+    --orbit-y: 0px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(calc(-50% + var(--orbit-x)), calc(-50% + var(--orbit-y)));
+}
+
+.about-image-node {
+    width: 440px;
+    pointer-events: none;
+    filter: drop-shadow(0 20px 34px rgba(15, 23, 42, 0.18));
+    z-index: 2;
+}
+
+.about-image-node img {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+.about-image-ski {
+    --orbit-x: -325px;
+    --orbit-y: -255px;
+}
+
+.about-image-normal {
+    --orbit-x: 325px;
+    --orbit-y: 255px;
+}
+
+.about-node-card {
+    width: 280px;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: none;
+    padding: clamp(8px, 0.8vw, 12px) clamp(10px, 1vw, 14px);
+    z-index: 4;
+}
+
+.about-node-stop-motions {
+    --orbit-x: 230px;
+    --orbit-y: -312px;
+}
+
+.about-node-skiing {
+    --orbit-x: 432px;
+    --orbit-y: -123px;
+}
+
+.about-node-weightlifting {
+    --orbit-x: -398px;
+    --orbit-y: 120px;
+}
+
+.about-node-video-games {
+    --orbit-x: -150px;
+    --orbit-y: 320px;
+}
+
+.about-node-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 560px;
+    max-width: calc(100% - 80px);
+    z-index: 4;
+    text-align: left;
+    padding: clamp(24px, 2.7vw, 34px);
+}
+
+.about-title {
+    margin: 0;
+    font-size: clamp(32px, 4.5vw, 54px);
+    line-height: 0.94;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.about-intro {
+    margin: clamp(10px, 1.2vh, 14px) 0 0;
+    font-size: clamp(14px, 1.1vw, 16px);
+    line-height: 1.72;
+    color: #334155;
+}
+
+.about-node-title {
+    margin: 0;
+    font-size: clamp(24px, 2.25vw, 32px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    font-weight: 750;
+}
+
+.about-node-copy {
+    margin: 8px 0 0;
+    font-size: clamp(13px, 1vw, 14px);
+    line-height: 1.45;
+    color: #4b607f;
+    max-width: 28ch;
+}
+
+@media (max-width: 1199px) {
+    .about-inner {
+        width: min(1200px, 92vw);
+    }
+
+    .about-orbit {
+        display: none;
+    }
+
+    .about-web-canvas {
+        width: 100%;
+        height: auto;
+        min-height: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: clamp(12px, 3vw, 20px) 0;
+    }
+
+    .about-node-center,
+    .about-orbit-node {
+        position: relative;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        left: auto;
+        transform: none;
+    }
+
+    .about-node-center {
+        order: 1;
+        width: min(560px, 100%);
+        max-width: none;
+        margin: 0 auto;
+        text-align: left;
+    }
+
+    .about-node-card {
+        width: min(560px, 100%);
+        margin: 0 auto;
+    }
+
+    .about-node-stop-motions {
+        order: 2;
+    }
+
+    .about-node-skiing {
+        order: 3;
+    }
+
+    .about-node-weightlifting {
+        order: 4;
+    }
+
+    .about-node-video-games {
+        order: 5;
+    }
+
+    .about-image-node {
+        width: clamp(220px, 40vw, 360px);
+    }
+
+    .about-image-ski {
+        order: 6;
+        margin-left: 0;
+    }
+
+    .about-image-normal {
+        order: 7;
+        margin-left: auto;
+    }
+}
+
+@media (max-width: 760px) {
+    .about-node-center {
+        padding: clamp(18px, 5vw, 24px);
+    }
+
+    .about-title {
+        font-size: clamp(38px, 10vw, 56px);
+        text-align: left;
+    }
+
+    .about-intro {
+        margin-top: 10px;
+        text-align: left;
+        font-size: clamp(15px, 3.7vw, 17px);
+        line-height: 1.66;
+    }
+
+    .about-node-card {
+        width: 100%;
+    }
+
+    .about-node-title {
+        font-size: clamp(22px, 6vw, 30px);
+    }
+
+    .about-node-copy {
+        font-size: clamp(13px, 3.2vw, 15px);
+    }
+
+    .about-image-node {
+        width: clamp(170px, 46vw, 260px);
+        filter: drop-shadow(0 14px 24px rgba(15, 23, 42, 0.16));
+    }
+}

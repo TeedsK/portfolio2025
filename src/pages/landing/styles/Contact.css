@@ -1,0 +1,106 @@
+/* src/pages/landing/styles/Contact.css */
+
+.contact-section {
+    --contact-pad: clamp(64px, 10vh, 120px);
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    min-height: clamp(520px, 78vh, 760px);
+    padding-block: var(--contact-pad);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 249, 255, 0.9) 100%);
+}
+
+.contact-inner {
+    width: min(1200px, 92vw);
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 760px;
+}
+
+.contact-eyebrow {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #5f6b80;
+    font-weight: 700;
+}
+
+.contact-title {
+    margin: 0;
+    font-size: clamp(34px, 6vw, 58px);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    color: #0f172a;
+    font-weight: 800;
+}
+
+.contact-copy {
+    margin: 0;
+    font-size: clamp(16px, 1.5vw, 20px);
+    line-height: 1.7;
+    color: #334155;
+    max-width: 52ch;
+}
+
+.contact-actions {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.contact-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+    transition: transform 0.16s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.contact-btn:hover {
+    transform: translateY(-1px);
+}
+
+.contact-btn-primary {
+    background: #0f172a;
+    color: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
+}
+
+.contact-btn-primary:hover {
+    background: #0b1220;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.28);
+}
+
+.contact-btn-secondary {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.contact-btn-secondary:hover {
+    background: #d4dde8;
+}
+
+@media (max-width: 760px) {
+    .contact-section {
+        min-height: auto;
+        padding-block: clamp(44px, 11vw, 72px);
+    }
+
+    .contact-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .contact-btn {
+        width: 100%;
+    }
+}

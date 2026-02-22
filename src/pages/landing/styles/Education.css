@@ -4,9 +4,10 @@
 .edu-section {
     --edu-pad: clamp(48px, 8vh, 96px);
     position: relative;
+    z-index: 2;
     width: 100%;
     padding-block: var(--edu-pad);
-    background: #ffffff;
+    background: rgba(255, 255, 255, 0.86);
 }
 
 .edu-inner {

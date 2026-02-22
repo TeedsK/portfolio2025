@@ -5,6 +5,7 @@ import WorkExperience from './sections/WorkExperience';
 import AStarCreativity from './sections/AStarCreativity';
 import Projects from './sections/Projects';
 import Education from './sections/Education';
+import AboutMe from './sections/AboutMe';
 import { AsciiPlanetSystem } from './components/AsciiPlanetSystem';
 import { ScanBeam } from '../../types';
 
@@ -117,6 +118,7 @@ function LandingPage() {
       <AStarCreativity />
       <Projects />
       <Education />
+      <AboutMe />
     </>
   );
 }

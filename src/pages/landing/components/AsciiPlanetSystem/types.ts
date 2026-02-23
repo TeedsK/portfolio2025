@@ -2,7 +2,7 @@
 
 import { Point3D } from '../../../../types';
 
-export type ColorTheme = 'green' | 'pink' | 'blue';
+export type ColorTheme = 'green' | 'pink' | 'blue' | 'sunset';
 
 export interface BodySegment {
   x: number;
@@ -76,6 +76,7 @@ export const COLOR_THEMES: Record<ColorTheme, ThemeConfig> = {
   green: { hueStart: 225, hueEnd: 215, glowColor: 'rgba(20, 100, 245,' },
   pink: { hueStart: 330, hueEnd: 300, glowColor: 'rgba(255, 100, 180,' },
   blue: { hueStart: 220, hueEnd: 200, glowColor: 'rgba(100, 180, 255,' },
+  sunset: { hueStart: 48, hueEnd: -20, glowColor: 'rgba(244, 157, 77,' },
 };
 
 // Planet color theme (blue) - keep saturation high to avoid white appearance

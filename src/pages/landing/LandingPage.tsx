@@ -63,7 +63,7 @@ function LandingPage() {
 
   return (
     <>
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', overflowX: 'clip' as const }}>
         {/* ===== Orb canvas overlay ===== */}
         <div
           ref={planetContainerRef}
@@ -75,7 +75,7 @@ function LandingPage() {
             bottom: 0,
             pointerEvents: 'none',
             zIndex: 1,
-            overflow: 'hidden',
+            overflow: 'visible',
           }}
         >
           <AsciiPlanetSystem
@@ -85,6 +85,7 @@ function LandingPage() {
             planetXOffset={PLANET_X_OFFSET}
             planetYOffset={PLANET_Y_OFFSET}
             planetYPixelOffset={100}
+            bleed={200}
           />
         </div>
 

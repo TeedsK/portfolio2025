@@ -153,12 +153,13 @@ type SnakeLUTEntry = { r: number; g: number; b: number; a: number };
 const generateNumericColorLUT = (theme: ColorTheme): SnakeLUTEntry[] => {
   const lut: SnakeLUTEntry[] = [];
   const { hueStart, hueEnd } = COLOR_THEMES[theme];
+  const isSunset = theme === 'sunset';
   for (let z = 0; z < 20; z++) {
     for (let l = 0; l < 10; l++) {
       const normalizedZ = z / 20;
       const hue = hueStart - normalizedZ * (hueStart - hueEnd);
-      const saturation = 40 + normalizedZ * 50;
-      const lightness = 45 + l * 4;
+      const saturation = isSunset ? 75 + normalizedZ * 20 : 40 + normalizedZ * 50;
+      const lightness = isSunset ? 50 + l * 3 : 45 + l * 4;
       const alpha = 0.5 + normalizedZ * 0.4;
       const [r, g, b] = hslToRgbFast(hue, saturation, lightness);
       lut.push({ r, g, b, a: alpha });
@@ -171,6 +172,7 @@ const snakeColorLUTs: Record<ColorTheme, SnakeLUTEntry[]> = {
   green: generateNumericColorLUT('green'),
   pink: generateNumericColorLUT('pink'),
   blue: generateNumericColorLUT('blue'),
+  sunset: generateNumericColorLUT('sunset'),
 };
 
 const noise1D = (t: number, seed: number): number => (
@@ -381,6 +383,8 @@ interface AsciiPlanetSystemProps {
   planetXOffset?: number;
   planetYOffset?: number;
   planetYPixelOffset?: number;
+  /** Extra pixels of canvas beyond the container on each side (prevents morph clipping) */
+  bleed?: number;
 }
 
 type SnakeRuntime = Snake & {
@@ -407,6 +411,7 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   planetXOffset = 0.7,
   planetYOffset = 0.18,
   planetYPixelOffset = 0,
+  bleed = 0,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -432,9 +437,9 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   );
 
   const snakesRef = useRef<SnakeRuntime[]>([{
-    id: 'snake-blue',
+    id: 'snake-sunset',
     body: [],
-    colorTheme: 'blue',
+    colorTheme: 'sunset',
     orbitalInclination: SNAKE_INCLINATION,
     orbitalPhase: Math.PI,
     orbitSpeed: SNAKE_ORBIT_SPEED,
@@ -450,13 +455,20 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
   // Track snake cells for glow pass (avoids second full-grid scan)
   const snakeCellsRef = useRef<{ x: number; y: number }[]>([]);
 
-  const gridWidth = useMemo(() => Math.max(40, Math.floor(width / CHAR_WIDTH)), [width]);
-  const gridHeight = useMemo(() => Math.max(30, Math.floor(height / CHAR_HEIGHT)), [height]);
+  // Enlarge canvas by bleed on every side so morph shapes aren't clipped
+  const canvasWidth = width + 2 * bleed;
+  const canvasHeight = height + 2 * bleed;
+  const bleedCols = Math.floor(bleed / CHAR_WIDTH);
+  const bleedRows = Math.floor(bleed / CHAR_HEIGHT);
 
-  const planetCenterX = useMemo(() => Math.floor(gridWidth * planetXOffset), [gridWidth, planetXOffset]);
+  const gridWidth = useMemo(() => Math.max(40, Math.floor(canvasWidth / CHAR_WIDTH)), [canvasWidth]);
+  const gridHeight = useMemo(() => Math.max(30, Math.floor(canvasHeight / CHAR_HEIGHT)), [canvasHeight]);
+
+  // Planet center: offset by bleed so it stays at the same visual position
+  const planetCenterX = useMemo(() => Math.floor(Math.floor(width / CHAR_WIDTH) * planetXOffset) + bleedCols, [width, planetXOffset, bleedCols]);
   const planetCenterY = useMemo(
-    () => Math.floor(gridHeight * planetYOffset + planetYPixelOffset / CHAR_HEIGHT),
-    [gridHeight, planetYOffset, planetYPixelOffset],
+    () => Math.floor(Math.floor(height / CHAR_HEIGHT) * planetYOffset + planetYPixelOffset / CHAR_HEIGHT) + bleedRows,
+    [height, planetYOffset, planetYPixelOffset, bleedRows],
   );
 
   const getGrid = useCallback((w: number, h: number): GridCell[][] => {
@@ -530,8 +542,8 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
 
     ctx.font = `bold ${CHAR_HEIGHT - 1}px "SF Mono", Monaco, Consolas, monospace`;
     ctx.textBaseline = 'top';
@@ -996,17 +1008,19 @@ export const AsciiPlanetSystem: React.FC<AsciiPlanetSystemProps> = ({
 
     animId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animId);
-  }, [width, height, gridWidth, gridHeight, planetCenterX, planetCenterY, getGrid]);
+  }, [canvasWidth, canvasHeight, gridWidth, gridHeight, planetCenterX, planetCenterY, getGrid]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={width}
-      height={height}
+      width={canvasWidth}
+      height={canvasHeight}
       style={{
         pointerEvents: 'none',
         display: 'block',
         imageRendering: 'pixelated',
+        marginLeft: -bleed,
+        marginTop: -bleed,
       }}
     />
   );

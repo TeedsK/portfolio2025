@@ -39,6 +39,11 @@ export interface GridCell {
   color: string;
   priority: number;  // z-depth for painter's algorithm
   source: 'planet' | 'snake' | 'impact' | null;
+  // Numeric RGBA for fast per-pixel math (avoids string alloc/parsing in hot loop)
+  cr: number;
+  cg: number;
+  cb: number;
+  ca: number;
 }
 
 // Planet surface point for rendering

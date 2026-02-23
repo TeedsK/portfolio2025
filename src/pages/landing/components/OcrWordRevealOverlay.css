@@ -1,0 +1,39 @@
+/* src/pages/landing/components/OcrWordRevealOverlay.css */
+
+.ocr-word-reveal-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+    /* above canvases + scan overlay */
+    overflow: hidden;
+}
+
+.ocr-word-reveal {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+
+    padding: 2px 6px;
+    border-radius: 8px;
+
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 1px 0 rgba(16, 24, 40, 0.06);
+
+    color: #101828;
+    font-weight: 600;
+    line-height: 1;
+
+    white-space: nowrap;
+}
+
+.ocr-word-reveal__text {
+    display: inline-block;
+    line-height: 1;
+}
+
+.ocr-word-reveal__ch {
+    opacity: 0;
+    display: inline-block;
+}

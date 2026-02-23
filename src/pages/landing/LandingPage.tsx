@@ -7,50 +7,36 @@ import Projects from './sections/Projects';
 import Education from './sections/Education';
 import AboutMe from './sections/AboutMe';
 import { AsciiPlanetSystem } from './components/AsciiPlanetSystem';
-import { ScanBeam } from '../../types';
 
-// NEW: ensure landing animations only run when we're actually on this page
+// Ensure landing animations only run when we're actually on this page
 import { useLandingAnimationGate } from './utils/landingAnimationGate.ts';
 
 function LandingPage() {
-  // This hook sets a global flag and broadcasts events other components listen to.
-  // It returns the current "active" state as well, which you could pass down if desired.
-  // Even if you don't use the return value here, the side-effects guard all animations app-wide.
   useLandingAnimationGate();
 
-  // Refs for section boundaries
   const heroRef = useRef<HTMLDivElement>(null);
   const workExperienceRef = useRef<HTMLDivElement>(null);
+
   const planetContainerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll progress for snake orbital -> free-roaming transition (0 = orbital, >0.3 = free)
   const [scrollProgress, setScrollProgress] = useState(0);
-
-  // Container dimensions for planet system
   const [containerDims, setContainerDims] = useState({ width: 800, height: 1400 });
 
-  // Beams passed up from Hero for planet impacts
-  const [activeBeams, setActiveBeams] = useState<ScanBeam[]>([]);
+  const PLANET_X_OFFSET = 0.7;
+  const PLANET_Y_OFFSET = 0.18;
 
-  // Calculate scroll progress based on viewport position within Hero section
   const updateScrollProgress = useCallback(() => {
     if (!heroRef.current) return;
 
     const heroRect = heroRef.current.getBoundingClientRect();
     const heroHeight = heroRect.height;
-
     if (heroHeight <= 0) return;
 
-    // Calculate how much of the hero has scrolled past the top of the viewport
-    // scrollProgress = 0 when hero top is at viewport top
-    // scrollProgress = 1 when hero bottom is at viewport top
     const scrolled = -heroRect.top;
     const progress = Math.max(0, Math.min(1, scrolled / heroHeight));
-
     setScrollProgress(progress);
   }, []);
 
-  // Listen to scroll events
   useEffect(() => {
     updateScrollProgress();
     window.addEventListener('scroll', updateScrollProgress, { passive: true });
@@ -61,7 +47,6 @@ function LandingPage() {
     };
   }, [updateScrollProgress]);
 
-  // Measure container for planet system
   useEffect(() => {
     const measure = () => {
       if (planetContainerRef.current) {
@@ -76,16 +61,10 @@ function LandingPage() {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  // Callback for Hero to update beams
-  const handleBeamsUpdate = useCallback((beams: ScanBeam[]) => {
-    setActiveBeams(beams);
-  }, []);
-
   return (
     <>
-      {/* Wrapper for Hero and WorkExperience */}
       <div style={{ position: 'relative' }}>
-        {/* ASCII Planet System overlay - spans Hero + WorkExperience */}
+        {/* ===== Orb canvas overlay ===== */}
         <div
           ref={planetContainerRef}
           style={{
@@ -101,20 +80,24 @@ function LandingPage() {
         >
           <AsciiPlanetSystem
             scrollProgress={scrollProgress}
-            activeBeams={activeBeams}
             width={containerDims.width}
             height={containerDims.height}
+            planetXOffset={PLANET_X_OFFSET}
+            planetYOffset={PLANET_Y_OFFSET}
+            planetYPixelOffset={100}
           />
         </div>
 
-        <div ref={heroRef}>
-          <Hero onBeamsUpdate={handleBeamsUpdate} />
+        {/* ===== Page content ===== */}
+        <div ref={heroRef} style={{ position: 'relative', zIndex: 2 }}>
+          <Hero />
         </div>
-        <div ref={workExperienceRef}>
+
+        <div ref={workExperienceRef} style={{ position: 'relative', zIndex: 2 }}>
           <WorkExperience />
         </div>
       </div>
-      {/* Height now randomizes on mount & animates with GSAP */}
+
       <AStarCreativity />
       <Projects />
       <Education />

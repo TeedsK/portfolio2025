@@ -1,5 +1,4 @@
 // src/App.tsx
-import React from 'react';
 import LandingPage from './pages/landing/LandingPage';
 import './App.css';
 import SiteHeader from './components/SiteHeader';

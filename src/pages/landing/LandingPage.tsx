@@ -6,6 +6,7 @@ import AStarCreativity from './sections/AStarCreativity';
 import Projects from './sections/Projects';
 import Education from './sections/Education';
 import AboutMe from './sections/AboutMe';
+import Contact from './sections/Contact';
 import { AsciiPlanetSystem } from './components/AsciiPlanetSystem';
 
 // Ensure landing animations only run when we're actually on this page
@@ -103,6 +104,7 @@ function LandingPage() {
       <Projects />
       <Education />
       <AboutMe />
+      <Contact />
     </>
   );
 }

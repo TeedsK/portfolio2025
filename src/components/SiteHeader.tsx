@@ -443,13 +443,13 @@ const SiteHeader: React.FC = () => {
 
   const handleAskKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (!askOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { refreshAskSuggestions(); openAsk(); return; }
-    if (!askOpen) { if (e.key === 'Enter' && askValue.trim()) window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`; return; }
+    if (!askOpen) { if (e.key === 'Enter' && askValue.trim()) window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`; return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); setAskActiveIdx((idx) => Math.min(askSuggestions.length - 1, idx + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setAskActiveIdx((idx) => Math.max(-1, idx - 1)); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       if (askActiveIdx >= 0) applySuggestion(askSuggestions[askActiveIdx]);
-      else if (askValue.trim()) window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`;
+      else if (askValue.trim()) window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`;
     } else if (e.key === 'Escape') { e.preventDefault(); closeAsk(); }
   };
 
@@ -482,7 +482,7 @@ const SiteHeader: React.FC = () => {
     )
     : null;
 
-  const onAskSubmit = () => { if (!askValue.trim()) return; window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`; };
+  const onAskSubmit = () => { if (!askValue.trim()) return; window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`; };
 
   return (
     <header ref={headerRef} className={`${styles.headerWrap} ${scrolled ? styles.scrolled : ''}`}>
@@ -544,7 +544,7 @@ const SiteHeader: React.FC = () => {
               <a className={styles.linkPlain} data-nav-link="true" href="/about" onMouseEnter={suppressDropdown} onFocus={suppressDropdown}>
                 About me
               </a>
-              <a className={styles.linkPlain} data-nav-link="true" href="/contact" onMouseEnter={suppressDropdown} onFocus={suppressDropdown}>
+              <a className={styles.linkPlain} data-nav-link="true" href="/#contact" onMouseEnter={suppressDropdown} onFocus={suppressDropdown}>
                 Contact
               </a>
 
@@ -733,13 +733,13 @@ const AskControl: React.FC<{ askVariant: AskVariant; askPlaceholder: string; }> 
 
   const handleAskKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (!askOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { refreshAskSuggestions(); openAsk(); return; }
-    if (!askOpen) { if (e.key === 'Enter' && askValue.trim()) window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`; return; }
+    if (!askOpen) { if (e.key === 'Enter' && askValue.trim()) window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`; return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); setAskActiveIdx((idx) => Math.min(askSuggestions.length - 1, idx + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setAskActiveIdx((idx) => Math.max(-1, idx - 1)); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       if (askActiveIdx >= 0) applySuggestion(askSuggestions[askActiveIdx]);
-      else if (askValue.trim()) window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`;
+      else if (askValue.trim()) window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`;
     } else if (e.key === 'Escape') { e.preventDefault(); closeAsk(); }
   };
 
@@ -772,7 +772,7 @@ const AskControl: React.FC<{ askVariant: AskVariant; askPlaceholder: string; }> 
             type="primary"
             className={styles.askSubmit}
             aria-label="Submit question"
-            onClick={() => { if (!askValue.trim()) return; window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`; }}
+            onClick={() => { if (!askValue.trim()) return; window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`; }}
           >
             <span className={styles.askSubmitLabel}>Ask</span>
             <svg className={styles.askSubmitIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -826,7 +826,7 @@ const AskControl: React.FC<{ askVariant: AskVariant; askPlaceholder: string; }> 
                   type="button"
                   className={styles.askSubmit}
                   aria-label="Submit question"
-                  onClick={() => { if (!askValue.trim()) return; window.location.href = `/contact?q=${encodeURIComponent(askValue.trim())}`; }}
+                  onClick={() => { if (!askValue.trim()) return; window.location.href = `/?q=${encodeURIComponent(askValue.trim())}#contact`; }}
                 >
                   <span className={styles.askSubmitLabel}>Ask</span>
                   <svg className={styles.askSubmitIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

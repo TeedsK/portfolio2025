@@ -67,6 +67,7 @@ const SiteHeader: React.FC = () => {
   const askVariant = useMemo<AskVariant>(() => variantFromViewport(winW), [winW]);
   const askPlaceholder = askVariant === 'icon' ? '' : placeholderByVariant[askVariant];
   const isMobile = winW <= BREAKPOINT;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const onResize = () => setWinW(window.innerWidth);
@@ -328,6 +329,24 @@ const SiteHeader: React.FC = () => {
     heightCtl.detachWatchers();
     swapCtl.kill();
   }, []);
+
+  // --- Mobile menu close on scroll / outside click / ESC
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onScroll = () => setMobileMenuOpen(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileMenuOpen(false); };
+    const onPointerDown = (e: PointerEvent) => {
+      if (headerRef.current && !headerRef.current.contains(e.target as Node)) setMobileMenuOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [mobileMenuOpen]);
 
   // --- Active items
   const dropdownItems = useMemo<DDItem[]>(() => itemsFor(active), [active]);
@@ -627,7 +646,41 @@ const SiteHeader: React.FC = () => {
             <Button type="text" className={styles.resumeBtnAntd} href="/resume">My Resume</Button>
           </div>
         )}
+
+        {/* Hamburger button — visible only on mobile via CSS */}
+        <button
+          className={`${styles.hamburger} ${mobileMenuOpen ? styles.hamburgerOpen : ''}`}
+          onClick={() => setMobileMenuOpen(o => !o)}
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          )}
+        </button>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {mobileMenuOpen && (
+        <nav className={styles.mobileMenu} aria-label="Mobile navigation">
+          {[
+            { href: '/#experience', label: 'Experience' },
+            { href: '/#projects', label: 'Projects' },
+            { href: '/#education', label: 'Education' },
+            { href: '/#about', label: 'About me' },
+            { href: '/#contact', label: 'Contact' },
+          ].map(({ href, label }) => (
+            <a key={label} href={href} className={styles.mobileMenuItem} onClick={() => setMobileMenuOpen(false)}>{label}</a>
+          ))}
+          <a href="/resume" className={`${styles.mobileMenuItem} ${styles.mobileMenuResume}`} onClick={() => setMobileMenuOpen(false)}>My Resume</a>
+        </nav>
+      )}
 
       {askDropdown}
     </header>

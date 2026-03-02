@@ -22,6 +22,7 @@ function LandingPage() {
 
   const [scrollProgress, setScrollProgress] = useState(0);
   const [containerDims, setContainerDims] = useState({ width: 800, height: 1400 });
+  const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
 
   const PLANET_X_OFFSET = 0.7;
   const PLANET_Y_OFFSET = 0.18;
@@ -62,6 +63,12 @@ function LandingPage() {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
+  useEffect(() => {
+    const onResize = () => setIsMobileViewport(window.innerWidth < 768);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   return (
     <>
       <div style={{ position: 'relative', overflowX: 'clip' as const }}>
@@ -79,15 +86,17 @@ function LandingPage() {
             overflow: 'visible',
           }}
         >
-          <AsciiPlanetSystem
-            scrollProgress={scrollProgress}
-            width={containerDims.width}
-            height={containerDims.height}
-            planetXOffset={PLANET_X_OFFSET}
-            planetYOffset={PLANET_Y_OFFSET}
-            planetYPixelOffset={100}
-            bleed={200}
-          />
+          {!isMobileViewport && (
+            <AsciiPlanetSystem
+              scrollProgress={scrollProgress}
+              width={containerDims.width}
+              height={containerDims.height}
+              planetXOffset={PLANET_X_OFFSET}
+              planetYOffset={PLANET_Y_OFFSET}
+              planetYPixelOffset={100}
+              bleed={200}
+            />
+          )}
         </div>
 
         {/* ===== Page content ===== */}

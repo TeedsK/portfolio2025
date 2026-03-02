@@ -175,6 +175,13 @@
     }
 }
 
+/* ---------- Responsive: hide RL section on mobile ---------- */
+@media (max-width: 768px) {
+    .edu-rl-section {
+        display: none;
+    }
+}
+
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
 

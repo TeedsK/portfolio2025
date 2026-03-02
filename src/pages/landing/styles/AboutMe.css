@@ -513,3 +513,31 @@
         border-radius: 12px;
     }
 }
+
+/* ===== Mobile: hide decorative photos, full-width cards ===== */
+@media (max-width: 560px) {
+    .about-image-node {
+        display: none;
+    }
+
+    .about-inner {
+        width: 100%;
+    }
+
+    .about-web-canvas {
+        padding-inline: 0;
+        gap: 0;
+    }
+
+    .about-node-center {
+        padding-inline: clamp(16px, 5vw, 24px);
+    }
+
+    .about-node-card {
+        margin: 0;
+        width: 100%;
+        border-radius: 0;
+        padding: clamp(14px, 4vw, 20px) clamp(16px, 5vw, 24px);
+        border-bottom: 1px solid rgba(20, 45, 62, 0.07);
+    }
+}

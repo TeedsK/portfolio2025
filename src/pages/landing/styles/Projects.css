@@ -421,3 +421,33 @@
         opacity: 0.8;
     }
 }
+
+/* ===== Mobile: hide animation pane, simplify project blocks ===== */
+@media (max-width: 640px) {
+    .projects-right {
+        display: none;
+    }
+
+    .projects-inner {
+        grid-template-columns: 1fr;
+        width: min(100%, 92vw);
+    }
+
+    .project-block {
+        min-height: 0;
+        margin-block: 36px;
+        grid-template-columns: 1fr;
+    }
+
+    .project-desc {
+        font-size: 22px;
+    }
+
+    .project-bullets {
+        font-size: 15px;
+    }
+
+    .projects-left {
+        padding-left: 12px;
+    }
+}

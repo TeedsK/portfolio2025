@@ -22,10 +22,17 @@ function LandingPage() {
 
   const [scrollProgress, setScrollProgress] = useState(0);
   const [containerDims, setContainerDims] = useState({ width: 800, height: 1400 });
+  const [heroHeight, setHeroHeight] = useState(0);
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
 
   const PLANET_X_OFFSET = 0.7;
   const PLANET_Y_OFFSET = 0.18;
+
+  // Mobile: push orb right (partially off-screen), Y computed from hero height
+  const mobilePlanetXOffset = 1.15;
+  const mobilePlanetYOffset = heroHeight > 0 && containerDims.height > 0
+    ? (heroHeight * 0.82) / containerDims.height
+    : 0.38;
 
   const updateScrollProgress = useCallback(() => {
     if (!heroRef.current) return;
@@ -57,6 +64,10 @@ function LandingPage() {
           setContainerDims({ width: rect.width, height: rect.height });
         }
       }
+      if (heroRef.current) {
+        const h = heroRef.current.getBoundingClientRect().height;
+        if (h > 0) setHeroHeight(h);
+      }
     };
     measure();
     window.addEventListener('resize', measure);
@@ -86,17 +97,15 @@ function LandingPage() {
             overflow: 'visible',
           }}
         >
-          {!isMobileViewport && (
-            <AsciiPlanetSystem
-              scrollProgress={scrollProgress}
-              width={containerDims.width}
-              height={containerDims.height}
-              planetXOffset={PLANET_X_OFFSET}
-              planetYOffset={PLANET_Y_OFFSET}
-              planetYPixelOffset={100}
-              bleed={200}
-            />
-          )}
+          <AsciiPlanetSystem
+            scrollProgress={scrollProgress}
+            width={containerDims.width}
+            height={containerDims.height}
+            planetXOffset={isMobileViewport ? mobilePlanetXOffset : PLANET_X_OFFSET}
+            planetYOffset={isMobileViewport ? mobilePlanetYOffset : PLANET_Y_OFFSET}
+            planetYPixelOffset={isMobileViewport ? 0 : 100}
+            bleed={200}
+          />
         </div>
 
         {/* ===== Page content ===== */}

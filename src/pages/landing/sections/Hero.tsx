@@ -339,7 +339,8 @@ const Hero: React.FC = () => {
                         I build <span className="hero-subtitle-highlight">user-friendly</span> apps.
                     </p>
                     <p className="hero-subdescription">
-                        machine learning and full-stack engineer building tools<br/>and apps that deliver measurable impact.
+                        <span className="hero-subdesc-long">machine learning and full-stack engineer building tools<br/>and apps that deliver measurable impact.</span>
+                        <span className="hero-subdesc-short">machine learning engineering with measurable impact.</span>
                     </p>
                 </div>
 

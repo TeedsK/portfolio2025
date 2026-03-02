@@ -185,10 +185,24 @@
     }
 }
 
+/* Mobile: short text variant hidden on desktop */
+.hero-subdesc-short { display: none; }
+
 @media (max-width: 640px) {
     .hero {
+        /* full viewport height so work experience requires scrolling */
+        height: 100dvh;
+        height: 100svh;
+        min-height: 100dvh;
+        min-height: 100svh;
+        /* ensure content clears the fixed header with comfortable room */
+        padding-top: calc(var(--header-height) + clamp(20px, 4vh, 32px));
         padding-inline: clamp(16px, 5vw, 22px);
     }
+
+    /* swap description text to single-line version */
+    .hero-subdesc-long  { display: none; }
+    .hero-subdesc-short { display: inline; }
 
     .hero-intro {
         font-size: clamp(1rem, 5.5vw, 1.35rem);

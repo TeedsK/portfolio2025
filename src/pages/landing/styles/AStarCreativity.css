@@ -315,7 +315,7 @@
     position: absolute;
     top: 80px;
     left: 0;
-    width: 340px;
+    width: min(340px, calc(100vw - 24px));
     transform-origin: top left;
     pointer-events: none;
 }
@@ -500,114 +500,6 @@
     background: #d95353;
     border: 1px solid rgba(0, 0, 0, 0.12);
     filter: saturate(1.05);
-}
-
-/* === Dark mode === */
-@media (prefers-color-scheme: dark) {
-    .astar-title {
-        color: #e5e7eb;
-    }
-
-    .astar-subtitle {
-        color: #cbd5e1;
-    }
-
-    .rt-label {
-        color: #94a3b8;
-    }
-
-    .controls-container {
-        background: rgba(15, 23, 42, 0.85);
-        border-color: rgba(255, 255, 255, 0.08);
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
-    }
-
-    .controls-divider {
-        background: #334155;
-    }
-
-    .back-btn {
-        background: rgba(30, 41, 59, 0.95);
-        border-color: #334155;
-        color: #94a3b8;
-    }
-
-    .back-btn:hover {
-        background: rgba(51, 65, 85, 0.95);
-        border-color: #475569;
-        color: #cbd5e1;
-    }
-
-    .play-maze-btn {
-        background: rgba(15, 23, 42, 0.85);
-        border-color: #4338ca;
-        color: #a5b4fc;
-    }
-
-    .play-maze-btn:hover {
-        background: rgba(15, 23, 42, 0.95);
-        border-color: #6366f1;
-        box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25);
-    }
-
-    .maze-btn {
-        background: #1e293b;
-        color: #e5e7eb;
-        border-color: #334155;
-    }
-
-    .maze-btn:hover:not(.disabled) {
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.24);
-    }
-
-    .maze-btn.danger {
-        border-color: #7f1d1d;
-        background: #1f0b0b;
-        color: #fecaca;
-    }
-
-    /* Dark mode instructions */
-    .instructions-content {
-        background: rgba(15, 23, 42, 0.92);
-        border-color: rgba(255, 255, 255, 0.08);
-        box-shadow:
-            0 4px 24px rgba(0, 0, 0, 0.3),
-            0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-
-    .instructions-title {
-        color: #e5e7eb;
-    }
-
-    .instructions-subtitle {
-        color: #94a3b8;
-    }
-
-    .instructions-steps .step {
-        background: rgba(30, 41, 59, 0.7);
-    }
-
-    .instructions-steps .step.active {
-        background: rgba(99, 102, 241, 0.15);
-        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
-    }
-
-    .instructions-steps .step.done {
-        background: rgba(34, 197, 94, 0.1);
-    }
-
-    .step-text {
-        color: #cbd5e1;
-    }
-
-    .step.active .step-text {
-        color: #a5b4fc;
-    }
-
-    .instructions-steps .step.done .step-text {
-        color: #4ade80;
-    }
 }
 
 /* === Responsive adjustments === */

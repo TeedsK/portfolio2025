@@ -4,6 +4,8 @@
 /* ---------- Section ---------- */
 .section {
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     padding: clamp(40px, 8vh, 80px) clamp(16px, 6vw, 64px);
     background: transparent;
     scroll-margin-top: calc(var(--header-height, 60px) + 20px);

@@ -340,7 +340,7 @@ const Hero: React.FC = () => {
                     </p>
                     <p className="hero-subdescription">
                         <span className="hero-subdesc-long">machine learning and full-stack engineer building tools<br/>and apps that deliver measurable impact.</span>
-                        <span className="hero-subdesc-short">machine learning engineering with measurable impact.</span>
+                        <span className="hero-subdesc-short">machine learning engineer with measurable impact.</span>
                     </p>
                 </div>
 

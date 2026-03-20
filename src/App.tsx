@@ -2,13 +2,17 @@
 import LandingPage from './pages/landing/LandingPage';
 import './App.css';
 import SiteHeader from './components/SiteHeader';
+import LoadingScreen from './components/LoadingScreen';
 
 function App() {
     return (
-        <div className="app-container">
-            <SiteHeader />
-            <LandingPage />
-        </div>
+        <>
+            <LoadingScreen />
+            <div className="app-container">
+                <SiteHeader />
+                <LandingPage />
+            </div>
+        </>
     );
 }
 

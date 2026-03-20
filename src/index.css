@@ -29,7 +29,7 @@ body {
   display: block;           /* reset Vite demo centering */
   min-width: 320px;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
   background-color: #ffffff;
   color: #213547;
   /* Full-viewport height with mobile-safe fallbacks */

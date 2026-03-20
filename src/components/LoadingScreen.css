@@ -1,0 +1,54 @@
+.ls-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.55s ease;
+}
+
+.ls-screen--fade {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ls-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.ls-name {
+    margin: 0;
+    font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+    font-size: clamp(2rem, 7vw, 3.8rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.95;
+    color: #181b22;
+}
+
+.ls-bar {
+    width: clamp(160px, 30vw, 260px);
+    height: 2px;
+    background: #ebebeb;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.ls-bar-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #f2d94a 0%, #f49d4d 48%, #de4f87 100%);
+    animation: ls-fill 0.65s ease-out forwards;
+    animation-delay: 0.05s;
+}
+
+@keyframes ls-fill {
+    from { width: 0; }
+    to   { width: 100%; }
+}
